@@ -1,0 +1,83 @@
+{
+  "name": "Company Name homepage",
+  "kind": "program",
+  "source": [
+    "Make a homepage for Company Name.",
+    "Header with the company name and a navigation: Home, About, Services, Contact.",
+    "A hero that says \"Welcome to Our Site\" and \"We build great things\".",
+    "Three cards, each with its own title and description.",
+    "Footer with \"© 2026 Company Name\".",
+    "On mobile the cards should stack."
+  ],
+
+  "entities": [
+    { "id": "page",       "kind": "page" },
+    { "id": "header",     "kind": "header" },
+    { "id": "logo",       "kind": "logo" },
+    { "id": "navigation", "kind": "navigation" },
+    { "id": "main",       "kind": "container" },
+    { "id": "hero",       "kind": "banner" },
+    { "id": "cards",      "kind": "card-group" },
+    { "id": "card-1",     "kind": "card" },
+    { "id": "card-2",     "kind": "card" },
+    { "id": "card-3",     "kind": "card" },
+    { "id": "footer",     "kind": "footer" },
+    { "id": "viewport",   "kind": "viewport", "provided-by": "environment" }
+  ],
+
+  "multiplicity": [
+    { "group": "cards", "member-kind": "card", "count": 3 }
+  ],
+
+  "relationships": [
+    { "subject": "header",     "rel": "inside", "object": "page" },
+    { "subject": "logo",       "rel": "inside", "object": "header" },
+    { "subject": "navigation", "rel": "inside", "object": "header" },
+    { "subject": "main",       "rel": "inside", "object": "page" },
+    { "subject": "hero",       "rel": "inside", "object": "main" },
+    { "subject": "cards",      "rel": "inside", "object": "main" },
+    { "subject": "card-1",     "rel": "inside", "object": "cards" },
+    { "subject": "card-2",     "rel": "inside", "object": "cards" },
+    { "subject": "card-3",     "rel": "inside", "object": "cards" },
+    { "subject": "footer",     "rel": "inside", "object": "page" }
+  ],
+
+  "properties": [
+    { "entity": "logo",       "name": "text",       "value": "Company Name" },
+    { "entity": "navigation", "name": "links",      "value": ["Home", "About", "Services", "Contact"] },
+    { "entity": "hero",       "name": "title",      "value": "Welcome to Our Site" },
+    { "entity": "hero",       "name": "subtitle",   "value": "We build great things" },
+    { "entity": "card-1",     "name": "title",      "value": "Card 1" },
+    { "entity": "card-1",     "name": "description","value": "Desc 1" },
+    { "entity": "card-2",     "name": "title",      "value": "Card 2" },
+    { "entity": "card-2",     "name": "description","value": "Desc 2" },
+    { "entity": "card-3",     "name": "title",      "value": "Card 3" },
+    { "entity": "card-3",     "name": "description","value": "Desc 3" },
+    { "entity": "footer",     "name": "text",       "value": "© 2026 Company Name" }
+  ],
+
+  "state": [
+    {
+      "entity": "cards",
+      "name": "layout",
+      "states": ["row", "column"],
+      "initial": "row"
+    }
+  ],
+
+  "conditions": [
+    {
+      "when": {
+        "entity": "viewport",
+        "property": "width",
+        "relation": "is",
+        "value": "narrow"
+      },
+      "then": {
+        "entity": "cards",
+        "property": "layout",
+        "value": "column"
+      }
+    }
+  ]
+}

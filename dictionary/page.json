@@ -1,0 +1,16 @@
+{
+  "term": "page",
+  "kind": "container",
+  "meaning": "The root of an interface shown as a full screen or window.",
+  "defaults": {
+    "size": "fill viewport",
+    "orientation": "vertical",
+    "children-width": "full",
+    "fill-mode": "top-to-bottom",
+    "growing-child": "a container child between bars"
+  },
+  "implementation": {
+    "html": "the document's root block",
+    "guess": ["min-height: 100vh", "display: flex", "flex-direction: column", "the growing child gets flex: 1"]
+  }
+}

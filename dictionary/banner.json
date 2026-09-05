@@ -1,0 +1,15 @@
+{
+  "term": "banner",
+  "kind": "section",
+  "meaning": "A prominent introduction region at the top of the main content, holding a heading and optional supporting text.",
+  "defaults": {
+    "contains": ["title", "subtitle"],
+    "text-alignment": "center",
+    "padding": "generous",
+    "separation": "stands apart from content below"
+  },
+  "implementation": {
+    "html": "section or div",
+    "guess": ["text-align: center", "large heading", "padding: 2-4rem"]
+  }
+}

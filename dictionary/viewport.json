@@ -1,0 +1,19 @@
+{
+  "term": "viewport",
+  "kind": "ambient",
+  "provided-by": "environment",
+  "meaning": "The visible screen region the implementation renders into. Supplied by the host, not declared by the program.",
+  "properties": {
+    "width": "length",
+    "height": "length"
+  },
+  "classes": {
+    "width": {
+      "narrow": "below 768px",
+      "wide": "at or above 768px"
+    }
+  },
+  "implementation": {
+    "html/css": "the rendering context; narrow/wide is the intent, the breakpoint is implementation"
+  }
+}

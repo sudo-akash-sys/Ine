@@ -1,0 +1,15 @@
+{
+  "term": "card",
+  "kind": "surface",
+  "meaning": "A self-contained content unit with a title and a body, framed so it reads as one block.",
+  "defaults": {
+    "contains": ["title", "description"],
+    "padding": "comfortable",
+    "border": "subtle",
+    "corner-radius": "slight"
+  },
+  "implementation": {
+    "html": "article or div",
+    "guess": ["border: 1px solid light", "border-radius: 6-10px", "padding: 20px"]
+  }
+}

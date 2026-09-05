@@ -1,0 +1,14 @@
+{
+  "term": "footer",
+  "kind": "bar",
+  "meaning": "A bar at the bottom edge of the page holding auxiliary information.",
+  "defaults": {
+    "height": "compact",
+    "content-position": "center",
+    "position": "bottom of page, always"
+  },
+  "implementation": {
+    "html": "footer element",
+    "guess": ["display: flex", "justify-content: center", "parent page flex column + growing middle child keeps it pinned"]
+  }
+}

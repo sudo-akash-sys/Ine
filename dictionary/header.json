@@ -1,0 +1,15 @@
+{
+  "term": "header",
+  "kind": "bar",
+  "meaning": "A bar spanning the top edge of its container, holding brand and primary navigation.",
+  "defaults": {
+    "height": "compact",
+    "orientation": "horizontal",
+    "children-alignment": "vertical center",
+    "children-distribution": "space-between, in declared order"
+  },
+  "implementation": {
+    "html": "header element",
+    "guess": ["display: flex", "align-items: center", "justify-content: space-between"]
+  }
+}

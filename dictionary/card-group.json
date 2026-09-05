@@ -1,0 +1,16 @@
+{
+  "term": "card-group",
+  "kind": "group",
+  "meaning": "A row of members of one kind, presented side by side, equal in width and evenly spaced. On narrow contexts the group stacks its members.",
+  "defaults": {
+    "layout": "row",
+    "member-width": "equal",
+    "member-spacing": "even",
+    "narrow-layout": "stack members",
+    "narrow-class": "viewport.width == narrow"
+  },
+  "implementation": {
+    "html": "div or section holding the members",
+    "guess": ["display: flex", "flex: 1 per member", "gap: 20px", "media (max-width: 768px) → flex-direction: column"]
+  }
+}

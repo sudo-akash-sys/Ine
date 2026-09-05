@@ -1,0 +1,13 @@
+{
+  "term": "logo",
+  "kind": "brand",
+  "meaning": "The name or mark of the product or company, shown prominently and persistently.",
+  "defaults": {
+    "style": "strong",
+    "interactive": false
+  },
+  "implementation": {
+    "html": "text in a span or div, or an image if an asset exists",
+    "guess": ["bold", "slightly larger than body text"]
+  }
+}

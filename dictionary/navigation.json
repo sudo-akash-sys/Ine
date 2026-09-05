@@ -1,0 +1,15 @@
+{
+  "term": "navigation",
+  "kind": "link-collection",
+  "meaning": "An ordered set of links to destinations in the software.",
+  "defaults": {
+    "orientation": "horizontal",
+    "link-spacing": "even",
+    "link-style": "plain and readable",
+    "order": "as declared"
+  },
+  "implementation": {
+    "html": "nav with anchor elements",
+    "guess": ["display: flex", "gap: 1-1.5rem", "link color inherits bar", "no underline by default"]
+  }
+}
