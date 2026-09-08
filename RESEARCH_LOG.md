@@ -843,3 +843,156 @@ and NOT to solve it abstractly. It is recorded as an open question
   in full.
 - No relationship/dictionary/HTML/homepage work started, per instruction.
 - No semantic concept finalized; architecture still not finalized.
+
+---
+
+## Session 11 — Native-execution direction + the emit-C target
+
+**Date:** 2026-09-08
+**Status:** Built; end-to-end verification blocked on missing toolchain.
+
+### Direction refinement (user)
+
+MyLanguage is its own language and semantic system — existing languages,
+APIs, runtimes, browsers, and machine-code technologies are targets it
+can interoperate with, not what defines its meaning. The old "translation
+layer" framing is an earlier working hypothesis. HTML is one backend, not
+the destination. User priority for this phase: actual execution over
+exhaustive testing — prove that MyLanguage source becomes something the
+real computer executes.
+
+### What was built
+
+The smallest native slice: `.int → lexer/parser → emit C → external C
+compiler → .exe → CPU`.
+
+- `src/mylang/backend_c.py` — lowers `say` statements to
+  `printf("%s\n", "value")`. A correctness detail found while building:
+  values are emitted as DATA (the `%s` argument), never as format text,
+  so user input like `100%` cannot become a C format specifier.
+- `src/mylang/native.py` — compiler discovery (`MYLANG_CC` env var, then
+  `zig`, `clang`, then `gcc`), compile, run. Generated artifacts
+  (`.c`, `.exe`) always go to project `.tmp/native/`.
+- `src/mylang/cli.py` — added `--native`. HTML path untouched.
+- `examples/native/hello.int` — the smallest native program.
+- `tests/test_mylang.py` — NativeBackendTests (5 emission tests, 1
+  skipped e2e compile+run). 39 total pass.
+
+### What was found (by building, not by speculating)
+
+1. **The machine has no usable C compiler.** clang (LLVM 22.1.8) was
+   installed but cannot link on Windows: `ld.lld: could not open
+   'libcmt.lib'` — the MSVC runtime is absent. Verified by probe compile.
+2. **Zig is the clean fix:** single download, `zig cc` wraps clang + lld
+   + a bundled libc, produces native Windows executables with no extra
+   SDK. Recommended toolchain.
+3. The HTML pipeline is provably untouched: `hello.int` still writes
+   `output/hello.html` byte-identical to the golden file (all pre-names
+   tests still green).
+4. The emitted C for the example is exactly the expected standalone
+   program (written to `.tmp/native/hello.c`).
+
+### Verification status
+
+- 39 unit tests pass (1 native e2e test skipped: no compiler installed).
+- CLI `--native` reaches the tooling gate and reports a clear install
+  hint instead of failing silently.
+- End-to-end `.int → .exe → CPU` NOT yet observed. Blocked until Zig is
+  installed.
+
+### Session 12 addendum (VERIFIED)
+
+- User installed Zig 0.16.0 (user PATH). `MYLANG_CC` not needed —
+  `zig` auto-detected.
+- All 39 tests pass, none skipped. The native e2e test now compiles with
+  Zig and runs on this machine.
+- Targeted run confirmed: `python mylang.py examples/native/hello.int
+  --native` → `Hello, native machine code` on stdout, exit 0.
+  `.tmp/native/hello.exe` is a valid PE binary (`4D 5A` magic, ~778 KB,
+  x86-64), runs standalone as native machine code — not a script.
+- HTML backend still verified: `hello.int` writes `output/hello.html`
+  byte-identical to the golden file.
+- First confirmation of the Session 11 direction at the machine level.
+
+### Session 13 addendum (typed values)
+
+**Date:** 2026-09-08
+**Status:** Complete. Values are now typed (strings + numbers).
+
+The user drove this: they wrote `make person` / `person name "Alice"` /
+`person age 25` and hit the "property value must be written in quotes"
+wall. The wall was genuine — an age is a number, not a string. The user
+decided to add numbers and keep the language simple and efficient.
+
+**Implemented (smallest change):**
+
+- `parser.py`: property and `say` accept NUMBER tokens. `_literal()`
+  converts to `int` unless the text has `.`/`e`, then `float`.
+- `semantic.py`: model stores typed values unchanged.
+- `backend_c.py`: `printf("%s\n")` strings, `printf("%d\n")` integers,
+  `printf("%.17g\n")` decimals.
+- `backend_html.py`: `str(value)` before HTML-escaping.
+- Tests: 47 total (3 new parser, 2 new interpreter, 2 new native e2e).
+
+**Verified:** user's program builds a model with `age: 25` (int);
+native `say 25` prints `25` from real PE machine code.
+
+**Left alone (per method):** `say person age` is still invalid — reading
+a stored property at runtime is the workbook §26 describing/doing
+composition question, deliberately not solved abstractly. No new types
+beyond str/int/float. Nothing committed.
+
+### Session 14 addendum (say name property — compile-time feed)
+
+**Date:** 2026-09-08
+**Status:** Complete. Describing now feeds doing, at compile time.
+
+The user drove the question: the program `make person` / `person name
+"Alice"` / `person age 25` / `say person age` hit "expected a string or
+a number after 'say'". The user chose **Choice A: compile-time property
+resolution** with compile-time errors for missing properties, minimal.
+
+**Implemented (smallest change):**
+
+- `parser.py`: `say-stmt := "say" value | "say" name property`. A
+  `PropertyRef(target, name, line)` dataclass holds the reference until
+  resolution.
+- `semantic.py`: `resolve(statements, model)` replaces each `PropertyRef`
+  with the model's stored literal. Missing property or undeclared entity
+  → `SemanticError` with line number.
+- `cli.py`: both paths (`--native` and HTML) resolve before execute.
+- No runtime model, variables, mutation, expressions, or dynamic lookup.
+
+**Verified (57 tests):**
+
+- Unit: parse ref; resolve string/int/float; missing property → error;
+  undeclared entity → error; literals untouched; resolve feeds execute.
+- Native e2e: the real program prints `Alice` and `25` from a PE exe.
+- Exact wall case: `say person age` → prints `25`; `say person height`
+  → compile error; `say ghost age` → compile error, both exit 1.
+
+**Findings:**
+
+1. Describing→doing composition survives contact with a real program and
+   the smallest possible implementation was exactly sufficient.
+2. The resolve is compile-time only; `say person age` and `say 25` lower
+   to identical C. The two statement kinds stay syntactically distinct
+   but now compose.
+3. No new core concept was needed — the workbook §26 question was answer
+   able without adding to the six. (Recorded as observed, still not a
+   design decision about §26's full scope.)
+
+### What was changed
+
+- Added `src/mylang/backend_c.py`, `src/mylang/native.py`, `--native`
+  CLI flag, `examples/native/hello.int`, native tests, `.tmp/native/`
+  artifacts (gitignored).
+- Updated WORKBOOK.md (§27), LANGUAGE.md (§6a, §7), SESSION_STATE.md,
+  RESEARCH_LOG.md, AGENTS.md (permanent Temporary-File Policy).
+
+### What was NOT changed
+
+- The decide-a-thing (make → model → HTML) pipeline and all prior tests.
+- No semantic concept finalized; the native direction is recorded
+  PROPOSED pending the user's architecture decision.
+- Nothing committed to Git.

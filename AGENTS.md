@@ -20,11 +20,18 @@ Do not make major language-design decisions autonomously.
 When an architectural choice has significant consequences,
 present the options and trade-offs before implementing it.
 
-# Temporary-File Policy
+# Temporary-File Policy (permanent rule)
 
-Use the project's `.tmp/` directory for MyLanguage-generated temporary
-files, experiments, intermediate project artifacts, and disposable
-build outputs whenever practical.
+Use the project's `.tmp/` directory for EVERY MyLanguage-generated
+temporary probe, generated source, executable, object file, compiler
+test, intermediate artifact, and disposable build output. This is a
+permanent working rule, not just this session.
+
+`.tmp/` is already in `.gitignore` — never commit it.
+
+Keep generated FINAL project outputs (e.g. `output/*.html`) in their own
+output directory, separate from `.tmp/`. Final outputs are the committed
+deliverables; `.tmp/` is the scratch space for discovering the language.
 
 Do not assume that external tools will never use the operating system's
 %TEMP% directory. If a compiler, runtime, package manager, shell, or

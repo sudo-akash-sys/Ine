@@ -1,6 +1,6 @@
 # SESSION_STATE.md
 
-Last updated: 2026-09-05
+Last updated: 2026-09-08
 
 This file captures the complete project state so any AI session can
 continue without losing context. It is NOT a conversation summary.
@@ -511,6 +511,114 @@ From the user:
     the real question the next real program must answer. See WORKBOOK
     §26 and LANGUAGE.md §5a.
 
+### Session 11 (native-execution direction + emit-C target)
+
+41. **Direction refinement (user, recorded PROPOSED, NOT a locked
+    decision):** MyLanguage is its own language and semantic system;
+    existing languages/APIs/runtimes/browsers/machine-code technologies
+    are things it can interoperate with or target, not what defines its
+    meaning. The old "translation layer" framing is an earlier working
+    hypothesis. HTML is one backend, not the destination.
+42. **User priority for this phase:** actual execution over exhaustive
+    testing — first prove that MyLanguage source becomes something the
+    real computer executes.
+43. **Built the smallest native slice:** `.int → lexer/parser →
+    backend_c.emit → external C compiler → .exe → run on CPU`.
+    - `src/mylang/backend_c.py` — lowers `say` statements to
+      `printf("%s\n", "value")` (value is DATA, never format — a
+      correctness detail found while building).
+    - `src/mylang/native.py` — compiler discovery (`MYLANG_CC`, `zig`,
+      `clang`, `gcc`), compile, run. All artifacts to `.tmp/native/`.
+    - `src/mylang/cli.py` — added `--native` flag; HTML path untouched.
+    - `examples/native/hello.int` — `say "Hello, native machine code"`.
+    - 39 tests pass (native e2e test skipped: no compiler on machine).
+44. **Tooling blocked (found, not predicted):** clang was installed but
+    cannot link on this machine — missing MSVC runtime `libcmt.lib`. The
+    chosen toolchain is **Zig** (`zig cc`): bundles clang + lld + libc,
+    produces native Windows executables with no extra SDK. When the user
+    installs it, `test_native_executable_prints_on_the_cpu` must run
+    green and `python mylang.py examples/native/hello.int --native`
+    must print the say value after running the exe.
+45. **Permanent Temporary-File Policy** recorded in AGENTS.md: every
+    MyLanguage-generated probe/source/exe/object/compiler-test/
+    intermediate artifact goes in project `.tmp/` (gitignored); final
+    committed outputs stay in `output/`.
+
+### Session 12 (native milestone VERIFIED)
+
+46. **Zig 0.16.0 installed by the user** (user PATH). Toolchain gate is
+    now OPEN.
+47. **All 39 tests pass, none skipped** — the native e2e test
+    (`test_native_executable_prints_on_the_cpu`) now compiles AND runs
+    on this machine.
+48. **VERIFIED — smallest native slice works end to end:**
+    `python mylang.py examples/native/hello.int --native` →
+    lexer → parser → `backend_c.emit` → `.tmp/native/hello.c` →
+    `zig cc` → `.tmp/native/hello.exe` → CPU → stdout
+    `Hello, native machine code`, exit 0. The `.exe` is a valid Windows
+    PE binary (first two bytes `4D 5A`, ~778 KB, x86-64 machine code),
+    not a script. It runs standalone.
+49. **HTML backend still verified** alongside: `hello.int` still writes
+    `output/hello.html` byte-identical. Both targets coexist.
+50. First real confirmation of the Session 11 direction: MyLanguage
+    source now demonstrably becomes something the actual computer
+    executes.
+
+### Session 13 (typed values: strings + numbers)
+
+51. **User tested the language with a real program:**
+    `make person` / `person name "Alice"` / `person age 25`. It failed:
+    `error: property value must be written in quotes (line 3)`. The wall
+    was real and obvious — a person's `age` is a number, not a string.
+52. **User decision:** add numbers. Also: keep the language simple and
+    working efficiently/("dynamically") — typed values are the point of
+    the language.
+53. **Implemented (smallest change):** values are now typed.
+    - Parser: property and `say` values accept a NUMBER token; number
+      text becomes `int` when it has no `.`/`e`, else `float`.
+    - Semantic: the model stores typed values unchanged.
+    - Native backend: `printf("%s\n")` for strings, `printf("%d\n")` for
+      integers, `printf("%.17g\n")` for decimals.
+    - HTML backend: `str()` applied before escaping (a numeric title no
+      longer crashes).
+54. **Verified:** 47 tests pass, including 3 new parser tests, 2 new
+    interpreter tests for numbers, and 2 native e2e tests (numbers print
+    from the CPU). `make person` + `person age 25` now builds a model
+    with `age: 25` (int). Native `say 25` prints `25` from real machine
+    code.
+55. **Not changed (design questions untouched):** `say person age`
+    (reading a property at runtime) is still invalid — that is the
+    describing/doing composition question (workbook §26), deliberately
+    NOT solved yet. Values are only strings and numbers today.
+
+### Session 14 (say name property — describing feeds doing, compile-time)
+
+56. **Question answered in practice:** the workbook §26 open question
+    "can description feed behavior?" is now concretely tested. The
+    program `make person`/`person name "Alice"`/`person age 25`/`say
+    person age` previously failed with "expected a string or a number
+    after 'say'". The user chose **Choice A: compile-time property
+    resolution** with compile-time errors for missing properties.
+57. **Implemented (smallest change):**
+    - Parser: `say-stmt := "say" value | "say" name property`. A
+      `PropertyRef(target, name, line)` appears as the value until
+      resolved.
+    - Semantic: new `resolve(statements, model)` turns a `PropertyRef`
+      into the model's stored literal. Missing property or undeclared
+      entity → `SemanticError` with the offending line.
+    - CLI: both `--native` and HTML paths resolve before executing.
+    - No runtime model, no variables, no mutation, no expressions, no
+      dynamic lookup — deliberately.
+58. **Verified:** 57 tests pass (10 new: parser ref, 7 resolution, 2
+    native e2e). The exact real program `say person age` now prints
+    `25` from a native PE exe; `say person height` → "'person' has no
+    property 'height' (line 3)"; `say ghost age` → "'ghost' was not
+    declared" — both compile-time errors, exit 1. HTML path and
+    `hello.int` golden output untouched.
+59. **Recorded design facts:** resolve is COMPILE-TIME only. The
+    interpreter/backends only ever see literal values; `say person age`
+    and `say 25` lower to identical output (`printf("%d\n", 25)`).
+
 ---
 
 ## 12. Next Step
@@ -524,18 +632,29 @@ works: `.int` read → understood → emits verified HTML.
 **DONE (Session 10):** the requested Say vertical slice exists and is
 verified: `say "..."` → lexer → parser → AST → interpreter → stdout.
 
-**NEXT concrete step (do NOT jump ahead):** the user directed: do not
-move to relationships, dictionaries, HTML expansion, or homepage work
-until `say` is verified — it now is. The natural next question is the
-one `say` itself raised: how do "describing" and "doing" statements
-relate/compose (workbook §26)? Do not solve this abstractly — the next
-tiny real program should make the answer concrete. Candidates:
-- A program that describes a page AND prints something (already shown to
-  run) — decide what ordering/meaning that has.
-- Or a program needing both kinds to work toward each other (e.g. `say`
-  a property's value, which requires reading the model at execution
-  time).
-No decision is locked until the user picks.
+**DONE (Session 11-12):** the smallest native slice is BUILT AND
+VERIFIED: `python mylang.py <file.int> --native` → emit C → `zig cc` →
+native `.exe` → runs on CPU. `Hello, native machine code` observed on
+stdout from a real PE binary. HTML pipeline untouched and still green.
+
+**DONE (Session 13):** values are now typed — strings and numbers. The
+user's `make person` / `person name "Alice"` / `person age 25` program
+builds a real model with a numeric age, and native `say 25` prints from
+machine code.
+
+**DONE (Session 14):** describing feeds doing — `say person age` resolves
+the stored property at COMPILE time and prints it natively. The workbook
+§26 question has its first concrete answer.
+
+**NEXT concrete step (user picks):** the compile-time resolve is static —
+the exe cannot change. The natural next real slices:
+- A `page` program that prints its own title (`say page title` → already
+  works with the new resolve), tying describing → HTML and describing →
+  native together in one program.
+- Lower the model itself to native (a real `person` struct at runtime),
+  if/when a program needs the data to exist at runtime.
+Nothing is locked; the next step comes from the next real `.int`
+program that hits a wall.
 
 ---
 

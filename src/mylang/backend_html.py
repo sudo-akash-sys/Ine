@@ -25,7 +25,7 @@ def render(model):
 
     page = pages[0]
     title = model.properties.get((page.id, "title"), "")
-    escaped = _html.escape(title)
+    escaped = _html.escape(str(title))
 
     lines = [
         "<!DOCTYPE html>",

@@ -785,3 +785,79 @@ The user's framing: this is exactly the kind of real problem the build
 process was meant to reveal, and it should NOT be solved abstractly
 ahead of more real programs. It is recorded here as an open question to
 be answered by the next tiny real program — not a design decision.
+
+## 27. The native-execution direction (Session 11)
+
+The user corrected the project's self-understanding (recorded PROPOSED,
+not yet a locked decision):
+
+- **MyLanguage is its own language and semantic system.** Existing
+  languages, APIs, runtimes, browsers, and machine-code technologies are
+  things MyLanguage can interoperate with or target — they DO NOT define
+  what MyLanguage means.
+- The old framing "a translation layer into existing implementation
+  technologies" is now treated as an EARLIER WORKING HYPOTHESIS, not the
+  final definition.
+- HTML is one backend, not the destination. The durable center is:
+  `.int → lexer/parser → MyLanguage semantics → execution → targets`
+  (native CPU code, browser runtime, existing languages).
+
+**Priority confirmed by the user for the CURRENT phase:** actual
+execution over exhaustive testing. The first proof must show that
+MyLanguage source becomes something the real computer executes.
+
+**First native milestone (Session 11, implemented):** the smallest
+working slice `.int → native executable → CPU`, built by a NEW emit-C
+target that coexists with the HTML backend:
+
+```
+say "Hello, native machine code"   →    .int
+      → lexer → parser                    (unchanged)
+      → backend_c: emit C                 (printf("%s\n", ...))
+      → external C compiler                (zig cc / clang / gcc)
+      → native .exe → CPU
+```
+
+- Invoked as `python mylang.py <file.int> --native`.
+- All generated artifacts (emitted `.c`, compiled `.exe`) live in the
+  project `.tmp/native/` — never committed. The original `mylang.py
+  <file.int> [-o out.html]` HTML path is untouched and still tested.
+- `backend_c.py` lowers only `say` statements today; `make`/property
+  produce no native output yet (the model is not yet lowered).
+- A correctness detail found while building: user text is emitted as
+  `printf("%s\n", "...")` (data, not format) so `%` in input can never
+  be parsed as a C format specifier.
+- **The verification step is blocked on tooling:** the machine has no C
+  compiler. clang was installed but cannot link (missing MSVC runtime
+  `libcmt.lib`). The chosen toolchain is **Zig** (`zig cc`), which
+  bundles clang + lld + libc and produces native Windows executables
+  with no extra SDK. Once installed, the end-to-end test
+  (`test_native_executable_prints_on_the_cpu`, currently skipped) must
+  run green.
+
+### §27a. Verified (Session 12)
+
+With Zig 0.16.0 installed by the user, the native slice is confirmed:
+
+- `python mylang.py examples/native/hello.int --native` emits C, Zig
+  compiles a native Windows PE binary (`4D 5A` magic, x86-64 machine
+  code), and the CPU runs it: stdout shows `Hello, native machine code`,
+  exit 0.
+- All 39 tests pass with none skipped; the HTML backend still writes
+  `output/hello.html` byte-identical.
+- This is the first real confirmation of the Session 11 direction:
+  **MyLanguage source demonstrably becomes something the actual computer
+  executes.** The emit-C route is a genuine compilation path (the C backend
+  is our front end; clang inside `zig cc` is the machine-code back end),
+  so the `.int → machine code` claim is now real, not a plan.
+
+**Side observation (OPEN, not a decision):** the language still carries
+the two statement kinds from §26. The native milestone did NOT try to
+solve that composition question — `say` was lowered directly, `make`
+stayed in the model. The next real program should answer it.
+
+**Temporary-File Policy (permanent rule):** all MyLanguage-generated
+probes, generated source, executables, object files, compiler tests,
+and intermediate artifacts go into the project `.tmp/` directory. Final
+committed outputs stay in `output/`. `.tmp/` is gitignored. (Recorded
+in AGENTS.md.)

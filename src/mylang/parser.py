@@ -23,13 +23,20 @@ class MakeStatement:
 class PropertyStatement:
     target: str
     name: str
-    value: str
+    value: object
     line: int
 
 
 @dataclass(frozen=True)
 class SayStatement:
-    value: str
+    value: object
+    line: int
+
+
+@dataclass(frozen=True)
+class PropertyRef:
+    target: str
+    name: str
     line: int
 
 
@@ -82,20 +89,39 @@ def _parse_property(tokens, pos):
     value = tokens[pos + 2]
     if name.kind != TokenKind.IDENT:
         raise SyntaxError("expected a property name", name)
-    if value.kind != TokenKind.STRING:
-        raise SyntaxError("property value must be written in quotes", value)
+    if value.kind not in (TokenKind.STRING, TokenKind.NUMBER):
+        raise SyntaxError("property value must be a string in quotes or a number", value)
     after = tokens[pos + 3]
     if after.kind not in (TokenKind.NEWLINE, TokenKind.EOF):
         raise SyntaxError("unexpected extra text", after)
-    return pos + 3, PropertyStatement(target.value, name.value, value.value, target.line)
+    return pos + 3, PropertyStatement(target.value, name.value, _literal(value), target.line)
 
 
 def _parse_say(tokens, pos):
     say = tokens[pos]
-    value = tokens[pos + 1]
-    if value.kind != TokenKind.STRING:
-        raise SyntaxError("expected a string after 'say'", value)
-    after = tokens[pos + 2]
+    first = tokens[pos + 1]
+    if first.kind in (TokenKind.STRING, TokenKind.NUMBER):
+        value = _literal(first)
+        end = pos + 2
+    elif first.kind == TokenKind.IDENT:
+        first_value, first_kind = first.value, first.kind
+        prop = tokens[pos + 2]
+        if prop.kind != TokenKind.IDENT:
+            raise SyntaxError("expected a property name after the name in 'say'", prop)
+        value = PropertyRef(first.value, prop.value, first.line)
+        end = pos + 3
+    else:
+        raise SyntaxError("expected a string, a number, or a name property after 'say'", first)
+    after = tokens[end]
     if after.kind not in (TokenKind.NEWLINE, TokenKind.EOF):
         raise SyntaxError("unexpected extra text", after)
-    return pos + 2, SayStatement(value.value, say.line)
+    return end, SayStatement(value, say.line)
+
+
+def _literal(token):
+    if token.kind == TokenKind.NUMBER:
+        text = token.value
+        if any(marker in text for marker in (".", "e", "E")):
+            return float(text)
+        return int(text)
+    return token.value
