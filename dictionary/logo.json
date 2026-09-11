@@ -1,6 +1,7 @@
 {
   "term": "logo",
   "kind": "brand",
+  "element": "div",
   "meaning": "The name or mark of the product or company, shown prominently and persistently.",
   "defaults": {
     "style": "strong",

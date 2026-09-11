@@ -5,6 +5,7 @@ import os
 import sys
 
 from .backend_html import BackendError, render
+from .backend_visual import VisualError, show as visual_show
 from .interpreter import execute
 from .lexer import LexError, lex
 from .native import NativeError, compile_c, run_native
@@ -54,13 +55,19 @@ def main(argv=None):
         "--native", action="store_true",
         help="compile the program to a native executable and run it",
     )
+    parser.add_argument(
+        "--visual", action="store_true",
+        help="open a native window showing the program's visual layout",
+    )
     args = parser.parse_args(argv)
 
     try:
         if args.native:
             return _native(args.source)
+        if args.visual:
+            return _visual(args.source)
         return _html(args.source, args.out)
-    except (LexError, SyntaxError, SemanticError, BackendError, NativeError) as error:
+    except (LexError, SyntaxError, SemanticError, BackendError, NativeError, VisualError) as error:
         _report_error(error)
         return 1
 
@@ -104,6 +111,25 @@ def _native(source_path):
     print(f"run:        exit 0")
     if not outputs:
         print("target:     no executable statements (nothing to compile)", file=sys.stderr)
+    return 0
+
+
+def _visual(source_path):
+    with open(source_path, "r", encoding="utf-8") as handle:
+        source = handle.read()
+    tokens = lex(source)
+    raw_statements = parse(tokens)
+    model = analyze(raw_statements)
+    statements = resolve(raw_statements, model)
+    outputs = execute(statements)
+
+    for output in outputs:
+        print(output)
+    print(f"read:       {source_path}")
+    print(f"entities:   {len(model.entities)}")
+    print(f"properties: {len(model.properties)}")
+    print("opening visual window...")
+    visual_show(model)
     return 0
 
 

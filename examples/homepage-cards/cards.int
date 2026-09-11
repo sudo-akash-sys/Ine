@@ -1,0 +1,49 @@
+# Homepage slice: the three feature cards.
+# page > header (logo, navigation), page > main > hero,
+#   page > main > card-group > (card-1, card-2, card-3), page > footer.
+# Expresses everything with existing concepts: make, properties, inside.
+# No new syntax, no Multiplicity — three card entities written out by hand.
+
+make page
+page title "Company Name"
+
+make header
+header inside page
+
+make logo
+logo text "Company Name"
+logo inside header
+
+make navigation
+navigation inside header
+
+make main container
+main inside page
+
+make hero banner
+hero text "Welcome to Our Site"
+hero inside main
+
+make card-group card-group
+card-group inside main
+
+make card-1 card
+card-1 title "Fast"
+card-1 text "Lightning-quick rendering with no wasted motion."
+card-1 inside card-group
+
+make card-2 card
+card-2 title "Simple"
+card-2 text "Describe what you want; the machine handles the rest."
+card-2 inside card-group
+
+make card-3 card
+card-3 title "Reliable"
+card-3 text "One semantic model, three proven targets."
+card-3 inside card-group
+
+make footer
+footer text "© Company Name 2026"
+footer inside page
+
+say page title

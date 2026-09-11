@@ -1,6 +1,8 @@
 {
   "term": "footer",
   "kind": "bar",
+  "element": "footer",
+  "position": "bottom",
   "meaning": "A bar at the bottom edge of the page holding auxiliary information.",
   "defaults": {
     "height": "compact",

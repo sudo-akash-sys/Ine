@@ -1,0 +1,25 @@
+# Homepage, next slice: the hero region.
+# page > header (logo, navigation)  and  page > main > hero.
+# No new concepts — deeper inside nesting + dictionary kinds banner/container.
+
+make page
+page title "Company Name"
+
+make header
+header inside page
+
+make logo
+logo text "Company Name"
+logo inside header
+
+make navigation
+navigation inside header
+
+make main container
+main inside page
+
+make hero banner
+hero text "Welcome to Our Site"
+hero inside main
+
+say page title

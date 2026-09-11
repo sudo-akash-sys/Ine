@@ -1,6 +1,7 @@
 {
   "term": "page",
   "kind": "container",
+  "element": "div",
   "meaning": "The root of an interface shown as a full screen or window.",
   "defaults": {
     "size": "fill viewport",

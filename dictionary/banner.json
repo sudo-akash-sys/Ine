@@ -1,6 +1,7 @@
 {
   "term": "banner",
   "kind": "section",
+  "element": "div",
   "meaning": "A prominent introduction region at the top of the main content, holding a heading and optional supporting text.",
   "defaults": {
     "contains": ["title", "subtitle"],

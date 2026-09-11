@@ -34,6 +34,13 @@ class SayStatement:
 
 
 @dataclass(frozen=True)
+class InsideStatement:
+    child: str
+    parent: str
+    line: int
+
+
+@dataclass(frozen=True)
 class PropertyRef:
     target: str
     name: str
@@ -59,11 +66,28 @@ def _parse_statement(tokens, pos):
         return _parse_make(tokens, pos)
     if token.kind == TokenKind.KEYWORD and token.value == "say":
         return _parse_say(tokens, pos)
+    if token.kind == TokenKind.KEYWORD and token.value == "inside":
+        raise SyntaxError("expected a name before 'inside'", token)
     if token.kind == TokenKind.IDENT:
+        nxt = tokens[pos + 1]
+        if nxt.kind == TokenKind.KEYWORD and nxt.value == "inside":
+            return _parse_inside(tokens, pos)
         return _parse_property(tokens, pos)
     if token.kind == TokenKind.NEWLINE or token.kind == TokenKind.EOF:
         raise SyntaxError("expected a statement, found an empty line", token)
     raise SyntaxError("cannot understand this line", token)
+
+
+def _parse_inside(tokens, pos):
+    child = tokens[pos]
+    inside = tokens[pos + 1]
+    parent = tokens[pos + 2]
+    if parent.kind != TokenKind.IDENT:
+        raise SyntaxError("expected a name after 'inside'", parent)
+    after = tokens[pos + 3]
+    if after.kind not in (TokenKind.NEWLINE, TokenKind.EOF):
+        raise SyntaxError("unexpected extra text", after)
+    return pos + 3, InsideStatement(child.value, parent.value, child.line)
 
 
 def _parse_make(tokens, pos):

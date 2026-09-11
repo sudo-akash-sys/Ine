@@ -13,7 +13,7 @@ from mylang.interpreter import execute
 from mylang.lexer import LexError, TokenKind, lex
 from mylang.native import compile_c, find_c_compiler, run_native
 from mylang.parser import (
-    MakeStatement, PropertyRef, PropertyStatement, SayStatement, SyntaxError, parse,
+    InsideStatement, MakeStatement, PropertyRef, PropertyStatement, SayStatement, SyntaxError, parse,
 )
 from mylang.semantic import SemanticError, analyze, resolve
 
@@ -105,6 +105,22 @@ class ParserTests(unittest.TestCase):
         with self.assertRaises(SyntaxError):
             parse(lex("make\n"))
 
+    def test_inside_relationship_parses(self):
+        statements = parse(lex("make header\nmake page\nheader inside page\n"))
+        self.assertEqual(statements[2], InsideStatement("header", "page", 3))
+
+    def test_inside_requires_a_parent(self):
+        with self.assertRaises(SyntaxError):
+            parse(lex("header inside\n"))
+
+    def test_inside_extra_text_is_an_error(self):
+        with self.assertRaises(SyntaxError):
+            parse(lex("header inside page foo\n"))
+
+    def test_inside_at_statement_start_is_an_error(self):
+        with self.assertRaises(SyntaxError):
+            parse(lex("inside page\n"))
+
 
 class SemanticTests(unittest.TestCase):
     def test_model_is_built(self):
@@ -128,6 +144,50 @@ class SemanticTests(unittest.TestCase):
         model = analyze(statements)
         self.assertEqual(model.properties[("page", "title")], "B")
 
+    def test_relationship_is_stored_in_the_model(self):
+        statements = parse(lex("make page\nmake header\nheader inside page\n"))
+        model = analyze(statements)
+        self.assertEqual(model.relationships, {"header": "page"})
+
+    def test_inside_undeclared_child_is_an_error(self):
+        statements = parse(lex("make page\nheader inside page\n"))
+        with self.assertRaises(SemanticError):
+            analyze(statements)
+
+    def test_inside_undeclared_parent_is_an_error(self):
+        statements = parse(lex("make header\nheader inside page\n"))
+        with self.assertRaises(SemanticError):
+            analyze(statements)
+
+    def test_inside_itself_is_an_error(self):
+        statements = parse(lex("make header\nheader inside header\n"))
+        with self.assertRaises(SemanticError):
+            analyze(statements)
+
+    def test_inside_twice_is_an_error(self):
+        statements = parse(lex(
+            "make page\nmake header\nmake logo\n"
+            "header inside page\nheader inside logo\n"
+        ))
+        with self.assertRaises(SemanticError):
+            analyze(statements)
+
+    def test_containment_cycle_is_an_error(self):
+        statements = parse(lex(
+            "make header\nmake page\n"
+            "header inside page\npage inside header\n"
+        ))
+        with self.assertRaises(SemanticError):
+            analyze(statements)
+
+    def test_relationship_passes_through_resolution(self):
+        statements = parse(lex(
+            'make page\nmake header\nheader inside page\nsay "go"\n'
+        ))
+        model = analyze(statements)
+        resolved = resolve(statements, model)
+        self.assertIn(InsideStatement("header", "page", 3), resolved)
+
 
 class BackendTests(unittest.TestCase):
     def test_page_renders_title_and_heading(self):
@@ -137,8 +197,36 @@ class BackendTests(unittest.TestCase):
         self.assertIn("<title>Hello, MyLanguage</title>", output)
         self.assertIn("<h1>Hello, MyLanguage</h1>", output)
 
+    def test_slice_renders_nested_elements_from_the_dictionary(self):
+        program = (
+            'make page\n'
+            'page title "Company Name"\n'
+            'make header\n'
+            'header inside page\n'
+            'make logo\n'
+            'logo text "Company Name"\n'
+            'logo inside header\n'
+            'make navigation\n'
+            'navigation inside header\n'
+        )
+        statements = parse(lex(program))
+        model = analyze(statements)
+        output = render(model)
+        self.assertIn('<div class="page">', output)
+        self.assertIn('<header class="header">', output)
+        self.assertIn('<div class="logo">Company Name</div>', output)
+        self.assertIn('<nav class="navigation">', output)
+        self.assertLess(output.index("header"), output.index("logo"))
+        self.assertLess(output.index("logo"), output.index("navigation"))
+
+    def test_inside_statements_are_not_rendered_as_property_text(self):
+        program = 'make page\nmake header\nheader inside page\n'
+        model = analyze(parse(lex(program)))
+        output = render(model)
+        self.assertNotIn("inside", output)
+
     def test_unknown_kind_is_rejected(self):
-        statements = parse(lex("make page\nmake header\n"))
+        statements = parse(lex("make page\nmake wizard magic\n"))
         model = analyze(statements)
         with self.assertRaises(BackendError):
             render(model)
@@ -292,6 +380,386 @@ class EndToEndTests(unittest.TestCase):
             self.assertIsNone(html)
             self.assertFalse(os.path.exists(out_path))
 
+    def test_topbar_builds_exactly_the_golden_output(self):
+        source_path = os.path.join(
+            os.path.dirname(__file__), "..", "examples", "homepage-topbar", "topbar.int"
+        )
+        golden_path = os.path.join(
+            os.path.dirname(__file__), "expected", "topbar.html"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            out_path = os.path.join(tmp, "topbar.html")
+            build(source_path, out_path)
+            with open(out_path, "r", encoding="utf-8") as handle:
+                actual = handle.read()
+            with open(golden_path, "r", encoding="utf-8") as handle:
+                expected = handle.read()
+            self.assertEqual(actual, expected)
+
+    def test_hero_builds_exactly_the_golden_output(self):
+        source_path = os.path.join(
+            os.path.dirname(__file__), "..", "examples", "homepage-hero", "hero.int"
+        )
+        golden_path = os.path.join(
+            os.path.dirname(__file__), "expected", "hero.html"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            out_path = os.path.join(tmp, "hero.html")
+            build(source_path, out_path)
+            with open(out_path, "r", encoding="utf-8") as handle:
+                actual = handle.read()
+            with open(golden_path, "r", encoding="utf-8") as handle:
+                expected = handle.read()
+            self.assertEqual(actual, expected)
+
+    def test_cards_builds_exactly_the_golden_output(self):
+        source_path = os.path.join(
+            os.path.dirname(__file__), "..", "examples", "homepage-cards", "cards.int"
+        )
+        golden_path = os.path.join(
+            os.path.dirname(__file__), "expected", "cards.html"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            out_path = os.path.join(tmp, "cards.html")
+            build(source_path, out_path)
+            with open(out_path, "r", encoding="utf-8") as handle:
+                actual = handle.read()
+            with open(golden_path, "r", encoding="utf-8") as handle:
+                expected = handle.read()
+            self.assertEqual(actual, expected)
+
+    def test_cards_html_contains_footer_text(self):
+        source_path = os.path.join(
+            os.path.dirname(__file__), "..", "examples", "homepage-cards", "cards.int"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            out_path = os.path.join(tmp, "cards.html")
+            build(source_path, out_path)
+            with open(out_path, "r", encoding="utf-8") as handle:
+                output = handle.read()
+            self.assertIn('<footer class="footer">', output)
+            self.assertIn("2026", output)
+
+    def test_cards_html_uses_row_layout_for_card_group(self):
+        source_path = os.path.join(
+            os.path.dirname(__file__), "..", "examples", "homepage-cards", "cards.int"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            out_path = os.path.join(tmp, "cards.html")
+            build(source_path, out_path)
+            with open(out_path, "r", encoding="utf-8") as handle:
+                output = handle.read()
+            self.assertIn(
+                '<div class="card-group" style="display:flex;gap:20px">',
+                output,
+            )
+            self.assertIn('<article class="card-1" style="flex:1">', output)
+            self.assertIn('<article class="card-2" style="flex:1">', output)
+            self.assertIn('<article class="card-3" style="flex:1">', output)
+
+    def test_cards_html_renders_card_titles_as_headings(self):
+        source_path = os.path.join(
+            os.path.dirname(__file__), "..", "examples", "homepage-cards", "cards.int"
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            out_path = os.path.join(tmp, "cards.html")
+            build(source_path, out_path)
+            with open(out_path, "r", encoding="utf-8") as handle:
+                output = handle.read()
+            self.assertIn("<h3>Fast</h3>", output)
+            self.assertIn("<h3>Simple</h3>", output)
+            self.assertIn("<h3>Reliable</h3>", output)
+
+
+class VisualBackendTests(unittest.TestCase):
+    """Tests for the visual backend's model-consumption logic.
+
+    These test the pure helper functions and model-reading paths without
+    requiring a display server.  The actual tkinter window creation is
+    tested only when a display is available (the test runner on a normal
+    desktop machine).
+    """
+
+    def test_children_of_returns_children_in_declaration_order(self):
+        statements = parse(lex(
+            "make page\nmake header\nmake logo\n"
+            "header inside page\nlogo inside header\n"
+        ))
+        model = analyze(statements)
+        from mylang.backend_visual import _children_of
+        self.assertEqual(_children_of(model, "page"), ["header"])
+        self.assertEqual(_children_of(model, "header"), ["logo"])
+        self.assertEqual(_children_of(model, "logo"), [])
+
+    def test_children_of_root_has_no_children(self):
+        statements = parse(lex('make page\npage title "Hi"\n'))
+        model = analyze(statements)
+        from mylang.backend_visual import _children_of
+        self.assertEqual(_children_of(model, "page"), [])
+
+    def test_kind_of_returns_entity_kind(self):
+        statements = parse(lex("make hero banner\nmake page\nhero inside page\n"))
+        model = analyze(statements)
+        from mylang.backend_visual import _kind_of
+        self.assertEqual(_kind_of(model, "hero"), "banner")
+        self.assertEqual(_kind_of(model, "page"), "page")
+
+    def test_bg_returns_explicit_color_for_page(self):
+        from mylang.backend_visual import _bg, KIND_COLORS
+        from mylang.semantic import Model, Entity
+        model = Model()
+        model.entities["p"] = Entity("p", "page")
+        model.relationships = {}
+        self.assertEqual(_bg(model, "p"), KIND_COLORS["page"])
+
+    def test_bg_inherits_from_parent_when_kind_has_no_color(self):
+        from mylang.backend_visual import _bg
+        from mylang.semantic import Model, Entity
+        model = Model()
+        model.entities["p"] = Entity("p", "page")
+        model.entities["l"] = Entity("l", "logo")
+        model.relationships = {"l": "p"}
+        self.assertEqual(_bg(model, "l"), _bg(model, "p"))
+
+    def test_fg_returns_text_color_for_known_kind(self):
+        from mylang.backend_visual import _fg, KIND_TEXT_COLORS
+        from mylang.semantic import Model, Entity
+        model = Model()
+        model.entities["h"] = Entity("h", "header")
+        self.assertEqual(_fg(model, "h"), KIND_TEXT_COLORS["header"])
+
+    def test_is_leaf_true_for_entity_with_no_children(self):
+        from mylang.backend_visual import _is_leaf
+        from mylang.semantic import Model, Entity
+        model = Model()
+        model.entities["x"] = Entity("x", "card")
+        model.relationships = {}
+        self.assertTrue(_is_leaf(model, "x"))
+
+    def test_is_leaf_false_for_entity_with_children(self):
+        from mylang.backend_visual import _is_leaf
+        from mylang.semantic import Model, Entity
+        model = Model()
+        model.entities["p"] = Entity("p", "page")
+        model.entities["c"] = Entity("c", "header")
+        model.relationships = {"c": "p"}
+        self.assertFalse(_is_leaf(model, "p"))
+
+    def test_has_text_true_when_text_property_exists(self):
+        from mylang.backend_visual import _has_text
+        from mylang.semantic import Model, Entity
+        model = Model()
+        model.entities["h"] = Entity("h", "banner")
+        model.properties[("h", "text")] = "Welcome"
+        self.assertTrue(_has_text(model, "h"))
+
+    def test_has_text_false_when_no_text_property(self):
+        from mylang.backend_visual import _has_text
+        from mylang.semantic import Model, Entity
+        model = Model()
+        model.entities["h"] = Entity("h", "banner")
+        self.assertFalse(_has_text(model, "h"))
+
+    def test_visual_render_returns_a_tk_root(self):
+        import tkinter as tk
+        from mylang.backend_visual import render
+        statements = parse(lex(
+            'make page\npage title "Test"\n'
+            'make header\nheader inside page\n'
+        ))
+        model = analyze(statements)
+        root = render(model)
+        self.assertIsInstance(root, tk.Tk)
+        self.assertEqual(root.title(), "Test")
+        root.destroy()
+
+    def test_visual_render_uses_title_override(self):
+        import tkinter as tk
+        from mylang.backend_visual import render
+        statements = parse(lex('make page\npage title "Original"\n'))
+        model = analyze(statements)
+        root = render(model, title_override="Override Title")
+        self.assertEqual(root.title(), "Override Title")
+        root.destroy()
+
+    def test_visual_render_no_page_raises_error(self):
+        from mylang.backend_visual import render, VisualError
+        from mylang.semantic import Model, Entity
+        model = Model()
+        model.entities["h"] = Entity("h", "header")
+        with self.assertRaises(VisualError):
+            render(model)
+
+    def test_visual_render_multiple_pages_raises_error(self):
+        from mylang.backend_visual import render, VisualError
+        from mylang.semantic import Model, Entity
+        model = Model()
+        model.entities["p1"] = Entity("p1", "page")
+        model.entities["p2"] = Entity("p2", "page")
+        with self.assertRaises(VisualError):
+            render(model)
+
+    def test_hero_int_program_builds_model_for_visual(self):
+        source_path = os.path.join(
+            os.path.dirname(__file__), "..", "examples", "homepage-hero", "hero.int"
+        )
+        with open(source_path, "r", encoding="utf-8") as f:
+            source = f.read()
+        statements = parse(lex(source))
+        model = analyze(statements)
+        self.assertEqual(len(model.entities), 6)
+        self.assertIn("page", model.entities)
+        self.assertIn("header", model.entities)
+        self.assertIn("logo", model.entities)
+        self.assertIn("navigation", model.entities)
+        self.assertIn("main", model.entities)
+        self.assertIn("hero", model.entities)
+
+    def test_hero_int_visual_render_creates_window(self):
+        import tkinter as tk
+        from mylang.backend_visual import render
+        source_path = os.path.join(
+            os.path.dirname(__file__), "..", "examples", "homepage-hero", "hero.int"
+        )
+        with open(source_path, "r", encoding="utf-8") as f:
+            source = f.read()
+        statements = parse(lex(source))
+        model = analyze(statements)
+        root = render(model)
+        self.assertIsInstance(root, tk.Tk)
+        self.assertEqual(root.title(), "Company Name")
+        root.destroy()
+
+    def test_visual_render_default_title_when_no_title_property(self):
+        import tkinter as tk
+        from mylang.backend_visual import render
+        statements = parse(lex("make page\n"))
+        model = analyze(statements)
+        root = render(model)
+        self.assertEqual(root.title(), "MyLanguage")
+        root.destroy()
+
+    def test_cards_program_builds_model_for_visual(self):
+        source_path = os.path.join(
+            os.path.dirname(__file__), "..", "examples", "homepage-cards", "cards.int"
+        )
+        with open(source_path, "r", encoding="utf-8") as f:
+            source = f.read()
+        statements = parse(lex(source))
+        model = analyze(statements)
+        self.assertEqual(len(model.entities), 11)
+        self.assertEqual(model.entities["card-1"].kind, "card")
+        self.assertEqual(model.entities["card-2"].kind, "card")
+        self.assertEqual(model.entities["card-3"].kind, "card")
+        self.assertEqual(model.entities["card-group"].kind, "card-group")
+        self.assertEqual(model.entities["footer"].kind, "footer")
+        self.assertEqual(model.relationships["card-1"], "card-group")
+        self.assertEqual(model.relationships["card-2"], "card-group")
+        self.assertEqual(model.relationships["card-3"], "card-group")
+        self.assertEqual(model.relationships["footer"], "page")
+
+    def test_cards_visual_render_creates_window(self):
+        import tkinter as tk
+        from mylang.backend_visual import render
+        source_path = os.path.join(
+            os.path.dirname(__file__), "..", "examples", "homepage-cards", "cards.int"
+        )
+        with open(source_path, "r", encoding="utf-8") as f:
+            source = f.read()
+        statements = parse(lex(source))
+        model = analyze(statements)
+        root = render(model)
+        self.assertIsInstance(root, tk.Tk)
+        self.assertEqual(root.title(), "Company Name")
+        root.destroy()
+
+    def test_layout_of_returns_stack_for_unknown_kind(self):
+        from mylang.backend_visual import _layout_of
+        from mylang.semantic import Model, Entity
+        model = Model()
+        model.entities["x"] = Entity("x", "not-a-real-kind")
+        self.assertEqual(_layout_of(model, "x"), "stack")
+
+    def test_layout_of_card_group_reads_dictionary_row(self):
+        from mylang.backend_visual import _layout_of
+        from mylang.semantic import Model, Entity
+        model = Model()
+        model.entities["g"] = Entity("g", "card-group")
+        self.assertEqual(_layout_of(model, "g"), "row")
+
+    def test_position_of_returns_flow_for_unknown_kind(self):
+        from mylang.backend_visual import _position_of
+        from mylang.semantic import Model, Entity
+        model = Model()
+        model.entities["x"] = Entity("x", "not-a-real-kind")
+        self.assertEqual(_position_of(model, "x"), "flow")
+
+    def test_position_of_footer_reads_dictionary_bottom(self):
+        from mylang.backend_visual import _position_of
+        from mylang.semantic import Model, Entity
+        model = Model()
+        model.entities["f"] = Entity("f", "footer")
+        self.assertEqual(_position_of(model, "f"), "bottom")
+
+    def test_cards_visual_packs_cards_side_by_side(self):
+        import tkinter as tk
+        from mylang.backend_visual import render
+        source_path = os.path.join(
+            os.path.dirname(__file__), "..", "examples", "homepage-cards", "cards.int"
+        )
+        with open(source_path, "r", encoding="utf-8") as f:
+            source = f.read()
+        model = analyze(parse(lex(source)))
+        root = render(model)
+        cards = self._card_frames(root)
+        self.assertEqual(len(cards), 3)
+        for frame in cards:
+            self.assertEqual(frame.pack_info()["side"], "left")
+        root.destroy()
+
+    def test_cards_visual_pins_footer_to_bottom(self):
+        import tkinter as tk
+        from mylang.backend_visual import render
+        source_path = os.path.join(
+            os.path.dirname(__file__), "..", "examples", "homepage-cards", "cards.int"
+        )
+        with open(source_path, "r", encoding="utf-8") as f:
+            source = f.read()
+        model = analyze(parse(lex(source)))
+        root = render(model)
+        footer = self._bottom_frame(root)
+        self.assertIsNotNone(footer)
+        self.assertEqual(footer.pack_info()["side"], "bottom")
+        labels = [w for w in footer.winfo_children() if isinstance(w, tk.Label)]
+        self.assertEqual(len(labels), 1)
+        self.assertIn("2026", labels[0].cget("text"))
+        root.destroy()
+
+    def _card_frames(self, widget):
+        import tkinter as tk
+        found = []
+        if isinstance(widget, tk.Frame):
+            children = widget.winfo_children()
+            if len(children) == 2 and all(isinstance(c, tk.Label) for c in children):
+                found.append(widget)
+        for child in widget.winfo_children():
+            found.extend(self._card_frames(child))
+        return found
+
+    def _bottom_frame(self, widget):
+        import tkinter as tk
+        if isinstance(widget, tk.Frame):
+            try:
+                if widget.pack_info().get("side") == "bottom":
+                    return widget
+            except tk.TclError:
+                pass
+        for child in widget.winfo_children():
+            result = self._bottom_frame(child)
+            if result is not None:
+                return result
+        return None
+
 
 class NativeBackendTests(unittest.TestCase):
     def test_emit_produces_a_standalone_c_program(self):
@@ -327,6 +795,15 @@ class NativeBackendTests(unittest.TestCase):
         source = emit_c(statements)
         self.assertIn('printf("%s\\n", "go")', source)
         self.assertNotIn("page", source)
+
+    def test_emit_ignores_inside_statements(self):
+        statements = parse(lex(
+            'make page\nmake header\nheader inside page\nsay "go"\n'
+        ))
+        source = emit_c(statements)
+        self.assertIn('printf("%s\\n", "go")', source)
+        self.assertNotIn("inside", source)
+        self.assertNotIn("header", source)
 
     def test_emit_with_no_say_prints_nothing(self):
         statements = parse(lex("make page\n"))

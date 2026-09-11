@@ -1,0 +1,12 @@
+# Describing a real entity with all three value types,
+# then feeding the model into behavior (native).
+# Exercises: make-with-kind, string/int/float properties, say name property.
+
+make alice person
+alice name "Alice"
+alice age 25
+alice height 1.7
+
+say alice name
+say alice age
+say alice height

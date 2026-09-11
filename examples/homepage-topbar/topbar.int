@@ -1,0 +1,18 @@
+# The real homepage task, smallest slice: the top bar.
+# Exercises: page, header, logo, navigation, containment (inside).
+# The dictionary supplies the element for each kind.
+
+make page
+page title "Company Name"
+
+make header
+header inside page
+
+make logo
+logo text "Company Name"
+logo inside header
+
+make navigation
+navigation inside header
+
+say page title

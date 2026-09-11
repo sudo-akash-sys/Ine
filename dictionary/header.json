@@ -1,6 +1,7 @@
 {
   "term": "header",
   "kind": "bar",
+  "element": "header",
   "meaning": "A bar spanning the top edge of its container, holding brand and primary navigation.",
   "defaults": {
     "height": "compact",

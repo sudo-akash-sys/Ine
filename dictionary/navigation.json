@@ -1,6 +1,7 @@
 {
   "term": "navigation",
   "kind": "link-collection",
+  "element": "nav",
   "meaning": "An ordered set of links to destinations in the software.",
   "defaults": {
     "orientation": "horizontal",

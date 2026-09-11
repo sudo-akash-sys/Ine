@@ -1,0 +1,14 @@
+{
+  "term": "container",
+  "kind": "section",
+  "element": "div",
+  "meaning": "A generic region that groups its children on a page.",
+  "defaults": {
+    "fill-mode": "fit children",
+    "orientation": "vertical"
+  },
+  "implementation": {
+    "html": "a div block",
+    "guess": []
+  }
+}

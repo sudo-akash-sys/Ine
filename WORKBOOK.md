@@ -861,3 +861,136 @@ probes, generated source, executables, object files, compiler tests,
 and intermediate artifacts go into the project `.tmp/` directory. Final
 committed outputs stay in `output/`. `.tmp/` is gitignored. (Recorded
 in AGENTS.md.)
+
+## 28. The real homepage: smallest slice (Session 16)
+
+The project's one real task — the homepage — drove the next step. The
+user chose the smallest slice first instead of building the whole thing:
+
+- **Entities:** page, header, logo, navigation.
+- **One new concept:** Relationship via `name inside name` — CONTAINMENT
+  only (a tree: one parent per entity, no self-parenting, no cycles).
+  Recorded EXPERIMENTAL, not a decision about the full Relationship
+  concept (beside, contains, opens stay future).
+- **First real dictionary use:** `dictionary/*.json` now drives the HTML
+  backend (a machine-readable `element` field per kind: page→div,
+  header→header, logo→div, navigation→nav). Unknown kinds are rejected
+  at render time.
+- **Verification:** `examples/homepage-topbar/topbar.int` renders a real
+  nested page (golden `tests/expected/topbar.html`, byte-identical
+  checked) AND compiles through C+Zig to a native exe that prints
+  `Company Name`. 72 tests pass; `hello.int` golden unchanged.
+- **What it answered in practice:** the §26 describing/doing composition
+  is alive — a describing program (page/inside) and a doing statement
+  (`say page title`) coexist in ONE file and both work. The homepage's
+  hero, cards, and footer are deliberately NOT built yet.
+
+### §28a. The hero slice (Session 16b)
+
+The homepage's next smallest slice: the hero region. `inside` now nests
+three levels deep (`page > main > hero`). Two more dictionary kinds are
+active (banner, container). **No new language concept was needed** —
+this slice only required naming the kinds explicitly (`make main
+container`, `make hero banner`), which is what make-with-kind already
+existed for. Verified by golden output (`tests/expected/hero.html`) and
+the native exe. The three cards remain the first slice that will
+genuinely need **Multiplicity**.
+
+### §29. The visual renderer experiment (Session 17)
+
+A minimal direct visual renderer was built as a backend/adapter
+experiment. It consumes the SAME semantic Model that the HTML backend
+consumes and opens a real OS window (tkinter). **No new language
+concepts were added.** The renderer is an implementation/backend
+experiment, not a semantic rule.
+
+**What it proved:**
+- The Model-to-target adapter pattern works for a third target (HTML,
+  native/C, visual/tkinter) without changing the Model or any existing
+  backend.
+- The dictionary kind → visual mapping is a backend concern, not a
+  language concern. Each kind gets a color and layout rule in the
+  renderer; the language does not know about colors.
+- The containment tree (`inside` relationships) walks the same way for
+  all three backends: find the page, walk children recursively. This is
+  the adapter pattern the workbook proposed in §11.
+- `python mylang.py examples/homepage-hero/hero.int --visual` opens a
+  real window with title "Company Name", a dark header bar with logo
+  and navigation, a gray container, and a blue banner reading "Welcome
+  to Our Site".
+
+**What it did NOT change:**
+- No new language syntax or semantics.
+- No dictionary changes.
+- No parser/lexer changes.
+- HTML and native backends are byte-for-byte identical (golden tests
+  still pass).
+
+**Recorded as a permanent architectural observation:** the same `.int`
+program now drives three independent targets from the same Model. The
+language is target-agnostic; the backends are adapters. This is the
+workbook's §10 interoperability principle in its first real form.
+
+### §30. The three-cards slice (Session 18)
+
+The predicted first pain arrived. The homepage's next smallest slice —
+three feature cards inside the main container — was written using EXISTING
+concepts only: hand-written `make card-1 card` / `card-1 inside card-group`
+per member. Four real pain points were documented (full details in
+`.tmp/cards-slice-findings.md`), each with measured evidence:
+
+1. **No side-by-side layout.** The `card-group` dictionary entry already
+   declares `layout: row`, but neither backend applies it. Measured: all
+   three cards render 784px wide, stacked at y=4/86/168. The workbook
+   hinted at this ("flexbox/grid concepts"); the visual renderer made it
+   concrete and measurable.
+2. **Card titles silently dropped.** `card-1 title "Fast"` lives in the
+   model but no backend renders it. Both backends only turn `text` into
+   visible content (and `title` only at the page root). The dictionary
+   says cards contain `["title", "description"]`; no engine reads that.
+3. **Repetition.** Three cards cost 9 near-identical statements. This
+   confirms the workbook's standing prediction (Sessions 16/16b): the
+   three cards are the first real thing needing Multiplicity.
+4. **Footer not pinned.** `footer.json` says "bottom of page, always";
+   in 600px of space it renders at y=454.
+
+**Decided nothing.** Worksheets §22 and the AGENTS.md authority rule: the
+options are presented, the user picks. The candidates (in increasing
+scope): (1) backends honor dictionary `layout: row`; (2) backends render
+card titles as headings; (3) implement Multiplicity as the next language
+feature.
+
+### §31. Making the cards work — backend/dictionary only (Session 19)
+
+The user directed: make the language functional as fast as possible,
+"even if it is not exactly complete," and deferred the three §30 options
+to the agent. The agent implemented options 1 + 2 — the fastest path to a
+working homepage with zero language risk. Multiplicity stayed PROPOSED.
+
+**What was done:**
+- `dictionary/card-group.json` gained top-level `"layout": "row"`;
+  `dictionary/footer.json` gained top-level `"position": "bottom"`.
+  These are machine-readable renderer hints, the same class of backend
+  detail as the existing `element` field — configuration for adapters,
+  NOT language semantics (AGENTS.md guard respected).
+- The HTML backend emits inline flex for a row-layout node and
+  `flex:1` for its children; a child's `title` renders as `<h3>`. The
+  visual backend packs row children side-by-side, pins `position:
+  "bottom"` entities to the bottom edge, and renders `title` on a card
+  as a bold heading.
+- Measured in the visual window: cards moved from stacked full-width
+  (y=4/86/168) to side-by-side in one row (x=6/289/547); footer moved
+  from y=454 to y=561 of 600. Card titles visible in BOTH backends.
+
+**Architectural observation:** the dictionary now holds two layers that
+must not be conflated — semantic vocabulary (how the language describes
+things: `defaults`. `guess`, the human `meaning` prose) and renderer
+hints engineers and backends act on (`element`, `layout`, `position`).
+Backends read the hints; the semantic layer stays unread by any target
+so far. This is the §10 adapter pattern again, now with configuration.
+
+**Still waiting on a language feature:** repetition. "Three cards" still
+costs 9 statements; that remains the concrete, measured case for the
+PROPOSED Multiplicity concept (§16/§30). The homepage WORKS today in all
+three targets; nothing in the working slice requires the user to pick
+the next feature yet.

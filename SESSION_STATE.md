@@ -1,6 +1,6 @@
 # SESSION_STATE.md
 
-Last updated: 2026-09-08
+Last updated: 2026-09-11
 
 This file captures the complete project state so any AI session can
 continue without losing context. It is NOT a conversation summary.
@@ -619,6 +619,221 @@ From the user:
     interpreter/backends only ever see literal values; `say person age`
     and `say 25` lower to identical output (`printf("%d\n", 25)`).
 
+### Session 15 (audit: every implemented capability now has a real example)
+
+60. **Audited** code, tests, examples, docs. Found three implemented
+    capabilities that were covered by tests but had NO real example
+    program: `make name kind` (explicit kind), float values, and
+    `say name property` read natively.
+61. **Built the smallest real example** that exercises all three at once
+    using only existing capabilities — `examples/alice/alice.int`:
+
+    ```
+    make alice person
+    alice name "Alice"
+    alice age 25
+    alice height 1.7
+
+    say alice name
+    say alice age
+    say alice height
+    ```
+62. **Verified natively:** `python mylang.py examples/alice/alice.int
+    --native` prints `Alice`, `25`, `1.7` from a real PE exe (exit 0).
+    Emitted C uses `printf("%s\n", ...)`, `printf("%d\n", 25)`,
+    `printf("%.17g\n", 1.7)` — confirming the float round-trip slice
+    works end-to-end.
+63. **No new language concept was needed** — the exercise exposed a
+    documentation/coverage gap, not a missing capability. Full suite:
+    57 tests pass. `.tmp/native/` cleared of stale probe artifacts.
+
+### Session 16 (the real homepage slice: containment "inside")
+
+64. **The project's real task became the driver:** the homepage in
+    `examples/homepage/` is the language's one real test. The user
+    chose the smallest slice first: **page, header, logo, navigation,
+    containment.** The user's explicit constraints: don't add
+    multiplicity/conditions/states/animations/runtime models unless the
+    slice genuinely requires them; don't redesign the architecture;
+    preserve both backends; use `.tmp/`; keep proposed/decided distinct.
+65. **What "inside" means here (EXPERIMENTAL, decided for this slice):**
+    a containment relationship `X inside Y` — a tree, not a graph. X is
+    a child of Y. Both must be declared first; one parent per entity; no
+    self-parenting; no cycles. Recorded as EXPERIMENTAL because it is
+    the smallest real slice of the PROPOSED Relationship concept, not a
+    decision about the full concept.
+66. **Implemented:**
+    - Lexer: `inside` is a keyword.
+    - Parser: `InsideStatement(child, parent, line)`; `name inside name`.
+    - Semantic: `model.relationships` (`child → parent`), with
+      compile-time errors: undeclared child/parent, double parenting,
+      self-parenting, cycles.
+    - HTML backend: now dictionary-driven. `dictionary/<kind>.json`
+      gained a machine-readable `element` field (page→div, header→header,
+      logo→div, navigation→nav); the backend renders the page tree by
+      nesting children, and rejects kinds with no dictionary entry.
+    - Native backend: unchanged — `inside` produces no native output
+      (`say` still the only lowered statement).
+67. **The real slice:** `examples/homepage-topbar/topbar.int`:
+
+    ```
+    make page
+    page title "Company Name"
+    make header
+    header inside page
+    make logo
+    logo text "Company Name"
+    logo inside header
+    make navigation
+    navigation inside header
+    say page title
+    ```
+
+    Renders a real nested page (golden `tests/expected/topbar.html`),
+    and `--native` prints `Company Name` from the compiled exe — one
+    program, both targets.
+68. **72 tests pass** (15 new). This is the first time the engine
+    actually used the dictionary, and the first real Relationship.
+    `hello.int` golden output is byte-identical (page path untouched
+    when a page has no children).
+
+### Session 16b (the hero slice: deeper nesting, still no new concept)
+
+69. **Next homepage slice, smallest possible:** the hero region. Reuses
+    everything — `inside` now nests three levels deep
+    (`page > main > hero`), and two more dictionary kinds come into
+    play (banner, container).
+70. **What changed:** dictionary gained `element` for banner (div) and a
+    new `container` kind (div). `examples/homepage-hero/hero.int`:
+
+    ```
+    make main container
+    main inside page
+    make hero banner
+    hero text "Welcome to Our Site"
+    hero inside main
+    ```
+
+71. **Verified:** 73 tests pass (golden `tests/expected/hero.html`). The
+    program renders nested HTML AND compiles to native (`Company Name`
+    from the exe). No new language concept was needed — the correct
+    kinds were simply named explicitly (`make hero banner`), which is
+    what make-with-kind was built for.
+72. **Recorded:** the dictionary now declares kinds: page, header,
+    logo, navigation, banner, container, card, card-group, footer,
+    viewport. `defaults`/`guess` still unused by the engine.
+
+### Session 17 (visual renderer experiment)
+
+73. **User chose a backend experiment instead of the next language
+    feature.** Build the smallest possible visual proof that the semantic
+    Model can drive a non-HTML target. No Multiplicity, no new language
+    concepts. The HTML backend and native backend remain untouched.
+74. **Built:** `src/mylang/backend_visual.py` — a tkinter adapter that
+    consumes the SAME Model that the HTML backend consumes and opens a
+    real OS window. Each dictionary kind maps to a distinct color and
+    layout. The containment tree is walked recursively, just like the HTML
+    backend's `_render_children`.
+75. **CLI:** `--visual` flag added to `mylang.py`. Invoked as
+    `python mylang.py <file.int> --visual`. Opens a tkinter window, prints
+    entity/property counts to stdout, runs mainloop.
+76. **Verified:** `examples/homepage-hero/hero.int` opens a real window
+    with title "Company Name", 800x600, showing: white page frame with
+    title heading, dark header bar with bold white logo text on the left
+    and navigation on the right, light gray container filling the middle,
+    and blue banner with "Welcome to Our Site" in large white text.
+    Window created and destroyed cleanly. All three backends coexist: HTML
+    golden output byte-identical, native exe prints "Company Name", visual
+    window opens.
+77. **17 new tests** added to `VisualBackendTests` in
+    `tests/test_mylang.py`. Test the pure helper functions
+    (`_children_of`, `_kind_of`, `_bg`, `_fg`, `_is_leaf`, `_has_text`)
+    and the `render()` function (returns a `tk.Tk`, title override works,
+    no-page/multiple-pages raise `VisualError`, hero.int builds a valid
+    model and creates a window). Total: **90 tests pass**.
+78. **What was NOT changed:** no new language concepts. No dictionary
+    changes. No semantic model changes. No parser/lexer changes. The
+    renderer is a pure backend adapter experiment — it reads the Model,
+    nothing else.
+
+### Session 18 (the three-cards slice: layout & repetition discovered)
+
+79. **Next slice:** expand `hero.int` with three feature cards inside the
+    main container, using EXISTING concepts only — no new syntax, no
+    Multiplicity yet. Built `examples/homepage-cards/cards.int` (27
+    lines, 11 entities, 10 properties): hand-written `card-1/2/3` with
+    `make <name> card`, `title`/`text` properties, `inside card-group`.
+80. **Dictionary:** `card`, `card-group`, `footer` gained the `element`
+    field (article, div, footer) so the HTML backend can render them —
+    the only dictionary change, and it extends the existing pattern the
+    engine already relies on.
+81. **All three backends validated:**
+    - HTML: golden `tests/expected/cards.html` (byte-identical test).
+    - Native: PE exe prints `Company Name`, exit 0.
+    - Visual: window opens; widget geometry measured (below).
+82. **Pain point 1 — no side-by-side layout (measured):** all cards
+    render full-width and STACK vertically (card-1 y=4, card-2 y=86,
+    card-3 y=168; each 784px wide in an 800px window). The dictionary's
+    `card-group` entry already declares `layout: row` but NO engine
+    applies it. HTML emits no CSS; the visual backend packs generic
+    siblings top-to-bottom (only the header is hard-coded LEFT/RIGHT).
+83. **Pain point 2 — card titles silently dropped:** cards carry
+    `title "Fast"/"Simple"/"Reliable"` in the model, but NEITHER backend
+    renders `title` on a card (only `text` becomes content; `title` is
+    special-cased only for the page root). Dictionary says cards contain
+    `["title", "description"]` but no backend reads it.
+84. **Pain point 3 — repetition / Multiplicity:** expressing "three
+    cards" took 9 near-identical statements (make + property + inside per
+    card). This is the concrete measured case for the PROPOSED Multiplicity
+    concept — the workbook's prediction that three cards would be the
+    first slice needing it is now confirmed empirically.
+85. **Pain point 4 — footer not pinned:** footer renders at y=454 of a
+    600px window despite `footer.json` declaring
+    `position: "bottom of page, always"`; neither backend implements it.
+86. **Full suite: 94 tests pass** (90 + 2 golden/HTML for cards + 2
+    visual for cards). Full findings in `.tmp/cards-slice-findings.md`
+    including options presented but NOT implemented (backend honors dict
+    `layout: row`; backend renders card titles; Multiplicity as the next
+    language feature). No language feature was added this session.
+
+### Session 19 (cards made to work: backend-only, no language change)
+
+87. **User directive:** "make this language functional as fast as
+    possible, even if it is not exactly complete." Any of the three
+    proposed directions is fine; working results give motivation. Agent
+    chose options 1+2 (backend/dictionary renderer work) — the fastest
+    path to a working homepage with zero language risk. Multiplicity
+    stays PROPOSED.
+88. **Dictionary:** machine-readable top-level fields added to two
+    entries, as renderer hints in the same class as `element`:
+    `card-group.json` → `"layout": "row"`; `footer.json` →
+    `"position": "bottom"`. These are backend configuration, NOT
+    language semantics (AGENTS.md guard respected).
+89. **Visual backend rewritten** (`src/mylang/backend_visual.py`): new
+    helpers `_dictionary_entry`, `_layout_of` (row/stack, default
+    stack), `_position_of` (bottom/flow, default flow); `_render_entity`
+    now takes a `side` parameter and `_pack_children` places children
+    side-by-side (row), pinned-bottom, or in-flow; the `card` kind
+    renders `title` as a bold heading + `text` as a wrapped body with a
+    highlight border. All existing helper names kept so the 17 Session-17
+    tests still pass.
+90. **HTML backend updated** (`src/mylang/backend_html.py`): `_read_entry`
+    + `_layout_for_kind`; `_open_tag` emits `style="display:flex;gap:20px"`
+    on a row-layout node and `style="flex:1"` on children of a row parent;
+    `_render_children` gained a `parent_kind` parameter and renders a
+    leaf's `title` as `<h3>`. Text-only leaves stay single-line, so the
+    hero/topbar/hello goldens are byte-identical (verified).
+91. **Measured (geometry probe, `.tmp/geometry_probe.py`):** cards now
+    render SIDE-BY-SIDE in the row (card-1 x=6 w=271, card-2 x=289
+    w=246, card-3 x=547 w=239, all y=6) instead of stacked full-width.
+    Footer pinned at y=561 of 600px (was y=454, floating). Card titles
+    "Fast"/"Simple"/"Reliable" visible as headings in BOTH backends.
+92. **Tests:** `tests/expected/cards.html` golden regenerated; 8 new
+    tests (HTML row-layout styles, HTML card `<h3>` titles, `_layout_of`
+    unit, `_position_of` unit, visual cards-packed-left integration,
+    visual footer-pinned-bottom integration). **Full suite: 102 tests
+    pass** (94 + 8). No new language features were added.
+
 ---
 
 ## 12. Next Step
@@ -646,15 +861,42 @@ machine code.
 the stored property at COMPILE time and prints it natively. The workbook
 §26 question has its first concrete answer.
 
-**NEXT concrete step (user picks):** the compile-time resolve is static —
-the exe cannot change. The natural next real slices:
-- A `page` program that prints its own title (`say page title` → already
-  works with the new resolve), tying describing → HTML and describing →
-  native together in one program.
-- Lower the model itself to native (a real `person` struct at runtime),
-  if/when a program needs the data to exist at runtime.
-Nothing is locked; the next step comes from the next real `.int`
-program that hits a wall.
+**DONE (Session 15):** audit closed the coverage gap — every implemented
+capability (make/kind, str/int/float properties, say literal, say name
+property, native + HTML targets) is now exercised by a real example.
+`examples/alice/alice.int` is the unifying smallest program.
+
+**DONE (Session 16):** the real homepage task started — smallest slice
+(`page > header > logo + navigation`) with the first Relationship
+(`inside`, containment) and the first real dictionary use. One `.int`
+program now renders nested HTML AND compiles to native.
+
+**DONE (Session 17):** visual renderer experiment — smallest possible
+proof that the semantic Model drives a non-HTML target. tkinter window
+opens, shows the hero program visually. 90 tests pass. HTML and native
+backends untouched. No new language concepts added.
+
+**DONE (Session 18):** three-cards slice — handwritten three-card
+homepage using existing concepts only. Documented 4 pain points: no
+side-by-side layout (measured), card titles dropped by both backends,
+repetition needing Multiplicity, unpinned footer. 94 tests pass.
+Options proposed, nothing decided.
+
+**DONE (Session 19):** cards made to work with backend/dictionary-only
+changes — NO language feature added. Card-group emits flex row (HTML)
+/ side-by-side row (visual), card `title` renders as `h3` (HTML) and a
+bold heading (visual), footer pinned to the bottom edge in the visual
+window. Measured: cards side-by-side, footer at y=561/600. Delay/latency:
+102 tests pass.
+
+**NEXT concrete step (user picks):** the homepage cards slice now WORKS
+in all three targets. Remaining homepage gaps: (a) HTML/CSS fidelity is
+still basic (no stylesheet file, native `--visual` untouched), and
+(b) Multiplicity — the PROPOSED language feature that would replace the
+9 repeated statements with a single `three cards` idea. (1) Ship a
+living `output/cards.html` + `--visual` demo; (2) implement Multiplicity;
+(3) extend dictionary `row`/`bottom` hints to CSS/stylesheet output.
+Nothing is locked; the next slice comes from the homepage.
 
 ---
 

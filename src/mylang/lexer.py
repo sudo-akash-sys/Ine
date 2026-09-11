@@ -21,7 +21,7 @@ class Token:
     column: int
 
 
-KEYWORDS = {"make", "say"}
+KEYWORDS = {"make", "say", "inside"}
 
 
 class LexError(Exception):
