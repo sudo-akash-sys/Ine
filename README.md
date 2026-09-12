@@ -21,6 +21,14 @@ footer position "bottom"
 
 ---
 
+> **Early stage / experimental.** Intent Expression is a real, working
+> prototype — you can build and run the examples today — but the language
+> is still evolving and behavior may change. [LANGUAGE.md](LANGUAGE.md)
+> states exactly what is implemented; [WORKBOOK.md](WORKBOOK.md) is the
+> design notebook of what is planned and what is still just an idea.
+
+---
+
 ## What Is Intent Expression?
 
 Intent Expression (`.ine`) is a tiny language that lets you describe software by *what it should be*, not *how to build it*. You express intent — the meaning of what you want — and multiple backends translate that intent into working implementations.
@@ -37,7 +45,9 @@ Traditional programming forces you to write implementation code directly. Intent
 | `position: fixed; bottom: 0` | `footer stay at bottom` |
 | `border-radius: 8px; box-shadow: 0 4px 12px` | `card with subtle shadow` |
 
-The language is small enough to learn in an afternoon, yet powerful enough to describe real interfaces.
+The language is kept deliberately small — a handful of statements — so a
+first program takes minutes, and the dictionary grows the vocabulary
+without changing the core.
 
 ---
 
@@ -87,7 +97,7 @@ Intent Expression provides a semantic layer between you and the implementation. 
 2. **Target-Agnostic** — same source maps to HTML, native code, visual rendering
 3. **Extensible Dictionary** — concepts live in a dictionary, not the language core
 4. **Gradual Complexity** — start simple, add sophistication only when needed
-5. **AI-Native** — designed for AI agents to generate and understand
+5. **AI-friendly** — structured enough for AI agents to generate reliably; see the working examples in [examples/](examples/) and the test suite in [tests/](tests/)
 
 ---
 
@@ -117,18 +127,33 @@ page title "Hello, Intent Expression"
 
 ### Run It
 
-No installation needed — just run from the repo root:
+No installation needed — from the repo root, generate the HTML target:
 
 ```bash
-# Generate HTML
 python mylang.py hello.ine -o hello.html
-
-# Compile to native executable
-python mylang.py hello.ine --native
-
-# Visual preview
-python mylang.py hello.ine --visual
 ```
+
+The terminal prints a short summary:
+
+```
+read:       hello.ine
+entities:   1
+properties: 1
+wrote:      hello.html
+```
+
+Open `hello.html` — the browser tab says "Hello, Intent Expression", with
+the same text as the page heading.
+
+The other two targets work the same way from the same file:
+
+```bash
+python mylang.py hello.ine --native   # compiles to a runnable executable
+python mylang.py hello.ine --visual   # opens a real window with the layout
+```
+
+`--native` needs a C compiler (Zig recommended); `--visual` needs a desktop
+environment.
 
 ---
 
@@ -256,27 +281,34 @@ Each backend is an **adapter** that translates the same semantic model into its 
 
 ---
 
-## Status
+## What Works Today
 
-Currently implemented:
+Everything below is implemented and covered by the test suite
+(`python -m unittest discover -s tests`, 102 passing):
 
-- Entity declaration and properties
+- Entity declaration and properties (`make`, `<name> <prop> <value>`)
 - Containment relationships (`inside`)
 - String and numeric values
-- Property reference resolution
-- HTML backend
-- Native C backend (via Zig / clang / gcc)
-- Visual tkinter backend
-- Dictionary-driven element mapping
-- Row layout hints & bottom position hints
+- Property references, resolved at compile time (`say page title`)
+- HTML backend (writes a `.html` file)
+- Native backend (emits C, compiles to a runnable executable via Zig / clang / gcc)
+- Visual backend (opens a real window with tkinter)
+- Dictionary-driven element mapping, row layout, and bottom-position hints
+- Real working programs in [examples/](examples/)
 
-On the roadmap:
+## Not Implemented Yet
 
-- Multiplicity (groups of similar entities)
-- More relationship types (`beside`, `contains`)
-- State and conditions
-- Events and actions
-- Additional backends (React, Flutter)
+Designed and on the roadmap, but does not work today:
+
+- Multiplicity ("three cards") — three cards still cost nine handwritten statements
+- More relationship types (`beside`, `contains`, `opens`)
+- State, conditions, events, and actions
+- Booleans, lists, expressions, runtime variables (today: strings and numbers only)
+- Additional backends (React, Flutter) and a separate CSS stylesheet
+- Engine-applied templates (`defaults` / `guess` are declared in the dictionary but not yet read)
+- Image/multimodal input and AI interpretation layers
+
+See [WORKBOOK.md](WORKBOOK.md) §15 for the roadmap and [LANGUAGE.md](LANGUAGE.md) §7 for known limits.
 
 ---
 
@@ -284,10 +316,10 @@ On the roadmap:
 
 | Resource | Description |
 |----------|-------------|
-| [LANGUAGE.md](LANGUAGE.md) | Complete language specification |
-| [WORKBOOK.md](WORKBOOK.md) | Design philosophy and workbook |
-| [examples/](examples/) | Example programs for each feature |
-| [dictionary/](dictionary/) | Built-in concept definitions |
+| [LANGUAGE.md](LANGUAGE.md) | What is actually implemented (exact spec, grows with the code) |
+| [WORKBOOK.md](WORKBOOK.md) | Design notebook: philosophy, proposals, open questions, roadmap |
+| [examples/](examples/) | Small working programs for each feature |
+| [dictionary/](dictionary/) | Concept vocabulary (kind → element, layout, meaning) |
 
 ---
 

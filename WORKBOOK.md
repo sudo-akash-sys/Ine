@@ -3,6 +3,11 @@
 A working specification for a simple, AI-native, behavior-oriented
 software language
 
+> **Living design document.** This workbook is the project's own
+> thinking: it mixes DECIDED decisions, PROPOSED designs, and open
+> questions. It is not a finished specification. For what is actually
+> implemented and working today, read [LANGUAGE.md](LANGUAGE.md).
+
 ## 0. Project Identity
 
 Working name: Intent Expression.

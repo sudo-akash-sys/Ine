@@ -1,4 +1,4 @@
-# MyLanguage — Language Specification
+# Intent Expression — Language Specification
 
 Status: everything in this file describes what is ACTUALLY IMPLEMENTED
 in `src/mylang/` so far. It grows as the language grows. Nothing here is
@@ -7,7 +7,7 @@ PROPOSED / EXPERIMENTAL.
 
 ## 1. Files
 
-A MyLanguage program is a text file. Extension: `.ine` (ine = intent expression).
+An Intent Expression program is a text file. Extension: `.ine` (ine = intent expression).
 DECIDED.
 
 ## 2. Pipeline (as implemented)
