@@ -95,10 +95,16 @@ Intent Expression provides a semantic layer between you and the implementation. 
 
 ### Installation
 
+Open a terminal in the folder where you want the project to live
+(for example, `cd ~/Documents` on macOS/Linux, or open the desired folder
+in PowerShell on Windows), then run:
+
 ```bash
 git clone https://github.com/justforfundg350-boop/intent-language.git
 cd intent-language
 ```
+
+This creates an `intent-language/` folder and puts the project inside it.
 
 ### Your First Program
 
