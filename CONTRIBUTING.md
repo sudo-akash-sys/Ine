@@ -9,14 +9,13 @@ git clone https://github.com/justforfundg350-boop/intent-language.git
 cd intent-language
 python -m venv .venv
 # Windows: .venv\Scripts\activate  |  macOS/Linux: source .venv/bin/activate
-pip install -e .
 python mylang.py examples/hello/hello.ine
 ```
 
 Run tests before opening a PR:
 
 ```bash
-pytest -q
+python -m unittest discover -s tests
 python mylang.py examples/hello/hello.ine -o .tmp/preview.html
 ```
 
@@ -53,7 +52,7 @@ We add language concepts only when a real `.ine` program demonstrates the need (
 ### 4. Pull request checklist
 
 - [ ] One focused change per PR
-- [ ] Tests pass (`pytest`)
+- [ ] Tests pass (`python -m unittest discover -s tests`)
 - [ ] New behavior has a test or a golden file in `tests/expected/`
 - [ ] If you touched a backend, the other backends still render the same model
 - [ ] Generated artifacts stay in `.tmp/` (never commit `.c`, `.exe`, or `.tmp/` contents)
@@ -65,7 +64,7 @@ We add language concepts only when a real `.ine` program demonstrates the need (
 src/mylang/        # lexer -> parser -> semantic -> backends -> CLI
 dictionary/        # kind -> { element, layout, position, defaults, meaning }
 examples/          # small real .ine programs (hello, homepage slices, native)
-tests/             # pytest suite + golden HTML expectations
+tests/             # unittest suite + golden HTML expectations
 output/            # committed HTML outputs (the durable artifacts)
 .tmp/              # gitignored scratch space for generated files
 LANGUAGE.md        # what is ACTUALLY IMPLEMENTED (grows with code)

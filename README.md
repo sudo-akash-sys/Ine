@@ -8,8 +8,9 @@
 make page
 page title "Company Name"
 make header
+make footer
 header inside page
-footer position bottom
+footer position "bottom"
 ```
 
 **One source. Three targets.** HTML. Native machine code. Visual windows.
@@ -97,7 +98,6 @@ Intent Expression provides a semantic layer between you and the implementation. 
 ```bash
 git clone https://github.com/justforfundg350-boop/intent-language.git
 cd intent-language
-pip install -e .
 ```
 
 ### Your First Program
@@ -110,6 +110,8 @@ page title "Hello, Intent Expression"
 ```
 
 ### Run It
+
+No installation needed — just run from the repo root:
 
 ```bash
 # Generate HTML
