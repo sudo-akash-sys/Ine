@@ -7,13 +7,13 @@ PROPOSED / EXPERIMENTAL.
 
 ## 1. Files
 
-A MyLanguage program is a text file. Extension: `.int` (int = intent).
-PROPOSED — the current working choice, not final.
+A MyLanguage program is a text file. Extension: `.ine` (ine = intent expression).
+DECIDED.
 
 ## 2. Pipeline (as implemented)
 
 ```
-.int source
+.ine source
     → lexer       (text → tokens)
     → parser      (tokens → syntax statements)
     → semantic    (meaning: model statements → model; validates meaning)
@@ -21,7 +21,7 @@ PROPOSED — the current working choice, not final.
     → backend     (target: model → output; currently HTML when the program describes a page)
 ```
 
-Invoked as `python mylang.py <file.int> [-o out.html]`.
+Invoked as `python mylang.py <file.ine> [-o out.html]`.
 
 ## 3. Grammar (current, EXPERIMENTAL)
 
@@ -92,7 +92,7 @@ State, Condition, Multiplicity), the implementation currently exercises:
   COMPILE-TIME resolve only. There is no runtime model, no variables, no
   mutation, and no dynamic lookup yet.
 
-State, Condition, Multiplicity: not yet expressible in `.int`. They will
+State, Condition, Multiplicity: not yet expressible in `.ine`. They will
 be added when a real program needs them.
 
 ### 5a. Two kinds of statements (EXPERIMENTAL, observed — not decided)
@@ -134,7 +134,7 @@ nodes and children in a row get inline flex styles instead.
 
 ## 6a. Target: native executable (current, EXPERIMENTAL)
 
-Invoked as `python mylang.py <file.int> --native`.
+Invoked as `python mylang.py <file.ine> --native`.
 
 Pipeline for the native target:
 
@@ -158,7 +158,7 @@ statements → backend_c.emit → .c file → external C compiler → .exe → r
 
 ## 6b. Target: visual window (current, EXPERIMENTAL)
 
-Invoked as `python mylang.py <file.int> --visual`.
+Invoked as `python mylang.py <file.ine> --visual`.
 
 Pipeline for the visual target:
 

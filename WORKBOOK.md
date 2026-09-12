@@ -1,11 +1,11 @@
-# Intent-First Programming Language --- Guidebook & Workbook
+# Intent Expression --- Guidebook & Workbook
 
 A working specification for a simple, AI-native, behavior-oriented
 software language
 
 ## 0. Project Identity
 
-Working name: Intent-First Programming Language (temporary name).
+Working name: Intent Expression.
 
 Core mission: Create a simple way for a person to describe what software
 should be, how it should behave, what constraints matter, and what it
@@ -746,14 +746,15 @@ machines to handle the implementation complexity.
 The project moved from research to building. What now exists is a small
 real toolchain in `src/mylang/` (lexer → parser → semantic → HTML
 backend → CLI) that processes the smallest real program,
-`examples/hello/hello.int` (`make page` / `page title "Hello,
+`examples/hello/hello.ine` (`make page` / `page title "Hello,
 MyLanguage"`), verified by 24 tests and in a browser.
 
 Recorded here as decisions/high-level facts:
 
-- **File extension `.int` (PROPOSED, working choice).** Means intent.
-  `.semantic.json` is retired as the human source format (it was a
-  prototype of meaning; `examples/homepage/` keeps it as reference).
+- **File extension `.ine` (DECIDED).** Means intent
+  expression. `.semantic.json` is retired as the human source format (it
+  was a prototype of meaning; `examples/homepage/` keeps it as
+  reference).
 - **The implemented pipeline is the first real instance of the
   proposed architecture, not a commitment to the whole.** Stages are
   added when a real program needs them.
@@ -799,7 +800,7 @@ not yet a locked decision):
   technologies" is now treated as an EARLIER WORKING HYPOTHESIS, not the
   final definition.
 - HTML is one backend, not the destination. The durable center is:
-  `.int → lexer/parser → MyLanguage semantics → execution → targets`
+  `.ine → lexer/parser → MyLanguage semantics → execution → targets`
   (native CPU code, browser runtime, existing languages).
 
 **Priority confirmed by the user for the CURRENT phase:** actual
@@ -807,21 +808,21 @@ execution over exhaustive testing. The first proof must show that
 MyLanguage source becomes something the real computer executes.
 
 **First native milestone (Session 11, implemented):** the smallest
-working slice `.int → native executable → CPU`, built by a NEW emit-C
+working slice `.ine → native executable → CPU`, built by a NEW emit-C
 target that coexists with the HTML backend:
 
 ```
-say "Hello, native machine code"   →    .int
+say "Hello, native machine code"   →    .ine
       → lexer → parser                    (unchanged)
       → backend_c: emit C                 (printf("%s\n", ...))
       → external C compiler                (zig cc / clang / gcc)
       → native .exe → CPU
 ```
 
-- Invoked as `python mylang.py <file.int> --native`.
+- Invoked as `python mylang.py <file.ine> --native`.
 - All generated artifacts (emitted `.c`, compiled `.exe`) live in the
   project `.tmp/native/` — never committed. The original `mylang.py
-  <file.int> [-o out.html]` HTML path is untouched and still tested.
+  <file.ine> [-o out.html]` HTML path is untouched and still tested.
 - `backend_c.py` lowers only `say` statements today; `make`/property
   produce no native output yet (the model is not yet lowered).
 - A correctness detail found while building: user text is emitted as
@@ -839,7 +840,7 @@ say "Hello, native machine code"   →    .int
 
 With Zig 0.16.0 installed by the user, the native slice is confirmed:
 
-- `python mylang.py examples/native/hello.int --native` emits C, Zig
+- `python mylang.py examples/native/hello.ine --native` emits C, Zig
   compiles a native Windows PE binary (`4D 5A` magic, x86-64 machine
   code), and the CPU runs it: stdout shows `Hello, native machine code`,
   exit 0.
@@ -849,7 +850,7 @@ With Zig 0.16.0 installed by the user, the native slice is confirmed:
   **MyLanguage source demonstrably becomes something the actual computer
   executes.** The emit-C route is a genuine compilation path (the C backend
   is our front end; clang inside `zig cc` is the machine-code back end),
-  so the `.int → machine code` claim is now real, not a plan.
+  so the `.ine → machine code` claim is now real, not a plan.
 
 **Side observation (OPEN, not a decision):** the language still carries
 the two statement kinds from §26. The native milestone did NOT try to
@@ -876,10 +877,10 @@ user chose the smallest slice first instead of building the whole thing:
   backend (a machine-readable `element` field per kind: page→div,
   header→header, logo→div, navigation→nav). Unknown kinds are rejected
   at render time.
-- **Verification:** `examples/homepage-topbar/topbar.int` renders a real
+- **Verification:** `examples/homepage-topbar/topbar.ine` renders a real
   nested page (golden `tests/expected/topbar.html`, byte-identical
   checked) AND compiles through C+Zig to a native exe that prints
-  `Company Name`. 72 tests pass; `hello.int` golden unchanged.
+  `Company Name`. 72 tests pass; `hello.ine` golden unchanged.
 - **What it answered in practice:** the §26 describing/doing composition
   is alive — a describing program (page/inside) and a doing statement
   (`say page title`) coexist in ONE file and both work. The homepage's
@@ -914,7 +915,7 @@ experiment, not a semantic rule.
 - The containment tree (`inside` relationships) walks the same way for
   all three backends: find the page, walk children recursively. This is
   the adapter pattern the workbook proposed in §11.
-- `python mylang.py examples/homepage-hero/hero.int --visual` opens a
+- `python mylang.py examples/homepage-hero/hero.ine --visual` opens a
   real window with title "Company Name", a dark header bar with logo
   and navigation, a gray container, and a blue banner reading "Welcome
   to Our Site".
@@ -926,7 +927,7 @@ experiment, not a semantic rule.
 - HTML and native backends are byte-for-byte identical (golden tests
   still pass).
 
-**Recorded as a permanent architectural observation:** the same `.int`
+**Recorded as a permanent architectural observation:** the same `.ine`
 program now drives three independent targets from the same Model. The
 language is target-agnostic; the backends are adapters. This is the
 workbook's §10 interoperability principle in its first real form.

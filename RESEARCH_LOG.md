@@ -13,7 +13,7 @@ investigated, what was found, and what changed.
 
 ### What was investigated
 
-The semantic building blocks of the Intent-First Programming Language.
+The semantic building blocks of the Intent Expression language.
 Starting from the 12 primitives in WORKBOOK.md (Entity, Property,
 Relation, Action, Event, Condition, Constraint, Context, Asset, Target,
 State, Intent), we investigated what concepts are genuinely needed to
@@ -692,14 +692,14 @@ core primitive. Whether it becomes a new concept is the user's decision.
 ### Direction change (user)
 
 MyLanguage is no longer primarily a research/prototype exercise — build
-it as a real programming language. The working file extension is `.int`
-(`int` = intent), PROPOSED. Do NOT build "natural language → HTML";
+it as a real programming language. The working file extension is `.ine`
+(ine = intent expression), PROPOSED. Do NOT build "natural language → HTML";
 HTML is one target of a real language pipeline. Build simple →
 complicated from real programs.
 
 ### What was built
 
-A tiny real toolchain that reads `.int`, understands meaning, and emits
+A tiny real toolchain that reads `.ine`, understands meaning, and emits
 a verifiable result:
 
 - `src/mylang/lexer.py` — text → tokens. Token kinds: KEYWORD (`make`),
@@ -715,8 +715,8 @@ a verifiable result:
   property overrides.
 - `src/mylang/backend_html.py` — Model → HTML (the first target).
 - `src/mylang/cli.py` — command line. Entry:
-  `python mylang.py <file.int> [-o out.html]`.
-- `examples/hello/hello.int` — the smallest real program:
+  `python mylang.py <file.ine> [-o out.html]`.
+- `examples/hello/hello.ine` — the smallest real program:
   `make page` / `page title "Hello, MyLanguage"`.
 - `tests/test_mylang.py` — 24 unit + end-to-end tests, including a
   golden-output comparison (`tests/expected/hello.html`).
@@ -740,9 +740,9 @@ a verifiable result:
 ### What was changed
 
 - Created `src/mylang/` (the implementation), `mylang.py` (root
-  launcher), `examples/hello/hello.int`, `tests/test_mylang.py`,
+  launcher), `examples/hello/hello.ine`, `tests/test_mylang.py`,
   `tests/expected/hello.html`, `output/hello.html`.
-- Updated SESSION_STATE.md (status, §8 extension → PROPOSED `.int`,
+- Updated SESSION_STATE.md (status, §8 extension → PROPOSED `.ine`,
   Session 9 record, next step).
 - Updated WORKBOOK.md (§26 first-milestone note) and wrote the first
   real content of LANGUAGE.md (current implemented spec, marked
@@ -751,7 +751,7 @@ a verifiable result:
 ### What was NOT changed
 
 - No semantic concept finalized. The 6 concepts remain PROPOSED. The
-  `.int` extension is PROPOSED, not decided. The compiler architecture
+  `.ine` extension is PROPOSED, not decided. The compiler architecture
   is not finalized — the implemented stages are the first real instance
   of it, not a commitment to the rest.
 - `examples/homepage/` untouched (still the reference representation +
@@ -793,7 +793,7 @@ dictionaries/HTML expansion/homepage until this is verified.
 - CLI rework: execution output is printed to stdout before the summary;
   a program with no declared page produces no target (HTML is only a
   target when the program describes a page). `say` never reaches HTML.
-- `examples/say/say.int` — the requested program.
+- `examples/say/say.ine` — the requested program.
 - `tests/test_mylang.py` — 9 new tests (keyword, parse, value-required,
   extra-text, ordered outputs, empty-output program, model exclusion,
   HTML exclusion, e2e execute-with-no-target). 33 total, all pass.
@@ -801,15 +801,15 @@ dictionaries/HTML expansion/homepage until this is verified.
 ### Verification (actual runs)
 
 ```
-$ python mylang.py examples/say/say.int
+$ python mylang.py examples/say/say.ine
 Hello, world!
-read:       examples/say/say.int
+read:       examples/say/say.ine
 entities:   0
 properties: 0
 target:     the program does not describe a page
 
-$ python mylang.py examples/hello/hello.int   (unchanged)
-read:       examples/hello/hello.int
+$ python mylang.py examples/hello/hello.ine   (unchanged)
+read:       examples/hello/hello.ine
 entities:   1
 properties: 1
 wrote:      output\hello.html
@@ -833,13 +833,13 @@ and NOT to solve it abstractly. It is recorded as an open question
 
 ### What was changed
 
-- Added `say` (lexer/parser/interpreter/CLI), `examples/say/say.int`,
+- Added `say` (lexer/parser/interpreter/CLI), `examples/say/say.ine`,
   tests.
 - Updated SESSION_STATE.md, LANGUAGE.md, WORKBOOK.md (§26).
 
 ### What was NOT changed
 
-- `examples/hello/hello.int` and the Session 9 pipeline/tests — preserved
+- `examples/hello/hello.ine` and the Session 9 pipeline/tests — preserved
   in full.
 - No relationship/dictionary/HTML/homepage work started, per instruction.
 - No semantic concept finalized; architecture still not finalized.
@@ -863,7 +863,7 @@ real computer executes.
 
 ### What was built
 
-The smallest native slice: `.int → lexer/parser → emit C → external C
+The smallest native slice: `.ine → lexer/parser → emit C → external C
 compiler → .exe → CPU`.
 
 - `src/mylang/backend_c.py` — lowers `say` statements to
@@ -874,7 +874,7 @@ compiler → .exe → CPU`.
   `zig`, `clang`, then `gcc`), compile, run. Generated artifacts
   (`.c`, `.exe`) always go to project `.tmp/native/`.
 - `src/mylang/cli.py` — added `--native`. HTML path untouched.
-- `examples/native/hello.int` — the smallest native program.
+- `examples/native/hello.ine` — the smallest native program.
 - `tests/test_mylang.py` — NativeBackendTests (5 emission tests, 1
   skipped e2e compile+run). 39 total pass.
 
@@ -886,7 +886,7 @@ compiler → .exe → CPU`.
 2. **Zig is the clean fix:** single download, `zig cc` wraps clang + lld
    + a bundled libc, produces native Windows executables with no extra
    SDK. Recommended toolchain.
-3. The HTML pipeline is provably untouched: `hello.int` still writes
+3. The HTML pipeline is provably untouched: `hello.ine` still writes
    `output/hello.html` byte-identical to the golden file (all pre-names
    tests still green).
 4. The emitted C for the example is exactly the expected standalone
@@ -897,7 +897,7 @@ compiler → .exe → CPU`.
 - 39 unit tests pass (1 native e2e test skipped: no compiler installed).
 - CLI `--native` reaches the tooling gate and reports a clear install
   hint instead of failing silently.
-- End-to-end `.int → .exe → CPU` NOT yet observed. Blocked until Zig is
+- End-to-end `.ine → .exe → CPU` NOT yet observed. Blocked until Zig is
   installed.
 
 ### Session 12 addendum (VERIFIED)
@@ -906,11 +906,11 @@ compiler → .exe → CPU`.
   `zig` auto-detected.
 - All 39 tests pass, none skipped. The native e2e test now compiles with
   Zig and runs on this machine.
-- Targeted run confirmed: `python mylang.py examples/native/hello.int
+- Targeted run confirmed: `python mylang.py examples/native/hello.ine
   --native` → `Hello, native machine code` on stdout, exit 0.
   `.tmp/native/hello.exe` is a valid PE binary (`4D 5A` magic, ~778 KB,
   x86-64), runs standalone as native machine code — not a script.
-- HTML backend still verified: `hello.int` writes `output/hello.html`
+- HTML backend still verified: `hello.ine` writes `output/hello.html`
   byte-identical to the golden file.
 - First confirmation of the Session 11 direction at the machine level.
 
@@ -985,7 +985,7 @@ resolution** with compile-time errors for missing properties, minimal.
 ### What was changed
 
 - Added `src/mylang/backend_c.py`, `src/mylang/native.py`, `--native`
-  CLI flag, `examples/native/hello.int`, native tests, `.tmp/native/`
+  CLI flag, `examples/native/hello.ine`, native tests, `.tmp/native/`
   artifacts (gitignored).
 - Updated WORKBOOK.md (§27), LANGUAGE.md (§6a, §7), SESSION_STATE.md,
   RESEARCH_LOG.md, AGENTS.md (permanent Temporary-File Policy).

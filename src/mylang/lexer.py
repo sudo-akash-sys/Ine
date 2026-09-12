@@ -1,4 +1,4 @@
-"""Turns .int source text into tokens."""
+"""Turns .ine source text into tokens."""
 
 from dataclasses import dataclass
 from enum import Enum

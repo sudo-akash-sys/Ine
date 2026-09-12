@@ -44,9 +44,9 @@ def _report_error(error):
 def main(argv=None):
     parser = argparse.ArgumentParser(
         prog="mylang",
-        description="Process a MyLanguage (.int) program",
+        description="Process a MyLanguage (.ine) program",
     )
-    parser.add_argument("source", help="path to a .int program")
+    parser.add_argument("source", help="path to a .ine program")
     parser.add_argument(
         "-o", "--out", default=None,
         help="output file path for the html target (default: output/<name>.html)",

@@ -1,4 +1,4 @@
 # The Say vertical slice: an executable statement.
-# Source (.int) -> execution -> stdout.
+# Source (.ine) -> execution -> stdout.
 
 say "Hello, world!"

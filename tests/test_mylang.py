@@ -344,7 +344,7 @@ class PropertyReferenceTests(unittest.TestCase):
 
 class EndToEndTests(unittest.TestCase):
     HELLO_SOURCE = os.path.join(
-        os.path.dirname(__file__), "..", "examples", "hello", "hello.int"
+        os.path.dirname(__file__), "..", "examples", "hello", "hello.ine"
     )
     HELLO_GOLDEN = os.path.join(
         os.path.dirname(__file__), "expected", "hello.html"
@@ -371,7 +371,7 @@ class EndToEndTests(unittest.TestCase):
 
     def test_say_program_executes_and_writes_no_target(self):
         with tempfile.TemporaryDirectory() as tmp:
-            source_path = os.path.join(tmp, "say.int")
+            source_path = os.path.join(tmp, "say.ine")
             out_path = os.path.join(tmp, "say.html")
             with open(source_path, "w", encoding="utf-8") as handle:
                 handle.write('say "Hello, world!"\n')
@@ -382,7 +382,7 @@ class EndToEndTests(unittest.TestCase):
 
     def test_topbar_builds_exactly_the_golden_output(self):
         source_path = os.path.join(
-            os.path.dirname(__file__), "..", "examples", "homepage-topbar", "topbar.int"
+            os.path.dirname(__file__), "..", "examples", "homepage-topbar", "topbar.ine"
         )
         golden_path = os.path.join(
             os.path.dirname(__file__), "expected", "topbar.html"
@@ -398,7 +398,7 @@ class EndToEndTests(unittest.TestCase):
 
     def test_hero_builds_exactly_the_golden_output(self):
         source_path = os.path.join(
-            os.path.dirname(__file__), "..", "examples", "homepage-hero", "hero.int"
+            os.path.dirname(__file__), "..", "examples", "homepage-hero", "hero.ine"
         )
         golden_path = os.path.join(
             os.path.dirname(__file__), "expected", "hero.html"
@@ -414,7 +414,7 @@ class EndToEndTests(unittest.TestCase):
 
     def test_cards_builds_exactly_the_golden_output(self):
         source_path = os.path.join(
-            os.path.dirname(__file__), "..", "examples", "homepage-cards", "cards.int"
+            os.path.dirname(__file__), "..", "examples", "homepage-cards", "cards.ine"
         )
         golden_path = os.path.join(
             os.path.dirname(__file__), "expected", "cards.html"
@@ -430,7 +430,7 @@ class EndToEndTests(unittest.TestCase):
 
     def test_cards_html_contains_footer_text(self):
         source_path = os.path.join(
-            os.path.dirname(__file__), "..", "examples", "homepage-cards", "cards.int"
+            os.path.dirname(__file__), "..", "examples", "homepage-cards", "cards.ine"
         )
         with tempfile.TemporaryDirectory() as tmp:
             out_path = os.path.join(tmp, "cards.html")
@@ -442,7 +442,7 @@ class EndToEndTests(unittest.TestCase):
 
     def test_cards_html_uses_row_layout_for_card_group(self):
         source_path = os.path.join(
-            os.path.dirname(__file__), "..", "examples", "homepage-cards", "cards.int"
+            os.path.dirname(__file__), "..", "examples", "homepage-cards", "cards.ine"
         )
         with tempfile.TemporaryDirectory() as tmp:
             out_path = os.path.join(tmp, "cards.html")
@@ -459,7 +459,7 @@ class EndToEndTests(unittest.TestCase):
 
     def test_cards_html_renders_card_titles_as_headings(self):
         source_path = os.path.join(
-            os.path.dirname(__file__), "..", "examples", "homepage-cards", "cards.int"
+            os.path.dirname(__file__), "..", "examples", "homepage-cards", "cards.ine"
         )
         with tempfile.TemporaryDirectory() as tmp:
             out_path = os.path.join(tmp, "cards.html")
@@ -601,7 +601,7 @@ class VisualBackendTests(unittest.TestCase):
 
     def test_hero_int_program_builds_model_for_visual(self):
         source_path = os.path.join(
-            os.path.dirname(__file__), "..", "examples", "homepage-hero", "hero.int"
+            os.path.dirname(__file__), "..", "examples", "homepage-hero", "hero.ine"
         )
         with open(source_path, "r", encoding="utf-8") as f:
             source = f.read()
@@ -619,7 +619,7 @@ class VisualBackendTests(unittest.TestCase):
         import tkinter as tk
         from mylang.backend_visual import render
         source_path = os.path.join(
-            os.path.dirname(__file__), "..", "examples", "homepage-hero", "hero.int"
+            os.path.dirname(__file__), "..", "examples", "homepage-hero", "hero.ine"
         )
         with open(source_path, "r", encoding="utf-8") as f:
             source = f.read()
@@ -641,7 +641,7 @@ class VisualBackendTests(unittest.TestCase):
 
     def test_cards_program_builds_model_for_visual(self):
         source_path = os.path.join(
-            os.path.dirname(__file__), "..", "examples", "homepage-cards", "cards.int"
+            os.path.dirname(__file__), "..", "examples", "homepage-cards", "cards.ine"
         )
         with open(source_path, "r", encoding="utf-8") as f:
             source = f.read()
@@ -662,7 +662,7 @@ class VisualBackendTests(unittest.TestCase):
         import tkinter as tk
         from mylang.backend_visual import render
         source_path = os.path.join(
-            os.path.dirname(__file__), "..", "examples", "homepage-cards", "cards.int"
+            os.path.dirname(__file__), "..", "examples", "homepage-cards", "cards.ine"
         )
         with open(source_path, "r", encoding="utf-8") as f:
             source = f.read()
@@ -705,7 +705,7 @@ class VisualBackendTests(unittest.TestCase):
         import tkinter as tk
         from mylang.backend_visual import render
         source_path = os.path.join(
-            os.path.dirname(__file__), "..", "examples", "homepage-cards", "cards.int"
+            os.path.dirname(__file__), "..", "examples", "homepage-cards", "cards.ine"
         )
         with open(source_path, "r", encoding="utf-8") as f:
             source = f.read()
@@ -721,7 +721,7 @@ class VisualBackendTests(unittest.TestCase):
         import tkinter as tk
         from mylang.backend_visual import render
         source_path = os.path.join(
-            os.path.dirname(__file__), "..", "examples", "homepage-cards", "cards.int"
+            os.path.dirname(__file__), "..", "examples", "homepage-cards", "cards.ine"
         )
         with open(source_path, "r", encoding="utf-8") as f:
             source = f.read()

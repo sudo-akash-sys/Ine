@@ -1,6 +1,6 @@
 # SESSION_STATE.md
 
-Last updated: 2026-09-11
+Last updated: 2026-09-12
 
 This file captures the complete project state so any AI session can
 continue without losing context. It is NOT a conversation summary.
@@ -10,7 +10,7 @@ It IS the project's working memory.
 
 ## 1. Project Identity
 
-**Working name:** Intent-First Programming Language (temporary)
+**Working name:** Intent Expression
 
 **Core mission:** Create a simple way for a person to describe what
 software should be, how it should behave, what constraints matter, and
@@ -24,8 +24,8 @@ implementation syntax.
 Session 10 added the requested **Say vertical slice**: `say "..."` →
 lexer → parser → interpreter → stdout, verified. The language now has
 two kinds of statements (describing: `make`/property → model → target;
-doing: `say` → execution → stdout). File extension under use (PROPOSED):
-`.int`.
+doing: `say` → execution → stdout). File extension under use (DECIDED):
+`.ine`.
 
 ---
 
@@ -267,12 +267,11 @@ MyLanguage/
 
 ## 8. File Extension
 
-**PROPOSED (working choice, Session 9):** `MyLanguage source files use
-the extension `.int` (`int` = intent), e.g. `hello.int`,
-`homepage.int`. The user directed this as the current working choice;
-record it as PROPOSED, not final, until explicitly decided. Do NOT use
+**DECIDED (Session 20):** MyLanguage source files use the extension
+`.ine` (ine = intent expression), e.g. `hello.ine`, `homepage.ine`.
+The language's name is **Intent Expression**. Do NOT use
 `.semantic.json` as the human-written source format going forward — JSON
-was a prototype of meaning; `.int` is the actual language humans write.
+was a prototype of meaning; `.ine` is the actual language humans write.
 
 ---
 
@@ -454,10 +453,11 @@ From the user:
 
 31. **Direction change (DECIDED, user):** MyLanguage is no longer a
     research/prototype exercise — build it as a real language, by using
-    it. `.int` (intent) is the working file-extension choice (PROPOSED).
+    it. `.ine` (intent expression) is the working file-extension choice
+    (PROPOSED).
     Do NOT build "natural language → HTML"; HTML is one target of a real
     language pipeline.
-32. **Smallest useful program:** `examples/hello/hello.int`:
+32. **Smallest useful program:** `examples/hello/hello.ine`:
     `make page` then `page title "Hello, MyLanguage"`. It is exactly the
     two-statement program the user proposed as Stage 2, discovered rather
     than invented.
@@ -469,7 +469,7 @@ From the user:
     (statements → Model with entities + properties; VALIDATES: property
     on undeclared entity = error, duplicate entity = error),
     `src/mylang/backend_html.py` (Model → HTML), `src/mylang/cli.py`
-    (command line). Entry: `python mylang.py <file.int> [-o out]`.
+    (command line). Entry: `python mylang.py <file.ine> [-o out]`.
 34. **Verified:** 24 unittest tests pass (lexer/parser/semantic/backend/
     end-to-end + a golden-output comparison); output HTML browser-verified
     (document title and body heading render "Hello, MyLanguage", 0
@@ -497,11 +497,11 @@ From the user:
     runtime output values. The CLI prints each output to stdout BEFORE
     the summary lines. A program with no page writes no target
     (`target: the program does not describe a page`) — `say` never
-    reaches HTML. `examples/say/say.int` added; existing
-    `examples/hello/hello.int` untouched.
+    reaches HTML. `examples/say/say.ine` added; existing
+    `examples/hello/hello.ine` untouched.
 38. **Verified:** 33 tests pass (24 preserved + 9 new for `say`).
-    `python mylang.py examples/say/say.int` prints `Hello, world!` to
-    stdout; `python mylang.py examples/hello/hello.int` still writes
+    `python mylang.py examples/say/say.ine` prints `Hello, world!` to
+    stdout; `python mylang.py examples/hello/hello.ine` still writes
     `output/hello.html`. A `.tmp` program with `make page` + `say` in one
     file showed both (stdout line + HTML file, exit 0) working together.
 39. **What the language revealed by building (OPEN, not decided):** the
@@ -522,7 +522,7 @@ From the user:
 42. **User priority for this phase:** actual execution over exhaustive
     testing — first prove that MyLanguage source becomes something the
     real computer executes.
-43. **Built the smallest native slice:** `.int → lexer/parser →
+43. **Built the smallest native slice:** `.ine → lexer/parser →
     backend_c.emit → external C compiler → .exe → run on CPU`.
     - `src/mylang/backend_c.py` — lowers `say` statements to
       `printf("%s\n", "value")` (value is DATA, never format — a
@@ -530,14 +530,14 @@ From the user:
     - `src/mylang/native.py` — compiler discovery (`MYLANG_CC`, `zig`,
       `clang`, `gcc`), compile, run. All artifacts to `.tmp/native/`.
     - `src/mylang/cli.py` — added `--native` flag; HTML path untouched.
-    - `examples/native/hello.int` — `say "Hello, native machine code"`.
+    - `examples/native/hello.ine` — `say "Hello, native machine code"`.
     - 39 tests pass (native e2e test skipped: no compiler on machine).
 44. **Tooling blocked (found, not predicted):** clang was installed but
     cannot link on this machine — missing MSVC runtime `libcmt.lib`. The
     chosen toolchain is **Zig** (`zig cc`): bundles clang + lld + libc,
     produces native Windows executables with no extra SDK. When the user
     installs it, `test_native_executable_prints_on_the_cpu` must run
-    green and `python mylang.py examples/native/hello.int --native`
+    green and `python mylang.py examples/native/hello.ine --native`
     must print the say value after running the exe.
 45. **Permanent Temporary-File Policy** recorded in AGENTS.md: every
     MyLanguage-generated probe/source/exe/object/compiler-test/
@@ -552,13 +552,13 @@ From the user:
     (`test_native_executable_prints_on_the_cpu`) now compiles AND runs
     on this machine.
 48. **VERIFIED — smallest native slice works end to end:**
-    `python mylang.py examples/native/hello.int --native` →
+    `python mylang.py examples/native/hello.ine --native` →
     lexer → parser → `backend_c.emit` → `.tmp/native/hello.c` →
     `zig cc` → `.tmp/native/hello.exe` → CPU → stdout
     `Hello, native machine code`, exit 0. The `.exe` is a valid Windows
     PE binary (first two bytes `4D 5A`, ~778 KB, x86-64 machine code),
     not a script. It runs standalone.
-49. **HTML backend still verified** alongside: `hello.int` still writes
+49. **HTML backend still verified** alongside: `hello.ine` still writes
     `output/hello.html` byte-identical. Both targets coexist.
 50. First real confirmation of the Session 11 direction: MyLanguage
     source now demonstrably becomes something the actual computer
@@ -614,7 +614,7 @@ From the user:
     `25` from a native PE exe; `say person height` → "'person' has no
     property 'height' (line 3)"; `say ghost age` → "'ghost' was not
     declared" — both compile-time errors, exit 1. HTML path and
-    `hello.int` golden output untouched.
+    `hello.ine` golden output untouched.
 59. **Recorded design facts:** resolve is COMPILE-TIME only. The
     interpreter/backends only ever see literal values; `say person age`
     and `say 25` lower to identical output (`printf("%d\n", 25)`).
@@ -626,7 +626,7 @@ From the user:
     program: `make name kind` (explicit kind), float values, and
     `say name property` read natively.
 61. **Built the smallest real example** that exercises all three at once
-    using only existing capabilities — `examples/alice/alice.int`:
+    using only existing capabilities — `examples/alice/alice.ine`:
 
     ```
     make alice person
@@ -638,7 +638,7 @@ From the user:
     say alice age
     say alice height
     ```
-62. **Verified natively:** `python mylang.py examples/alice/alice.int
+62. **Verified natively:** `python mylang.py examples/alice/alice.ine
     --native` prints `Alice`, `25`, `1.7` from a real PE exe (exit 0).
     Emitted C uses `printf("%s\n", ...)`, `printf("%d\n", 25)`,
     `printf("%.17g\n", 1.7)` — confirming the float round-trip slice
@@ -674,7 +674,7 @@ From the user:
       nesting children, and rejects kinds with no dictionary entry.
     - Native backend: unchanged — `inside` produces no native output
       (`say` still the only lowered statement).
-67. **The real slice:** `examples/homepage-topbar/topbar.int`:
+67. **The real slice:** `examples/homepage-topbar/topbar.ine`:
 
     ```
     make page
@@ -694,7 +694,7 @@ From the user:
     program, both targets.
 68. **72 tests pass** (15 new). This is the first time the engine
     actually used the dictionary, and the first real Relationship.
-    `hello.int` golden output is byte-identical (page path untouched
+    `hello.ine` golden output is byte-identical (page path untouched
     when a page has no children).
 
 ### Session 16b (the hero slice: deeper nesting, still no new concept)
@@ -704,7 +704,7 @@ From the user:
     (`page > main > hero`), and two more dictionary kinds come into
     play (banner, container).
 70. **What changed:** dictionary gained `element` for banner (div) and a
-    new `container` kind (div). `examples/homepage-hero/hero.int`:
+    new `container` kind (div). `examples/homepage-hero/hero.ine`:
 
     ```
     make main container
@@ -735,9 +735,9 @@ From the user:
     layout. The containment tree is walked recursively, just like the HTML
     backend's `_render_children`.
 75. **CLI:** `--visual` flag added to `mylang.py`. Invoked as
-    `python mylang.py <file.int> --visual`. Opens a tkinter window, prints
+    `python mylang.py <file.ine> --visual`. Opens a tkinter window, prints
     entity/property counts to stdout, runs mainloop.
-76. **Verified:** `examples/homepage-hero/hero.int` opens a real window
+76. **Verified:** `examples/homepage-hero/hero.ine` opens a real window
     with title "Company Name", 800x600, showing: white page frame with
     title heading, dark header bar with bold white logo text on the left
     and navigation on the right, light gray container filling the middle,
@@ -749,7 +749,7 @@ From the user:
     `tests/test_mylang.py`. Test the pure helper functions
     (`_children_of`, `_kind_of`, `_bg`, `_fg`, `_is_leaf`, `_has_text`)
     and the `render()` function (returns a `tk.Tk`, title override works,
-    no-page/multiple-pages raise `VisualError`, hero.int builds a valid
+    no-page/multiple-pages raise `VisualError`, hero.ine builds a valid
     model and creates a window). Total: **90 tests pass**.
 78. **What was NOT changed:** no new language concepts. No dictionary
     changes. No semantic model changes. No parser/lexer changes. The
@@ -758,9 +758,9 @@ From the user:
 
 ### Session 18 (the three-cards slice: layout & repetition discovered)
 
-79. **Next slice:** expand `hero.int` with three feature cards inside the
+79. **Next slice:** expand `hero.ine` with three feature cards inside the
     main container, using EXISTING concepts only — no new syntax, no
-    Multiplicity yet. Built `examples/homepage-cards/cards.int` (27
+    Multiplicity yet. Built `examples/homepage-cards/cards.ine` (27
     lines, 11 entities, 10 properties): hand-written `card-1/2/3` with
     `make <name> card`, `title`/`text` properties, `inside card-group`.
 80. **Dictionary:** `card`, `card-group`, `footer` gained the `element`
@@ -834,6 +834,20 @@ From the user:
     visual footer-pinned-bottom integration). **Full suite: 102 tests
     pass** (94 + 8). No new language features were added.
 
+### Session 20 (name + extension DECIDED)
+
+93. **Rename (DECIDED by user):** the language's name is **Intent
+    Expression** (replacing the temporary working name
+    "Intent-First Programming Language" in WORKBOOK/SESSION_STATE/
+    RESEARCH_LOG identity and status), and the source-file extension is
+    now **`.ine`** (ine = intent expression), DECIDED — no longer
+    PROPOSED. All example programs renamed (`git mv`), and every
+    `.int` reference in docs, tests, and code (cli help, lexer docstring,
+    example comments) updated to `.ine`. Kept per the user's scope choice:
+    "MyLanguage"/`mylang` remain the project/tool name.
+94. **Verified:** full suite 102 tests pass; `python mylang.py
+    examples/hello/hello.ine` still writes `output/hello.html`.
+
 ---
 
 ## 12. Next Step
@@ -842,13 +856,13 @@ From the user:
 semantic representation lives in `examples/homepage/`.
 
 **DONE (Session 9):** the smallest Entity/Property toolchain exists and
-works: `.int` read → understood → emits verified HTML.
+works: `.ine` read → understood → emits verified HTML.
 
 **DONE (Session 10):** the requested Say vertical slice exists and is
 verified: `say "..."` → lexer → parser → AST → interpreter → stdout.
 
 **DONE (Session 11-12):** the smallest native slice is BUILT AND
-VERIFIED: `python mylang.py <file.int> --native` → emit C → `zig cc` →
+VERIFIED: `python mylang.py <file.ine> --native` → emit C → `zig cc` →
 native `.exe` → runs on CPU. `Hello, native machine code` observed on
 stdout from a real PE binary. HTML pipeline untouched and still green.
 
@@ -864,11 +878,11 @@ the stored property at COMPILE time and prints it natively. The workbook
 **DONE (Session 15):** audit closed the coverage gap — every implemented
 capability (make/kind, str/int/float properties, say literal, say name
 property, native + HTML targets) is now exercised by a real example.
-`examples/alice/alice.int` is the unifying smallest program.
+`examples/alice/alice.ine` is the unifying smallest program.
 
 **DONE (Session 16):** the real homepage task started — smallest slice
 (`page > header > logo + navigation`) with the first Relationship
-(`inside`, containment) and the first real dictionary use. One `.int`
+(`inside`, containment) and the first real dictionary use. One `.ine`
 program now renders nested HTML AND compiles to native.
 
 **DONE (Session 17):** visual renderer experiment — smallest possible

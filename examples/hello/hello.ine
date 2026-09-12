@@ -1,5 +1,5 @@
 # MyLanguage's first real program.
-# Source (.int) -> meaning -> a page you can open.
+# Source (.ine) -> meaning -> a page you can open.
 
 make page
 page title "Hello, MyLanguage"
