@@ -22,7 +22,7 @@ present the options and trade-offs before implementing it.
 
 # Temporary-File Policy (permanent rule)
 
-Use the project's `.tmp/` directory for EVERY MyLanguage-generated
+Use the project's `.tmp/` directory for EVERY Intent Expression-generated
 temporary probe, generated source, executable, object file, compiler
 test, intermediate artifact, and disposable build output. This is a
 permanent working rule, not just this session.

@@ -53,7 +53,9 @@ without changing the core.
 
 ## One Source, Multiple Targets
 
-The same `.ine` program produces different outputs depending on the backend:
+The same `.ine` program produces different outputs depending on the backend.
+Pick any example in `examples/` and run all three commands to see the
+difference.
 
 ### HTML Backend
 
@@ -61,7 +63,9 @@ The same `.ine` program produces different outputs depending on the backend:
 python mylang.py homepage.ine -o homepage.html
 ```
 
-Generates semantic HTML with proper structure and accessible markup.
+Emits semantic HTML: each kind maps to an element from the dictionary, and
+`inside` nests children. See `examples/homepage-cards/cards.ine` for the
+rendered result. 
 
 ### Native Backend
 
@@ -69,7 +73,8 @@ Generates semantic HTML with proper structure and accessible markup.
 python mylang.py program.ine --native
 ```
 
-Compiles to C, then to a native Windows executable that runs on the CPU.
+Emits C, then a C compiler produces a native executable that runs on the CPU
+(Windows PE on Windows). Needs Zig, clang, or gcc.
 
 ### Visual Backend
 
@@ -77,7 +82,8 @@ Compiles to C, then to a native Windows executable that runs on the CPU.
 python mylang.py interface.ine --visual
 ```
 
-Opens a real OS window showing your interface layout.
+Opens a real OS window showing your interface layout (tkinter). Needs a
+desktop environment.
 
 ---
 
@@ -127,7 +133,7 @@ page title "Hello, Intent Expression"
 
 ### Run It
 
-No installation needed — from the repo root, generate the HTML target:
+From the repo root, generate the HTML target (requires Python 3):
 
 ```bash
 python mylang.py hello.ine -o hello.html

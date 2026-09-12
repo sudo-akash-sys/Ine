@@ -797,20 +797,20 @@ be answered by the next tiny real program — not a design decision.
 The user corrected the project's self-understanding (recorded PROPOSED,
 not yet a locked decision):
 
-- **MyLanguage is its own language and semantic system.** Existing
+- **Intent Expression is its own language and semantic system.** Existing
   languages, APIs, runtimes, browsers, and machine-code technologies are
-  things MyLanguage can interoperate with or target — they DO NOT define
-  what MyLanguage means.
+  things Intent Expression can interoperate with or target — they DO NOT define
+  what Intent Expression means.
 - The old framing "a translation layer into existing implementation
   technologies" is now treated as an EARLIER WORKING HYPOTHESIS, not the
   final definition.
 - HTML is one backend, not the destination. The durable center is:
-  `.ine → lexer/parser → MyLanguage semantics → execution → targets`
+  `.ine → lexer/parser → Intent Expression semantics → execution → targets`
   (native CPU code, browser runtime, existing languages).
 
 **Priority confirmed by the user for the CURRENT phase:** actual
 execution over exhaustive testing. The first proof must show that
-MyLanguage source becomes something the real computer executes.
+Intent Expression source becomes something the real computer executes.
 
 **First native milestone (Session 11, implemented):** the smallest
 working slice `.ine → native executable → CPU`, built by a NEW emit-C
@@ -852,7 +852,7 @@ With Zig 0.16.0 installed by the user, the native slice is confirmed:
 - All 39 tests pass with none skipped; the HTML backend still writes
   `output/hello.html` byte-identical.
 - This is the first real confirmation of the Session 11 direction:
-  **MyLanguage source demonstrably becomes something the actual computer
+  **Intent Expression source demonstrably becomes something the actual computer
   executes.** The emit-C route is a genuine compilation path (the C backend
   is our front end; clang inside `zig cc` is the machine-code back end),
   so the `.ine → machine code` claim is now real, not a plan.
@@ -862,7 +862,7 @@ the two statement kinds from §26. The native milestone did NOT try to
 solve that composition question — `say` was lowered directly, `make`
 stayed in the model. The next real program should answer it.
 
-**Temporary-File Policy (permanent rule):** all MyLanguage-generated
+**Temporary-File Policy (permanent rule):** all Intent Expression-generated
 probes, generated source, executables, object files, compiler tests,
 and intermediate artifacts go into the project `.tmp/` directory. Final
 committed outputs stay in `output/`. `.tmp/` is gitignored. (Recorded
