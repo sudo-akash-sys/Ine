@@ -116,7 +116,7 @@ Open a terminal in the folder where you want the project to live
 in PowerShell on Windows), then run:
 
 ```bash
-git clone https://github.com/justforfundg350-boop/intent-language.git
+git clone https://github.com/sudo-akash-sys/intent-language.git
 cd intent-language
 ```
 
@@ -196,7 +196,10 @@ say page title
 |-----------|---------|
 | `make <name>` | Declare an entity |
 | `make <name> <kind>` | Declare an entity with explicit kind |
-| `<name> <property> <value>` | Set a property |
+| `make <count> <kind>` | Declare `<count>` entities (`make 3 card` → `card-1`, `card-2`, `card-3`) |
+| `group <name> = <m1> <m2> ...` | Name a collection of existing entities |
+| `<group> inside <parent>` | Containment for every member of the group |
+| `<group> <property> <value>` | Apply a property to every member of the group |
 | `<child> inside <parent>` | Declare containment relationship |
 | `say <value>` | Print to stdout |
 | `say <entity> <property>` | Print a property value |
@@ -290,9 +293,12 @@ Each backend is an **adapter** that translates the same semantic model into its 
 ## What Works Today
 
 Everything below is implemented and covered by the test suite
-(`python -m unittest discover -s tests`, 102 passing):
+(`python -m unittest discover -s tests`, 130 passing):
 
 - Entity declaration and properties (`make`, `<name> <prop> <value>`)
+- Multiplicity (`make <count> <kind>` — e.g. `make 3 card` creates `card-1/2/3`)
+- Collections (`group cards = card-1 card-2 card-3`; a group targets `inside`
+  and properties collectively, expanding to one statement per member)
 - Containment relationships (`inside`)
 - String and numeric values
 - Property references, resolved at compile time (`say page title`)
@@ -306,7 +312,11 @@ Everything below is implemented and covered by the test suite
 
 Designed and on the roadmap, but does not work today:
 
-- Multiplicity ("three cards") — three cards still cost nine handwritten statements
+- Multiplicity ("three cards") is solved as creation sugar: `make 3 card`
+  creates `card-1/2/3`, and `group cards = card-1 card-2 card-3` names the
+  collection (`cards inside card-group` and `cards text "..."` expand per
+  member). There is no `every` keyword and no way to say "all members of
+  every group"
 - More relationship types (`beside`, `contains`, `opens`)
 - State, conditions, events, and actions
 - Booleans, lists, expressions, runtime variables (today: strings and numbers only)
@@ -366,7 +376,7 @@ The core language and dictionary will remain open. Commercial offerings build on
 
 ## License
 
-MIT — see [LICENSE](LICENSE) for details. Use it freely for personal and commercial projects.
+Apache-2.0 — see [LICENSE](LICENSE) for details. Use it freely for personal and commercial projects. The "Intent Language" name and logo remain trademarks; see [TRADEMARKS.md](TRADEMARKS.md).
 
 ---
 

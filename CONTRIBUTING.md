@@ -1,84 +1,54 @@
-# Contributing to Intent Expression
+# Contributing to Intent Language
 
-Thank you for wanting to help! This project is intentionally small, so even a tiny improvement matters.
+Thank you for your interest in contributing to Intent Language! This document provides guidelines for contributing to the project.
 
-## Quick start for contributors
+## Code of Conduct
 
-```bash
-git clone https://github.com/justforfundg350-boop/intent-language.git
-cd intent-language
-python -m venv .venv
-# Windows: .venv\Scripts\activate  |  macOS/Linux: source .venv/bin/activate
-python mylang.py examples/hello/hello.ine
-```
+By participating in this project, you agree to abide by our [Code of Conduct](CODE_OF_CONDUCT.md).
 
-Run tests before opening a PR:
+## How to Contribute
 
-```bash
-python -m unittest discover -s tests
-python mylang.py examples/hello/hello.ine -o .tmp/preview.html
-```
+### Reporting Issues
 
-## How to contribute
+- Check existing issues before creating a new one
+- Provide a clear description of the problem
+- Include steps to reproduce the issue
+- Share your environment details (OS, Intent Language version, etc.)
 
-### 1. Good first issues
+### Submitting Changes
 
-Look for issues labeled `good first issue` or `help wanted`. Typical starter tasks:
+1. Fork the repository
+2. Create a new branch for your feature or fix
+3. Make your changes following the project's coding standards
+4. Write or update tests as needed
+5. Ensure all tests pass
+6. Submit a pull request
 
-- Add or improve a `dictionary/*.json` entry (new kind, better defaults)
-- Add an example in `examples/`
-- Improve error messages in `src/mylang/`
-- Fix or extend a backend (`backend_html`, `backend_visual`, `backend_c`)
+### Pull Request Guidelines
 
-### 2. The Dictionary is a first-class contribution
+- Keep changes focused and atomic
+- Write clear commit messages
+- Reference related issues in your PR description
+- Ensure your code follows the project's style guidelines
+- Add tests for new features
+- Update documentation as needed
 
-The dictionary (`dictionary/*.json`) is not an afterthought — it is how vocabulary grows without changing the language core. A dictionary PR should include:
+## License and Copyright
 
-- `element` (which HTML element the kind maps to)
-- Optional `layout: "row"` or `position: "bottom"` hints if the kind needs them
-- `defaults` / human-readable `meaning` if relevant
-- A tiny example `.ine` file that exercises the new kind
+By contributing to Intent Language, you agree that your contributions will be licensed under the Apache License, Version 2.0.
 
-See existing entries like `dictionary/card.json` and `dictionary/card-group.json` as templates.
+### Developer Certificate of Origin
 
-### 3. Language changes need a real program first
+By making a contribution to this project, you certify that:
 
-We add language concepts only when a real `.ine` program demonstrates the need (see `WORKBOOK.md` §22 and `LANGUAGE.md`). If you want a new syntax or semantic concept, open an issue with:
+- You created the contribution entirely yourself, or you have the right to submit it under the project's license
+- You understand and agree that your contribution is public and that a record of the contribution is maintained indefinitely
+- You grant sudo-akash-sys and the project a perpetual, worldwide, non-exclusive, royalty-free, irrevocable license to use, modify, and distribute your contribution under the Apache-2.0 license
 
-- A concrete `.ine` program that cannot be written today
-- What you expected vs. what happens now
-- Why a dictionary/template change alone is not enough
+## Trademark Usage
 
-### 4. Pull request checklist
+Note that while your code contributions are licensed under Apache-2.0, the Intent Language name and logos remain trademarks of sudo-akash-sys. See [TRADEMARKS.md](TRADEMARKS.md) for details.
 
-- [ ] One focused change per PR
-- [ ] Tests pass (`python -m unittest discover -s tests`)
-- [ ] New behavior has a test or a golden file in `tests/expected/`
-- [ ] If you touched a backend, the other backends still render the same model
-- [ ] Generated artifacts stay in `.tmp/` (never commit `.c`, `.exe`, or `.tmp/` contents)
-- [ ] Updated `LANGUAGE.md` if semantics changed, or `dictionary/` docs if vocabulary changed
+## Questions?
 
-## Project structure
-
-```
-src/mylang/        # lexer -> parser -> semantic -> backends -> CLI
-dictionary/        # kind -> { element, layout, position, defaults, meaning }
-examples/          # small real .ine programs (hello, homepage slices, native)
-tests/             # unittest suite + golden HTML expectations
-output/            # committed HTML outputs (the durable artifacts)
-.tmp/              # gitignored scratch space for generated files
-LANGUAGE.md        # what is ACTUALLY IMPLEMENTED (grows with code)
-WORKBOOK.md        # design philosophy and roadmap
-```
-
-## Code style
-
-- Keep the language surface tiny and readable — one statement per line.
-- Prefer explicit errors with line numbers over silent fallbacks.
-- Backends are adapters: they read the shared `Model`, they don't change it.
-
-## Getting help
-
-Open a Discussion if you are unsure whether an idea belongs in the language, the dictionary, a template, or a backend — that question is part of the design process.
-
-By contributing you agree that your contributions will be licensed under the same [LICENSE](LICENSE) as the project.
+If you have questions about contributing, feel free to open an issue for discussion.

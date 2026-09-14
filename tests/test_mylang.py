@@ -13,7 +13,7 @@ from mylang.interpreter import execute
 from mylang.lexer import LexError, TokenKind, lex
 from mylang.native import compile_c, find_c_compiler, run_native
 from mylang.parser import (
-    InsideStatement, MakeStatement, PropertyRef, PropertyStatement, SayStatement, SyntaxError, parse,
+    GroupStatement, InsideStatement, MakeStatement, PropertyRef, PropertyStatement, SayStatement, SyntaxError, parse,
 )
 from mylang.semantic import SemanticError, analyze, resolve
 
@@ -340,6 +340,205 @@ class PropertyReferenceTests(unittest.TestCase):
         model = analyze(statements)
         resolved = resolve(statements, model)
         self.assertEqual(execute(resolved), ["Alice", 25])
+
+
+class MultiplicityTests(unittest.TestCase):
+    """`make <count> <kind>` expands into numbered entity declarations."""
+
+    def test_make_three_cards_expands_to_three_statements(self):
+        statements = parse(lex("make 3 card\n"))
+        self.assertEqual(len(statements), 3)
+        self.assertEqual(statements, [
+            MakeStatement("card-1", "card", 1),
+            MakeStatement("card-2", "card", 1),
+            MakeStatement("card-3", "card", 1),
+        ])
+
+    def test_make_one_kind_uses_index_1(self):
+        statements = parse(lex("make 1 banner\n"))
+        self.assertEqual(statements, [MakeStatement("banner-1", "banner", 1)])
+
+    def test_make_five_expands_to_five(self):
+        statements = parse(lex("make 5 card\n"))
+        self.assertEqual(len(statements), 5)
+        self.assertEqual(statements[0], MakeStatement("card-1", "card", 1))
+        self.assertEqual(statements[4], MakeStatement("card-5", "card", 1))
+
+    def test_multiplicity_kind_can_be_multi_word(self):
+        statements = parse(lex("make 2 card-group\n"))
+        self.assertEqual(statements, [
+            MakeStatement("card-group-1", "card-group", 1),
+            MakeStatement("card-group-2", "card-group", 1),
+        ])
+
+    def test_zero_count_is_an_error(self):
+        with self.assertRaises(SyntaxError):
+            parse(lex("make 0 card\n"))
+
+    def test_decimal_count_is_an_error(self):
+        with self.assertRaises(SyntaxError):
+            parse(lex("make 3.5 card\n"))
+
+    def test_missing_kind_after_count_is_an_error(self):
+        with self.assertRaises(SyntaxError):
+            parse(lex("make 3\n"))
+
+    def test_extra_text_is_an_error(self):
+        with self.assertRaises(SyntaxError):
+            parse(lex("make 3 card extra\n"))
+
+    def test_negative_count_cannot_even_lex(self):
+        with self.assertRaises(LexError):
+            parse(lex("make -3 card\n"))
+
+    def test_model_from_multiplicity_matches_handwritten_model(self):
+        multi = parse(lex(
+            "make 3 card\n"
+            'card-1 title "Fast"\n'
+            'card-1 text "A"\n'
+            'card-2 title "Simple"\n'
+            'card-2 text "B"\n'
+            'card-3 title "Reliable"\n'
+            'card-3 text "C"\n'
+            "make card-group card-group\n"
+            "card-1 inside card-group\n"
+            "card-2 inside card-group\n"
+            "card-3 inside card-group\n"
+        ))
+        handwritten = parse(lex(
+            "make card-1 card\n"
+            'card-1 title "Fast"\n'
+            'card-1 text "A"\n'
+            "make card-2 card\n"
+            'card-2 title "Simple"\n'
+            'card-2 text "B"\n'
+            "make card-3 card\n"
+            'card-3 title "Reliable"\n'
+            'card-3 text "C"\n'
+            "make card-group card-group\n"
+            "card-1 inside card-group\n"
+            "card-2 inside card-group\n"
+            "card-3 inside card-group\n"
+        ))
+        self.assertEqual(analyze(multi).entities, analyze(handwritten).entities)
+        self.assertEqual(analyze(multi).properties, analyze(handwritten).properties)
+        self.assertEqual(analyze(multi).relationships, analyze(handwritten).relationships)
+
+    def test_multiplicity_plus_handwritten_duplicate_is_an_error(self):
+        statements = parse(lex("make 3 card\nmake card-1 card\n"))
+        with self.assertRaises(SemanticError):
+            analyze(statements)
+
+
+class GroupSemanticsTests(unittest.TestCase):
+    """`group <name> = <members>` names a collection; statements targeting
+    the group expand to one statement per member."""
+
+    PROGRAM = (
+        "make page\n"
+        "make card-group card-group\n"
+        "card-group inside page\n"
+        "make 3 card\n"
+        "group cards = card-1 card-2 card-3\n"
+        "cards inside card-group\n"
+    )
+
+    def test_group_statement_parses(self):
+        statements = parse(lex("group cards = card-1 card-2 card-3\n"))
+        self.assertEqual(statements, [
+            GroupStatement("cards", ("card-1", "card-2", "card-3"), 1)
+        ])
+
+    def test_group_with_one_member_parses(self):
+        statements = parse(lex("group one = card-1\n"))
+        self.assertEqual(statements, [GroupStatement("one", ("card-1",), 1)])
+
+    def test_group_requires_equals(self):
+        with self.assertRaises(SyntaxError):
+            parse(lex("group cards card-1\n"))
+
+    def test_group_requires_a_name(self):
+        with self.assertRaises(SyntaxError):
+            parse(lex("group = card-1\n"))
+
+    def test_group_requires_members(self):
+        with self.assertRaises(SyntaxError):
+            parse(lex("group cards =\n"))
+
+    def test_group_name_is_a_keyword(self):
+        tokens = lex("group\n")
+        self.assertEqual(tokens[0].kind, TokenKind.KEYWORD)
+
+    def test_model_records_the_group(self):
+        model = analyze(parse(lex(self.PROGRAM)))
+        self.assertEqual(model.groups, {
+            "cards": ("card-1", "card-2", "card-3")
+        })
+
+    def test_group_inside_expands_to_per_member_relationships(self):
+        model = analyze(parse(lex(self.PROGRAM)))
+        for card in ("card-1", "card-2", "card-3"):
+            self.assertEqual(model.relationships[card], "card-group")
+
+    def test_group_property_applies_to_every_member(self):
+        statements = parse(lex(self.PROGRAM + 'cards text "shared"\n'))
+        model = analyze(statements)
+        for card in ("card-1", "card-2", "card-3"):
+            self.assertEqual(model.properties[(card, "text")], "shared")
+
+    def test_group_property_does_not_create_a_group_entity_property(self):
+        statements = parse(lex(self.PROGRAM + 'cards text "shared"\n'))
+        model = analyze(statements)
+        self.assertNotIn(("cards", "text"), model.properties)
+
+    def test_group_does_not_create_an_entity(self):
+        model = analyze(parse(lex(self.PROGRAM)))
+        self.assertNotIn("cards", model.entities)
+
+    def test_group_member_not_declared_is_an_error(self):
+        statements = parse(lex("group cards = card-1 ghost\n"))
+        with self.assertRaises(SemanticError):
+            analyze(statements)
+
+    def test_group_name_colliding_with_entity_is_an_error(self):
+        statements = parse(lex("make card\ncard inside page\n"
+                               "group card = card-1\n"))
+        with self.assertRaises(SemanticError):
+            analyze(statements)
+
+    def test_duplicate_group_is_an_error(self):
+        statements = parse(lex(
+            "make 2 card\n"
+            "group cards = card-1\n"
+            "group cards = card-2\n"
+        ))
+        with self.assertRaises(SemanticError):
+            analyze(statements)
+
+    def test_say_on_a_group_is_an_error(self):
+        statements = parse(lex(self.PROGRAM + "say cards title\n"))
+        model = analyze(statements)
+        with self.assertRaises(SemanticError):
+            resolve(statements, model)
+
+    def test_group_renders_html_identically_to_handwritten(self):
+        statements = parse(lex(self.PROGRAM))
+        model = analyze(statements)
+        output = render(model)
+        for card in ("card-1", "card-2", "card-3"):
+            self.assertIn(f'<article class="{card}"', output)
+        self.assertIn('<div class="card-group" style="display:flex;gap:20px">',
+                      output)
+
+    def test_per_member_and_group_property_overrides(self):
+        statements = parse(lex(self.PROGRAM +
+            'cards text "default"\n'
+            'card-1 title "Member One"\n'))
+        model = analyze(statements)
+        for card in ("card-2", "card-3"):
+            self.assertEqual(model.properties[(card, "text")], "default")
+        self.assertEqual(model.properties[("card-1", "title")], "Member One")
+        self.assertEqual(model.properties[("card-1", "text")], "default")
 
 
 class EndToEndTests(unittest.TestCase):

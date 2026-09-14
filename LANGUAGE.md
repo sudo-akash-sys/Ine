@@ -27,18 +27,36 @@ Invoked as `python mylang.py <file.ine> [-o out.html]`.
 
 ```
 program     := statement*
-statement   := make-stmt | property-stmt | rel-stmt | say-stmt
+statement   := make-stmt | property-stmt | rel-stmt | say-stmt | group-stmt
 make-stmt   := "make" name [kind]
+             | "make" count kind      (multiplicity)
 property-stmt := name property value
 rel-stmt    := name "inside" name
 say-stmt    := "say" value | "say" name property
+group-stmt  := "group" name "=" name+
 name        := identifier          (letters, digits, "_", "-"; not starting with a digit)
 value       := "string" | number   (number: integer or decimal, e.g. 25 or 1.75)
+count       := positive whole number, e.g. 3 (not 0, not 3.5)
 ```
 
 - One statement per line. Blank lines and `#` comments are allowed.
 - `make <name>` declares an entity; its kind defaults to its name.
   `make <name> <kind>` declares an entity of an explicit kind.
+- `make <count> <kind>` declares `<count>` entities (multiplicity). Their
+  ids are `<kind>-1`, `<kind>-2`, ..., `<kind>-<count>` and their kind is
+  `<kind>`. The count must be a positive whole number. This is parser
+  sugar: it expands into `<count>` ordinary `make` statements, so the
+  model holds one entity per member — identical to writing them by hand.
+- `group <name> = <member> ...` names a collection (group semantics). All
+  members must already be declared with `make`. Group names live beside
+  entity names: a group is not an entity, and a name cannot be both. Once
+  named, the group may be used as a target:
+  - `<group> inside <parent>` places every member inside the parent.
+  - `<group> <property> <value>` applies the property to every member.
+  Both expand — at semantic-analysis time — to one ordinary statement per
+  member, then follow every existing rule (undeclared, self-parenting,
+  double-parenting, cycles). The model records the group in `groups` but
+  otherwise backends never see groups.
 - `<name> <property> value` sets a property on an existing entity. Values
   are typed: quoted strings, or numbers. A number becomes an integer
   when it has no `.`/`e`, otherwise a decimal.
@@ -79,12 +97,21 @@ Validation the model performs (real meaning, not text matching):
 Of the six PROPOSED semantic concepts (Entity, Property, Relationship,
 State, Condition, Multiplicity), the implementation currently exercises:
 
-- Entity — `make`
+- Entity — `make`, and `make <count> <kind>` for an explicit group
 - Property — `<name> <property> value`
 - Relationship — `name inside name` (CONTAINMENT only, implemented in
   the homepage-topbar slice). This is the smallest real slice of the
   workbook homepage task: page → header → (logo, navigation). One child
   per parent; a tree, not any graph.
+- Multiplicity — `make <count> <kind>` (creation sugar, added Session
+  21). It answers the measured "three cards cost nine statements" pain:
+  a group is written as ONE statement, and the model still holds one
+  entity per member.
+- Collection/Group — `group <name> = <members>`, then group targets on
+  `inside` and properties (added Session 22). Together, `make 3 card` +
+  `group cards = ...` + `cards inside card-group` replace the original 9
+  handwritten statements with 3, and a property on the group applies to
+  every member.
 - **Describing feeds doing (EXPERIMENTAL, implemented):** `say name
   property` resolves at compile time to the stored literal value. This is
   the first concrete answer to the workbook §26 "describing vs. doing"
@@ -92,8 +119,8 @@ State, Condition, Multiplicity), the implementation currently exercises:
   COMPILE-TIME resolve only. There is no runtime model, no variables, no
   mutation, and no dynamic lookup yet.
 
-State, Condition, Multiplicity: not yet expressible in `.ine`. They will
-be added when a real program needs them.
+State, Condition: not yet expressible in `.ine`. They will be added
+when a real program needs them.
 
 ### 5a. Two kinds of statements (EXPERIMENTAL, observed — not decided)
 
@@ -182,7 +209,7 @@ Model → backend_visual.render → tkinter window (real OS window)
   (blocking).
 - Currently requires a display server (tkinter). No headless mode yet.
 
-## 7. Known limits (as of Session 19)
+## 7. Known limits (as of Session 22)
 
 - Only strings and numbers as values. No booleans, lists, or other
   types yet.
@@ -198,8 +225,11 @@ Model → backend_visual.render → tkinter window (real OS window)
   baked into the emitted program. No runtime model, variables, mutation,
   expressions, or dynamic lookup.
 - Relationship is CONTAINMENT only: one parent per entity, tree-shaped.
-  No `beside`, `opens`, non-containment relationships, or multiplicity
-  (a "group with three members" cannot be expressed yet).
+  No `beside`, `opens`, or other non-containment relationships yet.
+- Groups are a naming/expansion mechanism only. A group cannot itself be
+  `say`n (`say cards title` is an error) and cannot be a member of
+  another group. There is no `every` keyword and no way to address "all
+  members of every group" as a single target.
 - No escaping inside string literals.
 - `say` runs top-to-bottom in program order (execution order beyond that
   is not decided).

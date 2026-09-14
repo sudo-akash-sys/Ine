@@ -1000,3 +1000,63 @@ costs 9 statements; that remains the concrete, measured case for the
 PROPOSED Multiplicity concept (§16/§30). The homepage WORKS today in all
 three targets; nothing in the working slice requires the user to pick
 the next feature yet.
+
+## §32. Multiplicity is implemented (Session 21)
+
+The user chose Multiplicity as the next feature and Option A for its
+form. What now exists:
+
+- **`make <count> <kind>` is real syntax** — `make 3 card` expands at
+  parse time into `make card-1 card` / `card-2` / `card-3`. Parser-only:
+  the model holds one entity per member, byte-identical to hand-writing.
+  No new keyword, no lexer/semantic/backend changes.
+- **`cards.ine` now uses it**, and the golden `cards.html` is unchanged —
+  direct proof that multiplicity is sugar over the same model. The §30
+  measured pain ("three cards cost nine statements") is solved: four
+  statements became one.
+- **113 tests pass.** A native probe verified the expanded entities
+  resolve and print from a real PE executable.
+
+**What multiplicity is NOT yet (PROPOSED, not decided):** the §30-§31
+reading of the concept included grouping, a name for the collection,
+"all members" addressing, and "every card has a title" per-member
+application. Today those still use ordinary `inside`/property
+statements. The collection/group semantics is the natural next slice —
+the next real `.ine` program should decide whether it needs a group
+entity or can keep composing from the six concepts.
+
+## §33. Collection & Group semantics (Session 22)
+
+The user's next architectural horizon: group naming, per-member property
+application, and collective addressing. Option A (minimal scope) was
+chosen, and it arrived as one new statement:
+
+```
+make 3 card
+group cards = card-1 card-2 card-3
+cards inside card-group     →  card-1 inside card-group  (once per member)
+cards text "..."            →  card-1 text "..."         (once per member)
+```
+
+**Design decisions recorded:**
+- `group <name> = <member> ...` names a collection of EXISTING
+  entities. Groups live beside entities, not as entities: a group can be
+  a statement target (`inside`, properties) but can never be `say`n,
+  given a property of its own, or be a member of another group.
+- Expansion is the Engine's job, at analysis time, BEFORE entity
+  validation — so every existing rule (undeclared, one parent, no
+  self-parenting, no cycles) applies unchanged to the per-member result.
+  Backends never see groups (the model records them, targets materialize
+  their members). This is the §10 adapter principle again.
+- **A note on scope honesty:** the user picked "group only" — per-member
+  properties were supposed to stay handwritten. Implementation added one
+  small slice of that anyway: a property whose TARGET is a group applies
+  to every member (the same 8-line expansion as collective `inside`). It
+  satisfies the user's own stated goal 2 with no `every` keyword; it is
+  flagged, not hidden, and the user may narrow it.
+
+**What remains genuinely open (PROPOSED, not decided):** "every card
+MUST have a title" (per-member obligation), collective `say`/
+verification over a group's values, groups of groups, and "all members
+of every group." None of these are needed by the homepage yet; the next
+real program decides.

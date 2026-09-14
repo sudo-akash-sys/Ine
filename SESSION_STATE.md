@@ -1,6 +1,6 @@
 # SESSION_STATE.md
 
-Last updated: 2026-09-12
+Last updated: 2026-09-14
 
 This file captures the complete project state so any AI session can
 continue without losing context. It is NOT a conversation summary.
@@ -848,6 +848,71 @@ From the user:
 94. **Verified:** full suite 102 tests pass; `python mylang.py
     examples/hello/hello.ine` still writes `output/hello.html`.
 
+### Session 21 (Multiplicity — `make <count> <kind>`)
+
+95. **User chose Multiplicity as the next feature** (from the §12
+    options), and chose **Option A** for its form: a count on `make` that
+    creates N named entities; grouping into a container stays a separate
+    `inside` statement. No new keyword — `make 3 card` is grammar-only.
+96. **Implemented (parser-only expansion):** `make <count> <kind>` parses
+    into N `MakeStatement`s — ids `<kind>-1` … `<kind>-<count>`, all of
+    kind `<kind>`. The lexer, semantic analyzer, and all three backends
+    are untouched: the model holds one entity per member, byte-identical
+    to writing them by hand. Count must be a positive whole number
+    (`make 0 card`, `make 3.5 card` → syntax error; `make -3 card` can't
+    even lex).
+97. **`cards.ine` rewritten with the feature:** the three handwritten
+    `make card-N card` lines became one `make 3 card`. **The golden
+    `cards.html` is unchanged (byte-identical test still passes)** — a
+    direct proof that multiplicity is sugar over the same model. 11
+    entities, 10 properties, same as before.
+98. **Verified:** full suite **113 tests pass** (102 + 11 new). Native
+    probe in `.tmp/multiplicity-probe/people.ine`:
+    `make 3 person` expanded to person-1/2/3, `say person-1 name` etc.
+    printed `Alice`/`Bob`/`Cara`/`30`/`35` from a real PE exe, exit 0.
+99. **Recorded limits (still PROPOSED, not decided):** grouping and
+    per-instance properties still use existing `inside`/property
+    statements; there is no way to NAME a group, say "all members", or
+    apply a property to every member at once. Those need the
+    collection/group semantics that remain PROPOSED.
+
+### Session 22 (Collection & Group semantics — `group <name> = <members>`)
+
+100. **User chose the next architectural horizon: collection & group
+    semantics** (group naming, per-member property application, collective
+    addressing), then picked **Option A (group only, minimal)** from the
+    three scope levels presented. What was actually implemented ended up
+    covering a small extra slice of goal 2 — a property whose target is a
+    group applies to every member — because it is the same 8 lines of
+    expansion logic as the collective `inside`. Flagged to the user; they
+    may narrow it later.
+101. **Implemented (semantic-analysis expansion, parser-only otherwise):**
+    - Lexer: `group` is a keyword; `=` is a new EQUALS token.
+    - Parser: `GroupStatement(name, members, line)`; `group <name> = <m1> <m2> ...`.
+    - Semantic: `model.groups` records each group; `_expand_groups` runs
+      BEFORE entity validation and rewrites group-targeted statements into
+      one ordinary statement per member (collective `inside` → N
+      `inside`s; group property → N property statements). All existing
+      checks (undeclared child/parent, self-parenting, double-parenting,
+      cycles) apply unchanged to the expanded statements. Group names are
+      NOT entities and may not collide with entity names; a group cannot
+      be `say`n and cannot be a member of another group (flat groups).
+    - Backends: untouched — they only ever see the expanded model.
+102. **`cards.ine` rewritten again:** the three `cards inside card-group`
+    lines became `group cards = card-1 card-2 card-3` + `cards inside
+    card-group`. **Golden `cards.html` is unchanged (byte-identical test
+    still passes)**. Full suite: **130 tests pass** (113 + 17 new
+    GroupSemanticsTests).
+103. **Verified natively:** probe `.tmp/group-probe/team.ine` —
+    `make 3 member` + `group team = ...` + `team inside department` +
+    `team role "engineer"` → the native exe prints `Engineering`,
+    `engineer` ×3 (group property applied to all three members), and
+    `Alice`/`Cara` (per-member values). `say cards title` correctly fails
+    ("not declared with make") — a group cannot be read as an entity.
+104. **Recorded limits:** no `every` keyword, no "all members of every
+    group", group as a member of a group unsupported, collective `say`
+    unsupported. These remain PROPOSED.
+
 ---
 
 ## 12. Next Step
@@ -903,13 +968,23 @@ bold heading (visual), footer pinned to the bottom edge in the visual
 window. Measured: cards side-by-side, footer at y=561/600. Delay/latency:
 102 tests pass.
 
-**NEXT concrete step (user picks):** the homepage cards slice now WORKS
-in all three targets. Remaining homepage gaps: (a) HTML/CSS fidelity is
-still basic (no stylesheet file, native `--visual` untouched), and
-(b) Multiplicity — the PROPOSED language feature that would replace the
-9 repeated statements with a single `three cards` idea. (1) Ship a
-living `output/cards.html` + `--visual` demo; (2) implement Multiplicity;
-(3) extend dictionary `row`/`bottom` hints to CSS/stylesheet output.
+**DONE (Session 21):** Multiplicity is implemented as `make <count>
+<kind>` — creation sugar that expands into numbered entities
+(`make 3 card` → card-1/2/3), parser-only, no new keyword. `cards.ine`
+now uses it and the golden HTML is byte-identical (proof it is sugar
+over the same model). 113 tests pass; native probe verified on the CPU.
+
+**DONE (Session 22):** Collection & Group semantics — `group <name> =
+<m1> <m2> ...` names a collection; `cards inside card-group` and
+`cards text "..."` expand to one per-member statement. Golden `cards.html`
+unchanged. 130 tests pass; native probe verified on the CPU.
+
+**NEXT concrete step (user picks):** the homepage cards slice WORKS in
+all three targets, repetition is solved, and collections are named. Remaining
+homepage gaps: (a) HTML/CSS fidelity is still basic (no stylesheet file, no
+viewport meta, no media queries); (b) conditions/state — "cards stack on a
+narrow screen" still has no `.ine` form; (c) multi-group operations —
+naming several groups, "all members of every group", collective `say`.
 Nothing is locked; the next slice comes from the homepage.
 
 ---

@@ -9,6 +9,7 @@ class TokenKind(Enum):
     IDENT = "ident"
     NUMBER = "number"
     STRING = "string"
+    EQUALS = "equals"
     NEWLINE = "newline"
     EOF = "eof"
 
@@ -21,7 +22,7 @@ class Token:
     column: int
 
 
-KEYWORDS = {"make", "say", "inside"}
+KEYWORDS = {"make", "say", "inside", "group"}
 
 
 class LexError(Exception):
@@ -80,6 +81,10 @@ def lex(source):
             word = source[start:i]
             kind = TokenKind.KEYWORD if word in KEYWORDS else TokenKind.IDENT
             tokens.append(Token(kind, word, start_line, start_column))
+        elif ch == "=":
+            tokens.append(Token(TokenKind.EQUALS, "=", line, column))
+            i += 1
+            column += 1
         elif ch.isdigit():
             start_line = line
             start_column = column

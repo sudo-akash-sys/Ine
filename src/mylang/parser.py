@@ -41,6 +41,13 @@ class InsideStatement:
 
 
 @dataclass(frozen=True)
+class GroupStatement:
+    name: str
+    members: tuple
+    line: int
+
+
+@dataclass(frozen=True)
 class PropertyRef:
     target: str
     name: str
@@ -53,8 +60,11 @@ def parse(tokens):
     while tokens[pos].kind == TokenKind.NEWLINE:
         pos += 1
     while tokens[pos].kind != TokenKind.EOF:
-        pos, statement = _parse_statement(tokens, pos)
-        statements.append(statement)
+        pos, new_stmts = _parse_statement(tokens, pos)
+        if isinstance(new_stmts, list):
+            statements.extend(new_stmts)
+        else:
+            statements.append(new_stmts)
         while tokens[pos].kind == TokenKind.NEWLINE:
             pos += 1
     return statements
@@ -66,6 +76,8 @@ def _parse_statement(tokens, pos):
         return _parse_make(tokens, pos)
     if token.kind == TokenKind.KEYWORD and token.value == "say":
         return _parse_say(tokens, pos)
+    if token.kind == TokenKind.KEYWORD and token.value == "group":
+        return _parse_group(tokens, pos)
     if token.kind == TokenKind.KEYWORD and token.value == "inside":
         raise SyntaxError("expected a name before 'inside'", token)
     if token.kind == TokenKind.IDENT:
@@ -90,9 +102,34 @@ def _parse_inside(tokens, pos):
     return pos + 3, InsideStatement(child.value, parent.value, child.line)
 
 
+def _parse_group(tokens, pos):
+    group = tokens[pos]
+    name = tokens[pos + 1]
+    if name.kind != TokenKind.IDENT:
+        raise SyntaxError("expected a group name after 'group'", name)
+    equals = tokens[pos + 2]
+    if equals.kind != TokenKind.EQUALS:
+        raise SyntaxError("expected '=' after the group name", equals)
+    members = []
+    pos += 3
+    while True:
+        member = tokens[pos]
+        if member.kind != TokenKind.IDENT:
+            raise SyntaxError("expected a member name in the group", member)
+        members.append(member.value)
+        pos += 1
+        if tokens[pos].kind in (TokenKind.NEWLINE, TokenKind.EOF):
+            break
+    if not members:
+        raise SyntaxError("a group must list at least one member", name)
+    return pos, GroupStatement(name.value, tuple(members), group.line)
+
+
 def _parse_make(tokens, pos):
     make = tokens[pos]
     target = tokens[pos + 1]
+    if target.kind == TokenKind.NUMBER:
+        return _parse_make_many(tokens, pos)
     if target.kind != TokenKind.IDENT:
         raise SyntaxError("expected a name after 'make'", target)
     after = tokens[pos + 2]
@@ -105,6 +142,27 @@ def _parse_make(tokens, pos):
     if tokens[end].kind not in (TokenKind.NEWLINE, TokenKind.EOF):
         raise SyntaxError("unexpected extra text", tokens[end])
     return end, MakeStatement(target.value, kind, make.line)
+
+
+def _parse_make_many(tokens, pos):
+    make = tokens[pos]
+    count_token = tokens[pos + 1]
+    try:
+        count = _literal(count_token)
+    except ValueError:
+        count = 0
+    if not isinstance(count, int) or count < 1:
+        raise SyntaxError("make count must be a positive whole number", count_token)
+    kind_token = tokens[pos + 2]
+    if kind_token.kind != TokenKind.IDENT:
+        raise SyntaxError("expected a kind name after 'make <count>'", kind_token)
+    after = tokens[pos + 3]
+    if after.kind not in (TokenKind.NEWLINE, TokenKind.EOF):
+        raise SyntaxError("unexpected extra text", after)
+    return pos + 3, [
+        MakeStatement(f"{kind_token.value}-{i}", kind_token.value, make.line)
+        for i in range(1, count + 1)
+    ]
 
 
 def _parse_property(tokens, pos):
