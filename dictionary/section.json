@@ -1,0 +1,13 @@
+{
+  "term": "section",
+  "kind": "section",
+  "element": "section",
+  "meaning": "A named region that groups related content on a page.",
+  "defaults": {
+    "contains": ["button", "image"]
+  },
+  "implementation": {
+    "html": "section element",
+    "guess": []
+  }
+}

@@ -7,13 +7,9 @@ layout, where a bar sits) come from the dictionary's machine-readable
 hints -- the same class of backend detail as the `element` field.
 """
 
-import json
-import os
 import tkinter as tk
 
-DICTIONARY_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "dictionary"
-)
+from . import dictionary
 
 # Local kind -> visual color defaults. The dictionary may annotate kinds
 # later; these are the renderer's own choices (backend detail, not language).
@@ -45,12 +41,7 @@ KIND_TEXT_COLORS = {
 
 
 def _dictionary_entry(kind):
-    path = os.path.join(DICTIONARY_DIR, kind + ".json")
-    try:
-        with open(path, "r", encoding="utf-8") as handle:
-            return json.load(handle)
-    except (OSError, ValueError):
-        return None
+    return dictionary.find(kind)
 
 
 def _children_of(model, parent_id):
@@ -119,7 +110,7 @@ def render(model, title_override=None):
             f"(found {len(pages)})"
         )
     page = pages[0]
-    window_title = title_override or model.properties.get((page.id, "title"), "MyLanguage")
+    window_title = title_override or model.properties.get((page.id, "title"), "Ine")
 
     root = tk.Tk()
     root.title(str(window_title))

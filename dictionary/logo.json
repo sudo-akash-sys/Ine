@@ -5,7 +5,7 @@
   "meaning": "The name or mark of the product or company, shown prominently and persistently.",
   "defaults": {
     "style": "strong",
-    "interactive": false
+    "interactive": "false by default - whether the logo is itself a link (not settable yet: Ine has no boolean values)"
   },
   "implementation": {
     "html": "text in a span or div, or an image if an asset exists",

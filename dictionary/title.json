@@ -1,0 +1,10 @@
+{
+  "term": "title",
+  "kind": "heading",
+  "element": "h3",
+  "meaning": "A heading or name, for a page, section, or card.",
+  "implementation": {
+    "html": "a heading element",
+    "guess": []
+  }
+}

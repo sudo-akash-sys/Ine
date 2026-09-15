@@ -1,6 +1,6 @@
-# Contributing to Intent Language
+# Contributing to Ine
 
-Thank you for your interest in contributing to Intent Language! This document provides guidelines for contributing to the project.
+Thank you for your interest in contributing to Ine! This document provides guidelines for contributing to the project.
 
 ## Code of Conduct
 
@@ -13,7 +13,7 @@ By participating in this project, you agree to abide by our [Code of Conduct](CO
 - Check existing issues before creating a new one
 - Provide a clear description of the problem
 - Include steps to reproduce the issue
-- Share your environment details (OS, Intent Language version, etc.)
+- Share your environment details (OS, Ine version, etc.)
 
 ### Submitting Changes
 
@@ -35,7 +35,7 @@ By participating in this project, you agree to abide by our [Code of Conduct](CO
 
 ## License and Copyright
 
-By contributing to Intent Language, you agree that your contributions will be licensed under the Apache License, Version 2.0.
+By contributing to Ine, you agree that your contributions will be licensed under the Apache License, Version 2.0.
 
 ### Developer Certificate of Origin
 
@@ -47,7 +47,7 @@ By making a contribution to this project, you certify that:
 
 ## Trademark Usage
 
-Note that while your code contributions are licensed under Apache-2.0, the Intent Language name and logos remain trademarks of sudo-akash-sys. See [TRADEMARKS.md](TRADEMARKS.md) for details.
+Note that while your code contributions are licensed under Apache-2.0, the Ine name and logos remain trademarks of sudo-akash-sys. See [TRADEMARKS.md](TRADEMARKS.md) for details.
 
 ## Questions?
 

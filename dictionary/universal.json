@@ -1,0 +1,13 @@
+{
+  "term": "universal",
+  "universal": true,
+  "meaning": "Content properties available on every declared kind. Programs set them with `<name> <property> <value>`: `page title \"Hello\"`, `card-1 title \"Fast\"`, `card-1 text \"Something\"`.",
+  "properties": {
+    "title": "text",
+    "text": "text"
+  },
+  "defaults": {
+    "title": "the heading or name of the thing",
+    "text": "the thing's readable content"
+  }
+}

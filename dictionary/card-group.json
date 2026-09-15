@@ -9,7 +9,8 @@
     "member-width": "equal",
     "member-spacing": "even",
     "narrow-layout": "stack members",
-    "narrow-class": "viewport.width == narrow"
+    "narrow-class": "viewport.width == narrow",
+    "contains": ["card"]
   },
   "implementation": {
     "html": "div or section holding the members",

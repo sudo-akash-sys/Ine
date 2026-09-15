@@ -5,7 +5,8 @@
   "meaning": "A generic region that groups its children on a page.",
   "defaults": {
     "fill-mode": "fit children",
-    "orientation": "vertical"
+    "orientation": "vertical",
+    "contains": ["banner", "card-group"]
   },
   "implementation": {
     "html": "a div block",

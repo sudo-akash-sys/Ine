@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ine"
+version = "0.1.0"
+description = "Ine — a language for describing what, not how"
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "Apache-2.0" }
+
+[project.scripts]
+ine = "ine.cli:main"
+ine-agent = "ine_agent.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

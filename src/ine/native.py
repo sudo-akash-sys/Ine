@@ -23,7 +23,7 @@ class NativeError(Exception):
 
 def find_c_compiler():
     """Return (kind, command) for an available C compiler."""
-    env_cc = os.environ.get("MYLANG_CC")
+    env_cc = os.environ.get("INE_CC")
     if env_cc:
         return ("env", env_cc)
     for name in ("zig", "clang", "gcc", "cc"):
@@ -48,7 +48,7 @@ def compile_c(statements, name, work_dir=None):
     if toolchain is None:
         raise NativeError(
             "no C compiler found. Install Zig (zig cc), LLVM clang, or gcc, "
-            "or set MYLANG_CC to your compiler command."
+            "or set INE_CC to your compiler command."
         )
 
     kind, compiler = toolchain

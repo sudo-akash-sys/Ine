@@ -1,0 +1,15 @@
+{
+  "term": "button",
+  "kind": "control",
+  "element": "button",
+  "meaning": "A single control a person can activate to trigger an action.",
+  "defaults": {
+    "label": "the action it triggers, written as a short phrase",
+    "text-alignment": "center",
+    "interactive": "activation behavior - not settable yet: Ine has no boolean values"
+  },
+  "implementation": {
+    "html": "button element",
+    "guess": ["readable text", "clear pressed/hover state", "focusable and keyboard-accessible"]
+  }
+}

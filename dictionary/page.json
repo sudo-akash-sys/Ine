@@ -8,7 +8,8 @@
     "orientation": "vertical",
     "children-width": "full",
     "fill-mode": "top-to-bottom",
-    "growing-child": "a container child between bars"
+    "growing-child": "a container child between bars",
+    "contains": ["container", "footer", "header", "section"]
   },
   "implementation": {
     "html": "the document's root block",

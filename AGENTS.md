@@ -1,39 +1,118 @@
-# Project Authority
+# Ine Agent Operating Rules
 
-WORKBOOK.md contains the project's high-level vision and decisions.
+You are an engineering agent working on the Ine programming-language
+project.
 
-LANGUAGE.md contains the current language specification.
+## Entry point
 
-The AI must distinguish between:
-- DECIDED
-- PROPOSED
-- EXPERIMENTAL
-- UNDECIDED
+Start here. This file is the permanent entry point for autonomous work in
+the Ine repository. Read the following in order, consulting the others as
+listed rather than re-reading the whole repository:
 
-A user question or exploration is NOT automatically a design decision.
+1. `AGENTS.md` — these operating rules.
+2. `.agent/MISSION.md` — the current objective.
+3. `.agent/STATE.md` — current ground truth.
+4. `.agent/PLAN.md` — relevant sections for executable work.
+5. `.agent/DECISIONS.md` — before making architectural or language decisions.
+6. `.agent/BLOCKERS.md` — before proceeding if something may require
+   commander input.
+7. After completing coherent work, update `.agent/STATE.md` and
+   `.agent/HISTORY.md`.
 
-Do not convert a possibility discussed in conversation
-into a mandatory architectural requirement.
+## Commander
 
-Do not make major language-design decisions autonomously.
+The commander defines:
+- product direction
+- language meaning
+- syntax
+- semantic decisions
+- major architectural direction
 
-When an architectural choice has significant consequences,
-present the options and trade-offs before implementing it.
+The agent owns:
+- implementation
+- debugging
+- testing
+- refactoring
+- documentation
+- research
+- engineering decomposition
+- verification
 
-# Temporary-File Policy (permanent rule)
+## Autonomous operation
 
-Use the project's `.tmp/` directory for EVERY Intent Expression-generated
-temporary probe, generated source, executable, object file, compiler
-test, intermediate artifact, and disposable build output. This is a
-permanent working rule, not just this session.
+When given a mission:
 
-`.tmp/` is already in `.gitignore` — never commit it.
+1. Inspect the current repository state.
+2. Read `.agent/MISSION.md`.
+3. Read `.agent/STATE.md`.
+4. Read the relevant parts of `.agent/PLAN.md`.
+5. Consult `.agent/DECISIONS.md` before making architectural or language
+   decisions.
+6. Check `.agent/BLOCKERS.md` if the task may require commander input.
+7. Determine the next safe engineering task.
+8. Implement it.
+9. Run appropriate focused tests.
+10. Review the changes.
+11. Update `.agent/STATE.md`.
+12. Update `.agent/HISTORY.md`.
+13. Continue to the next safe task.
 
-Keep generated FINAL project outputs (e.g. `output/*.html`) in their own
-output directory, separate from `.tmp/`. Final outputs are the committed
-deliverables; `.tmp/` is the scratch space for discovering the language.
+Do not stop merely because one subtask is complete.
 
-Do not assume that external tools will never use the operating system's
-%TEMP% directory. If a compiler, runtime, package manager, shell, or
-other trusted build tool requires the system temp directory, allow it
-rather than attempting to redirect all system temporary-file behavior.
+## Do not ask the commander about ordinary implementation choices.
+
+Make reasonable engineering decisions when:
+- multiple implementations preserve the same semantics
+- the choice is reversible
+- existing project conventions provide guidance
+
+## Commander escalation
+
+Stop and create `.agent/BLOCKERS.md` when a decision requires
+the commander's judgment about:
+
+- language syntax
+- language semantics
+- product direction
+- fundamental architecture
+- breaking compatibility
+- conflicting interpretations of the intended behavior
+
+Include:
+- the question
+- evidence
+- options
+- recommendation
+- consequences
+
+## Context efficiency
+
+Do not read the entire repository unnecessarily.
+
+Start with:
+- AGENTS.md
+- .agent/MISSION.md
+- .agent/STATE.md
+- .agent/DECISIONS.md
+- .agent/BLOCKERS.md
+- relevant PLAN section
+
+Then inspect only files relevant to the current task.
+
+Use repository state rather than replaying historical conversation.
+
+## Verification
+
+Prefer focused tests during individual tasks.
+
+Run broader regression tests at meaningful checkpoints.
+
+Never claim work is complete without verification.
+
+## Ine constraints
+
+Do not change Ine's syntax or semantics without commander approval.
+
+Preserve existing behavior unless the mission explicitly authorizes change.
+
+Keep temporary/intermediate artifacts inside `.tmp/`.

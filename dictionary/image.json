@@ -1,0 +1,14 @@
+{
+  "term": "image",
+  "kind": "asset",
+  "element": "figure",
+  "meaning": "A picture shown in the interface, supplied by an asset.",
+  "defaults": {
+    "source": "the asset the implementation pulls from",
+    "alt": "text describing the image when it cannot be shown"
+  },
+  "implementation": {
+    "html": "figure wrapping an img, or a div",
+    "guess": []
+  }
+}

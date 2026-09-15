@@ -1,0 +1,31 @@
+{
+  "name": "ine-vscode",
+  "displayName": "Ine autocomplete (prototype)",
+  "description": "Smallest possible autocomplete for .ine files, powered by the Ine Python dictionary via a JSON subprocess.",
+  "version": "0.0.1",
+  "publisher": "anomalyco",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Other"
+  ],
+  "activationEvents": [
+    "onLanguage:ine"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "ine",
+        "aliases": [
+          "Ine"
+        ],
+        "extensions": [
+          ".ine"
+        ]
+      }
+    ]
+  }
+}

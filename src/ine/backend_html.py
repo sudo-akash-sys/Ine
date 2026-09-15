@@ -1,12 +1,9 @@
 """Renders the semantic model as an HTML document."""
 
 import html as _html
-import json
-import os
 
-DICTIONARY_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "dictionary"
-)
+from . import dictionary
+
 DEFAULT_ELEMENT = "div"
 
 
@@ -17,24 +14,15 @@ class BackendError(Exception):
         self.line = line
 
 
-def _read_entry(kind):
-    path = os.path.join(DICTIONARY_DIR, kind + ".json")
-    try:
-        with open(path, "r", encoding="utf-8") as handle:
-            return json.load(handle)
-    except (OSError, ValueError):
-        return None
-
-
 def _element_for_kind(kind):
-    entry = _read_entry(kind)
+    entry = dictionary.find(kind)
     if entry is None:
         return None
     return entry.get("element", DEFAULT_ELEMENT)
 
 
 def _layout_for_kind(kind):
-    entry = _read_entry(kind)
+    entry = dictionary.find(kind)
     if entry is None:
         return "stack"
     return entry.get("layout", "stack")

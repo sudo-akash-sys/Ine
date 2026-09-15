@@ -4,7 +4,6 @@
   "element": "article",
   "meaning": "A self-contained content unit with a title and a body, framed so it reads as one block.",
   "defaults": {
-    "contains": ["title", "description"],
     "padding": "comfortable",
     "border": "subtle",
     "corner-radius": "slight"

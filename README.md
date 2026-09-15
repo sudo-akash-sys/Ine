@@ -1,4 +1,4 @@
-# Intent Expression — A Language for Describing What, Not How
+# Ine — A Language for Describing What, Not How
 
 <div align="center">
 
@@ -21,7 +21,7 @@ footer position "bottom"
 
 ---
 
-> **Early stage / experimental.** Intent Expression is a real, working
+> **Early stage / experimental.** Ine is a real, working
 > prototype — you can build and run the examples today — but the language
 > is still evolving and behavior may change. [LANGUAGE.md](LANGUAGE.md)
 > states exactly what is implemented; [WORKBOOK.md](WORKBOOK.md) is the
@@ -29,15 +29,15 @@ footer position "bottom"
 
 ---
 
-## What Is Intent Expression?
+## What Is Ine?
 
-Intent Expression (`.ine`) is a tiny language that lets you describe software by *what it should be*, not *how to build it*. You express intent — the meaning of what you want — and multiple backends translate that intent into working implementations.
+Ine (`.ine`) is a tiny language that lets you describe software by *what it should be*, not *how to build it*. You express intent — the meaning of what you want — and multiple backends translate that intent into working implementations.
 
 **The core philosophy:**
 
 > Describe WHAT the software should do before describing HOW it should do it.
 
-Traditional programming forces you to write implementation code directly. Intent Expression moves you up in abstraction:
+Traditional programming forces you to write implementation code directly. Ine moves you up in abstraction:
 
 | Implementation-Level | Intent-Level |
 |---------------------|--------------|
@@ -60,7 +60,7 @@ difference.
 ### HTML Backend
 
 ```bash
-python mylang.py homepage.ine -o homepage.html
+ine homepage.ine -o homepage.html
 ```
 
 Emits semantic HTML: each kind maps to an element from the dictionary, and
@@ -70,7 +70,7 @@ rendered result.
 ### Native Backend
 
 ```bash
-python mylang.py program.ine --native
+ine program.ine --native
 ```
 
 Emits C, then a C compiler produces a native executable that runs on the CPU
@@ -79,7 +79,7 @@ Emits C, then a C compiler produces a native executable that runs on the CPU
 ### Visual Backend
 
 ```bash
-python mylang.py interface.ine --visual
+ine interface.ine --visual
 ```
 
 Opens a real OS window showing your interface layout (tkinter). Needs a
@@ -95,7 +95,7 @@ Every programming language forces you to think about implementation: CSS require
 
 ### The Solution
 
-Intent Expression provides a semantic layer between you and the implementation. You describe entities, their properties, and relationships. The backends decide how to translate that into working code.
+Ine provides a semantic layer between you and the implementation. You describe entities, their properties, and relationships. The backends decide how to translate that into working code.
 
 ### What Makes It Different
 
@@ -116,11 +116,11 @@ Open a terminal in the folder where you want the project to live
 in PowerShell on Windows), then run:
 
 ```bash
-git clone https://github.com/sudo-akash-sys/intent-language.git
-cd intent-language
+git clone https://github.com/sudo-akash-sys/Ine.git
+cd Ine
 ```
 
-This creates an `intent-language/` folder and puts the project inside it.
+This creates an `Ine/` folder and puts the project inside it.
 
 ### Your First Program
 
@@ -128,7 +128,7 @@ Create `hello.ine`:
 
 ```ine
 make page
-page title "Hello, Intent Expression"
+page title "Hello, Ine"
 ```
 
 ### Run It
@@ -136,7 +136,14 @@ page title "Hello, Intent Expression"
 From the repo root, generate the HTML target (requires Python 3):
 
 ```bash
-python mylang.py hello.ine -o hello.html
+ine hello.ine -o hello.html
+```
+
+If the `ine` command is not on PATH yet, use the Python fallback —
+identical behavior:
+
+```bash
+python -m ine hello.ine -o hello.html
 ```
 
 The terminal prints a short summary:
@@ -148,14 +155,14 @@ properties: 1
 wrote:      hello.html
 ```
 
-Open `hello.html` — the browser tab says "Hello, Intent Expression", with
+Open `hello.html` — the browser tab says "Hello, Ine", with
 the same text as the page heading.
 
 The other two targets work the same way from the same file:
 
 ```bash
-python mylang.py hello.ine --native   # compiles to a runnable executable
-python mylang.py hello.ine --visual   # opens a real window with the layout
+ine hello.ine --native   # compiles to a runnable executable
+ine hello.ine --visual   # opens a real window with the layout
 ```
 
 `--native` needs a C compiler (Zig recommended); `--visual` needs a desktop
@@ -165,7 +172,7 @@ environment.
 
 ## The Language
 
-Intent Expression is intentionally tiny:
+Ine is intentionally tiny:
 
 ```ine
 # Declare entities
@@ -214,7 +221,7 @@ say page title
 
 ## The Dictionary System
 
-The **dictionary** is central to Intent Expression. It maps human-friendly concepts to semantic meaning and implementation hints:
+The **dictionary** is central to Ine. It maps human-friendly concepts to semantic meaning and implementation hints:
 
 ```json
 {
@@ -293,7 +300,7 @@ Each backend is an **adapter** that translates the same semantic model into its 
 ## What Works Today
 
 Everything below is implemented and covered by the test suite
-(`python -m unittest discover -s tests`, 130 passing):
+(`python -m unittest discover -s tests`, 151 passing):
 
 - Entity declaration and properties (`make`, `<name> <prop> <value>`)
 - Multiplicity (`make <count> <kind>` — e.g. `make 3 card` creates `card-1/2/3`)
@@ -306,6 +313,9 @@ Everything below is implemented and covered by the test suite
 - Native backend (emits C, compiles to a runnable executable via Zig / clang / gcc)
 - Visual backend (opens a real window with tkinter)
 - Dictionary-driven element mapping, row layout, and bottom-position hints
+- Deterministic dictionary discovery (`ine --dict [kind | file.ine]`): which
+  kinds follow `make`, a kind's properties and members, and what to write
+  next in a real program — from `dictionary/*.json` alone, no AI
 - Real working programs in [examples/](examples/)
 
 ## Not Implemented Yet
@@ -321,7 +331,8 @@ Designed and on the roadmap, but does not work today:
 - State, conditions, events, and actions
 - Booleans, lists, expressions, runtime variables (today: strings and numbers only)
 - Additional backends (React, Flutter) and a separate CSS stylesheet
-- Engine-applied templates (`defaults` / `guess` are declared in the dictionary but not yet read)
+- Engine-applied templates (`guess` is declared in the dictionary but not yet
+  read; `defaults` now drive the discovery suggestions)
 - Image/multimodal input and AI interpretation layers
 
 See [WORKBOOK.md](WORKBOOK.md) §15 for the roadmap and [LANGUAGE.md](LANGUAGE.md) §7 for known limits.
@@ -363,7 +374,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ## Monetization & Sustainability
 
-Intent Expression is open source, but sustainable development requires funding. Planned paths:
+Ine is open source, but sustainable development requires funding. Planned paths:
 
 1. **Hosted Services** — online playground, CI integration, private dictionary hosting
 2. **Enterprise Extensions** — custom backends, team collaboration, template libraries
@@ -376,7 +387,7 @@ The core language and dictionary will remain open. Commercial offerings build on
 
 ## License
 
-Apache-2.0 — see [LICENSE](LICENSE) for details. Use it freely for personal and commercial projects. The "Intent Language" name and logo remain trademarks; see [TRADEMARKS.md](TRADEMARKS.md).
+Apache-2.0 — see [LICENSE](LICENSE) for details. Use it freely for personal and commercial projects. The Ine name and logo remain trademarks; see [TRADEMARKS.md](TRADEMARKS.md).
 
 ---
 

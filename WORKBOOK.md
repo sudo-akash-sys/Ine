@@ -1,4 +1,4 @@
-# Intent Expression --- Guidebook & Workbook
+# Ine --- Guidebook & Workbook
 
 A working specification for a simple, AI-native, behavior-oriented
 software language
@@ -10,7 +10,7 @@ software language
 
 ## 0. Project Identity
 
-Working name: Intent Expression.
+Working name: Ine.
 
 Core mission: Create a simple way for a person to describe what software
 should be, how it should behave, what constraints matter, and what it
@@ -1060,3 +1060,420 @@ MUST have a title" (per-member obligation), collective `say`/
 verification over a group's values, groups of groups, and "all members
 of every group." None of these are needed by the homepage yet; the next
 real program decides.
+
+## §34. The language is named Ine (Session 23)
+
+**DECIDED (user, Session 23).** The three names that public users will
+touch are now uniform:
+
+| Thing | Name |
+|-------|------|
+| Language | **Ine** |
+| File extension | `.ine` |
+| Terminal command | `ine` (`ine hello.ine -o hello.html`) |
+| GitHub repository | `sudo-akash-sys/Ine` |
+
+Two naming decisions deliberately pushed the project away from generic
+branding: the working title "Intent Expression / Intent Language /
+MyLanguage" was collapsed to a single short name, and the tool/project
+name no longer differs from the language name (the old `mylang`
+package/tool name existed precisely because "Intent Expression" was too
+long to type). One name, three surfaces, no translation table for users.
+
+**Engineering consequence (implemented):** `src/mylang/` → `src/ine/`
+(a git rename, history preserved), root launcher `ine.py`, tests
+`test_ine.py`, `pyproject.toml` with console script
+`ine = "ine.cli:main"`, and `INE_CC` for the native toolchain override.
+`python -m ine` is the documented fallback because Windows Store Python
+installs `ine.exe` into a `Scripts/` directory that is not on PATH.
+Backends, parser, and semantics were untouched — a rename of names, not
+of architecture.
+
+**Not decided yet:** a `pip install ine` PyPI release (the name may be
+taken; the installable package could become `ine-lang` — the console
+script stays `ine` either way), and whether the public repo keeps the
+single-word branding in the long term.
+
+## §35. The dictionary becomes a discoverable, queryable layer (Session 24)
+
+The dictionary already existed as vocabulary data (`dictionary/*.json`,
+10 entries) that backends read for renderer hints (`element`, `layout`,
+`position`), but no engine read the semantic layer (`defaults`,
+`contains`, `meaning`). The user asked for a deterministic discovery
+system: given `make` or `make header`, what constructs are valid or
+useful next — explicitly NOT an AI layer.
+
+**What was done:**
+- **`src/ine/dictionary.py`** — the single reader of `dictionary/*.json`
+  (the backends' duplicated `DICTIONARY_DIR`/`_read_entry`/
+  `_dictionary_entry` helpers now delegate to it). It answers, from data
+  alone: `makeable()` (which kinds follow `make` — ambient `viewport` is
+  excluded via its `provided-by: environment` field), `suggest(kind)`
+  (properties from `defaults`, member concepts from `defaults.contains`,
+  sibling kinds sharing the same semantic `kind` bucket), `properties_for`,
+  `value_hint` (typed `properties` like viewport `width → "a length"`, or
+  a `defaults` suggestion like header `height → "compact"`), `related`,
+  and `for_model(model)` — what is valid in the context of a real program.
+  All returned as `Suggestion(text, source, note)`.
+- **`ine --dict [kind | file.ine]`** — new CLI query surface. No arguments
+  lists the vocabulary; a kind name explains that kind; an `.ine` file
+  explains what could be written next in that program. The `source`
+  positional became optional (only for `--dict`).
+- **Vocabulary data, all grounded in real programs or the user's brief:**
+  new kinds `button`, `image`, `section`, `title`; `contains` added to
+  `header` (logo, navigation, title — from topbar/cards), `page` (header,
+  footer, title, section), `card-group` (card). Pure data; backends and
+  golden outputs unchanged.
+- **No language changes.** Parser, semantics, interpreter, all backends,
+  multiplicity, and groups are untouched.
+
+**Design choices (and why):**
+- The dictionary stays a **companion, not a validator**: `alice.ine` uses
+  `make alice person` with no `person` entry — the dictionary is advisory,
+  never a rejection. This keeps recommendations additive and safe.
+- Suggestions are **derived, not hardcoded**: adding a JSON entry
+  automatically extends every query. Sibling relationships fall out of the
+  existing semantic `kind` bucket (header/footer are both `"bar"`), no new
+  schema.
+- The two-layer dictionary already flagged in §31 stayed separate: this
+  work reads the semantic layer for discovery; backends still read only
+  renderer hints.
+
+**Test results:** 151 tests pass (130 existing + 21 new `DictionaryTests`
+covering lookups, makeable/vs-ambient, per-kind suggestions, value hints,
+deduplication, members/related, model context, and the `--dict` CLI).
+
+**What this is NOT yet (PROPOSED, not decided):** autocomplete wiring
+into an editor, synonyms and ambiguity handling (§4), regex/prefix
+matching and ranking, `defaults`-driven template instantiation (§5), and
+any AI intent layer (§7). The next real experiment is likely synonym
+normalization or prefix-completion over the same data — whichever the next
+real `.ine` program exposes first.
+
+## §36. The dictionary correction: properties vs structural members (Session 25)
+
+The Session 24 discovery layer read mixed JSON faithfully: `defaults.contains`
+blended content-property concepts (title, text, description, subtitle)
+with genuine child entities (logo, navigation). The user's own programs
+write `card-1 title "Fast"` as a PROPERTY, while the dictionary called
+`title` a "member of card". A read-only semantics investigation answered
+eight questions with parser/semantic/example evidence; this session
+implemented its correction.
+
+**DECIDED (user):** the language has exactly four semantic constructs
+(Entity, Kind, Property, Relationship; Value attaches to a Property);
+`title` and `text` are properties in real programs; `contains` means
+structural child relationships only; the canonical relationship
+direction is the one Ine writes (`child inside parent`); no siblings are
+inferred from kind buckets; the dictionary stays advisory (never a
+validator); no syntax change, no autocomplete, no synonym normalization.
+
+**What was done:**
+- **Data (`dictionary/*.json`):** removed `title`/`text`/`description`/
+  `subtitle` from every `contains` list and re-grounded `contains` in
+  real programs — page → header, footer, container; header → logo,
+  navigation; container → banner (hero.ine); card-group → card; section
+  → button, image. A new `dictionary/universal.json` declares `title`
+  and `text` as universal content properties on every regular kind.
+- **Booleans made honest:** `interactive` in button/logo was `true`/
+  `false` — a value the language cannot express. Now a string hint
+  stating it is not settable until Ine grows a boolean value type.
+- **Reader (`src/ine/dictionary.py`):** `properties_for`/`value_hint`
+  include universal `title`/`text`; `members` reads `contains` and notes
+  are phrased `<child> inside <kind>`; the `kind`-bucket sibling
+  inference and the `related()` API were removed. Backends untouched —
+  they never read `contains` (still only `element`/`layout`/`position`).
+- **Tests:** DictionaryTests rewritten to lock the distinction:
+  title/text are properties, header suggests logo/navigation as
+  children, card suggests no title/text children, member suggestions use
+  `child inside parent` semantics, sibling inference is gone, universal
+  property suggestions work. **154 tests pass.**
+
+**Verification:** `ine --dict card` shows `title`/`text` as properties
+and no "title inside card"; `ine --dict header` shows `logo inside
+header` / `navigation inside header`. All four golden outputs (hello,
+topbar, hero, cards) rebuild byte-identical — pure-data and
+discovery-layer change, zero rendering change.
+
+**Out of scope (per instruction, still PROPOSED later):** prefix
+completion, synonym normalization, AI inference, parser changes, and a
+broader semantic architecture.
+
+## §37. Reverse containment in the dictionary (Session 26)
+
+The §36 usability experiment's biggest gap (report D) was one-directional
+placement discovery: `ine --dict <parent>` lists children, but
+`ine --dict <child>` never said where the child could live — and
+`card-group` and `section` had no dictionary parent at all, so a new user
+could not be guided to place them.
+
+**What was done:**
+- **Data, re-grounded only where a demonstrated example exists:**
+  - `page.json` `contains` → `["container", "footer", "header",
+    "section"]` — `section inside page` is now demonstrated by
+    `examples/dictionary-demo.ine` (built and rendered in Session 25).
+    This restores `section` to page only because there is now real
+    evidence for it; the §36 removal was evidence-motivated, not a
+    permanent rule.
+  - `container.json` `contains` → `["banner", "card-group"]` —
+    `card-group inside container` is demonstrated by `cards.ine`
+    (`card-group inside main`).
+- **Reader (`src/ine/dictionary.py`):** new `parents(kind)` — the reverse
+  of `members`, derived purely by inverting `contains` over regular
+  kinds. No new schema, no new concepts.
+- **CLI:** `ine --dict <kind>` now prints a "belongs inside:" block after
+  properties/children (e.g. `section inside page`), so containment is
+  discoverable in both directions.
+- **Tests:** five new DictionaryTests (reverse direction for known
+  relationships, the two formerly-orphan kinds, roots/unknowns/ambient
+  are empty, content concepts like `title`/`text` are never parents).
+  **159 tests pass.**
+
+**Verification:** all four golden outputs (hello, topbar, hero, cards)
+and the dictionary-demo build are unchanged. `ine --dict section` now
+shows `belongs inside: page`; `ine --dict card-group` shows
+`belongs inside: container`. No syntax, parser, semantic, or backend
+change.
+
+## §38. The editor experience: Ine VS Code autocomplete (Session 27)
+
+The §35-§37 work made the dictionary discoverable from the CLI
+(`ine --dict`). The next line to cross: the dictionary should help
+*while editing*, not just from a terminal. Goal (deliberately tiny): a
+user can open a `.ine` file, start typing, and get completions powered
+by the existing dictionary — without leaving the editor.
+
+**Architecture decision — the extension consumes the Python dictionary;
+it does not own a second one.** Reading `dictionary/*.json` directly from
+TypeScript was considered and rejected: the raw JSON is only half the
+answer, and re-deriving `makeable`-filtering, universal `title`/`text`
+merging, member phrasing and `parents()` inversion in TS is precisely
+how "Ine says X, VS Code says Y" drift starts. Instead the extension
+spawns the existing Python package as a JSON subprocess and renders what
+it returns:
+
+```
+your buffer ──► python src/ine/autocomplete.py ──► VS Code popup
+                    │
+                    ▼
+              ine.dictionary (the real dictionary, single source of truth)
+```
+
+- **`src/ine/autocomplete.py`** — new query backend. It decides which
+  dictionary query a cursor position maps to and answers one JSON query
+  per stdin/stdout round trip:
+  - after `make `        → `dictionary.makeable()`
+  - after a kind/entity  → `dictionary.suggest(kind)` (properties +
+    structural members)
+  - after `inside `      → `dictionary.parents(child_kind)` (the §37
+    reverse containment, now doing real work in the editor)
+  Entity resolution is lenient (no full parse): a name is a declared
+  kind, an entity from `make name [kind]`, a numbered entity from
+  `make <count> <kind>` (`card-1 ...`), or a group (`group cards = ...`)
+  whose members share a kind. Unknown names → empty, never invented.
+  No AI, synonyms, or fuzzy matching; the `.ine` grammar, parser,
+  semantic engine and both backends are untouched.
+- **`editor/vscode-ine/`** — the extension. `extension.js` is a pure
+  proxy: it forwards `{buffer, line, column}` to the Python module under
+  the workspace root and maps the response to `CompletionItem`s. It
+  contains no Ine vocabulary. Activates only for `.ine` files
+  (`onLanguage:ine`); `INE_PYTHON` env var overrides which Python runs.
+- **Tests:** 31 new tests (`tests/test_autocomplete.py`) — context
+  detection, entity resolution (kind / make-with-kind / multiplicity /
+  groups / unknown), completion content and types for the three contexts,
+  and the stdin/stdout protocol contract including a garbage-input guard.
+  **190 tests pass** (159 + 31).
+
+**Verified end-to-end** through the exact subprocess the extension uses:
+`make he` → kinds (`header` among them); `header inside p` → `page`;
+`header ` → `logo`, `navigation`, `height`, `title`, `text`, ...;
+`card-1 ` (from `make 2 card`) → card properties; `cards inside `
+(group) → `card-group`. All existing goldens byte-identical; the
+dictionary and its data are unchanged — the editor now consumes the
+one dictionary.
+
+**Does not work yet:** property *values* (`page title "..."`), the
+second argument of `make name kind`, completions while typing a property
+name, caching/warm-up (one subprocess per keystroke), diagnostics and
+formatting, and any packaging. All deliberately out of scope for the
+prototype.
+
+## §39. Autocomplete responsiveness (Session 28)
+
+Manual testing of §38 found two UX gaps, both in the editor harness, not
+the dictionary: (1) completion only auto-triggered after a space, so
+typing `make h` never asked the dictionary; (2) each keystroke spawned a
+fresh Python process (~140 ms measured), so suggestions felt delayed.
+
+**Fixes, keeping the dictionary the single source of truth:**
+- **Triggers:** the provider now registers `" "` *and* the ASCII letters
+  as trigger characters — generic characters, not Ine vocabulary — so the
+  editor asks the dictionary while a word is still being typed
+  (`make h` → popup with `header`, ...). `extension.js` still holds zero
+  language knowledge.
+- **Duration:** one long-lived Python process. `src/ine/autocomplete.py`
+  now answers a stream of JSON-lines queries (one request → one response;
+  EOF after a request still exits, so the one-shot protocol is
+  unbroken). `extension.js` gained a tiny `DictionaryWorker`: FIFO queue,
+  responses matched in order, 4 s per-request timeout, respawn on death.
+  The edit child is started eagerly at activation and killed on
+  deactivate.
+- **Measured:** warm-session query 0.3 ms vs ~140 ms fresh process
+  (.tmp/latency_probe.py). The first keystroke still pays Python startup;
+  every later one is effectively free.
+
+**Tests:** three new ProtocolTests — a persistent process answers each
+line in order, `id` is echoed back, and a garbage/error line does not
+kill the loop (a later valid line is still answered). **193 tests pass**
+(190 + 3). All goldens byte-identical; `ine --dict` unchanged; no
+dictionary, syntax, parser, semantic, or backend change.
+
+## §40. Property completions insert the value shape (Session 29)
+
+After §38/§39 the dictionary suggested the right *property name*, but the
+author still had to know (or remember) that `title` wants quotes. Next:
+when a text property is selected, insert the expected value shape so the
+cursor lands inside the quotes.
+
+**Investigation first:** `value_hint()` returns a hint *string*, not a
+value type; the dictionary has **no machine-readable type/shape
+annotation** for program-writable properties. Only ambient `viewport.json`
+carries `properties: {width: "length", height: "length"}` (not makeable,
+so never completed). The one defensible text signal is `universal.json`
+itself: its `meaning` text documents `title`/`text` usage with quoted
+strings, and every real program writes them quoted. Everything else
+(`layout: row`, `height: compact`, ...) takes bare words.
+
+**Decision (conservative):** the engine marks *only* the two universal
+content properties (`title`, `text`) as text-shaped. No dictionary file
+changed — `_value_shape()` in `src/ine/autocomplete.py` derives the
+shape from `dictionary._universal_defaults()`. Property items now carry
+an optional `value_shape: "text"`; all other items keep `None`. Where the
+dictionary has no signal, behavior is unchanged (no invented placeholders).
+
+**Editor adapter only:** `extension.js` renders a text-shaped property as
+a VS Code snippet — `insertText = new SnippetString('title "${1}"')` — so
+selecting `title` yields `page title ""` with the cursor/placeholder
+inside the quotes (typing fills the value). Snippet syntax stays isolated
+in the extension; the engine only reports shapes.
+
+**Tests:** six new ValueShapeTests — universal `title`/`text` are
+text-shaped on any kind, regular properties (`height`) and concept items
+(`logo`) are not, kind items carry no shape, and property labels/inserts
+unchanged. **199 tests pass** (193 + 6). All goldens byte-identical;
+`ine --dict` unchanged; no dictionary, syntax, parser, semantic, or
+backend change.
+
+## §41. Value shapes move into the dictionary (Session 30)
+
+§29 hardcoded in `autocomplete.py` that `title`/`text` are text-valued.
+This session removes that special case: the dictionary itself now
+describes a property's value shape, and both readers consume it
+generically. No autocomplete behavior was expanded.
+
+**Evidence survey (all 15 dictionary files):** there is no program-
+writable property with a machine-readable value type today except the two
+universal content properties — `universal.json` `meaning` documents
+`title`/`text` with quoted-string examples and every real program writes
+them quoted. `viewport.json` already carries a `properties` block
+(`width`/`height` → `"length"`), which is the same idea. Nothing else is
+safe: `card-group layout` is a single `"row"` string, not a known set;
+`height`/`padding`/`border` are prose defaults. No types were invented.
+
+**Dictionary representation chosen** (mirrors the existing `viewport`
+precedent):
+```json
+"properties": {
+  "title": "text",
+  "text": "text"
+}
+```
+A `properties` block maps a property name to its value shape: a plain
+string names a value kind (`"text"`, `"length"`, ...); a list of strings
+names a `"choice"` with those allowed options (`"layout": ["row",
+"column"]` would be the future form). The representation already
+*describes* future enumerated choices even though no entry uses one yet.
+
+**Reader (`src/ine/dictionary.py`):** new public `ValueShape` dataclass
+(`type`, default `"unknown"`; `choices`), the normalizer `_shape_from`
+(string → named type, list of strings → choice, else unknown), and the
+reader `value_shape(kind, prop)` — a kind's own `properties` block first,
+then the universal entry's for the content properties. Read from metadata
+only, never inferred; `value_hint` (prose/default) and `properties_for`
+are untouched.
+
+**Consumers:** `autocomplete.py` dropped `_value_shape()` (no more
+title/text knowledge); a property item's `value_shape` is now
+`dictionary.value_shape(kind, item.text)`. `extension.js` unchanged — it
+still turns `value_shape == "text"` into the `title "${1}"` snippet.
+
+**Tests:** new DictionaryTests + `_shape_from` capacity tests (str →
+kind, list → choice with options, non-data → unknown, existing viewport
+`"length"` types read back). **204 tests pass** (199 + 5). All goldens
+byte-identical; `ine --dict <real kind>` unchanged (the pseudo-entry
+`--dict universal` now shows `a text` — a side effect of it owning a
+`properties` block, still valid). No syntax, parser, semantic, backend,
+or autocomplete-behavior change.
+
+**Still inexpressible:** there is no evidence-based value kind beyond
+`text` (and ambient `length`). `layout`, `height`, `padding`, `border`,
+`orientation` etc. have only single prose defaults — declaring them as
+choices would require confirming the option set from real programs first.
+
+## §42. The value completion context and a dictionary coverage check (Session 31)
+
+Autonomous session, following the PLAN selection rule onto the two
+`EXECUTABLE` steps (§41-era plan): property-value completion, then the
+dictionary coverage check.
+
+**Property-value completion (§42a).** After §40's snippet, selecting a
+text property inserts `title ""` with the cursor inside — but an author
+who types the property by hand (or needs the shape on an existing line)
+had no value-position completion. The engine now recognizes a new
+context: a line ending `<name> <property> ` (trailing separator, two
+words, not `inside`/`make`) maps to `dictionary.value_shape(kind, prop)`:
+
+- `text`  → one item, label/insert `""`, detail = `value_hint(kind, prop)`
+  (e.g. "the heading or name of the thing");
+- `choice` → one item per allowed option (bare-word insert);
+- `unknown` / unresolvable name → empty, never invented.
+
+`autocomplete.py` only gains the `value` branch; the dictionary is queried
+via the existing `value_shape` reader. **`extension.js` needed no change**:
+item type `value` already falls through to VS Code's generic
+`CompletionItemKind.Value` and the thin proxy surfaces the items as-is —
+no second vocabulary, no snippet logic touched. Eight new tests (context
+detection, text placeholder + hint, multiplicity resolution, unknown
+property/name → empty, a patched `choice` shape listing its options, and
+the `value` context echoed in the response). **212 tests pass** (204 + 8).
+All goldens byte-identical; no dictionary, semantic, or backend change.
+
+**Dictionary coverage check (§42b).** Reconciled every kind, property,
+and containment pair in all real programs (`examples/**/*.ine`) plus
+WORKBOOK/LANGUAGE mentions against the dictionary:
+
+- **All real-program vocabulary is covered.** Every property written is
+  in `properties_for(kind)` (or universal `title`/`text`); every
+  containment pair resolves to a structural member (`header inside page`,
+  `logo`/`navigation inside header`, `container`/`footer`/`section inside
+  page`, `banner`/`card-group inside container`, `card inside card-group`,
+  `button`/`image inside section` — with the entity aliases `hero`→`banner`
+  and `main`→`container` resolving cleanly).
+- **Two stale self-flags in `examples/dictionary-demo.ine` corrected.**
+  The demo asserts "card-group has no dictionary parent" and "section has
+  no dictionary parent" — both false since §37 gave `container → card-group`
+  and `page → section`. Comments updated to match the dictionary (comments
+  only; render unchanged).
+- **Evidence-gated mentions stay undeclared (correctly).** `search`
+  (WORKBOOK proposes it as a header member throughout, but no real `.ine`
+  uses it), `subtitle`/`description` (stripped from `contains` in §36 for
+  lack of evidence), and WORKBOOK L544's `button inside header` layout (vs
+  the dictionary's evidence-grounded `button inside section`) are all
+  recorded in `.agent/BLOCKERS.md` and left out of every dictionary file.
+- **Scope boundary, not a gap:** `examples/alice/alice.ine` defines a
+  custom kind `person` with `name`/`age`/`height` for the native target.
+  The advisory dictionary enumerates a guided homepage footprint, not
+  every user domain; arbitrary kinds are a first-class language feature.
+
+After §42a + §42b, no `EXECUTABLE` item remains in `.agent/PLAN.md`; the
+plan's selection rule therefore says stop and record — this session did.

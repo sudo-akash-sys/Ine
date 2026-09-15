@@ -7,7 +7,8 @@
     "height": "compact",
     "orientation": "horizontal",
     "children-alignment": "vertical center",
-    "children-distribution": "space-between, in declared order"
+    "children-distribution": "space-between, in declared order",
+    "contains": ["logo", "navigation"]
   },
   "implementation": {
     "html": "header element",

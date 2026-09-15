@@ -1,14 +1,14 @@
-# Intent Expression — Language Specification
+# Ine — Language Specification
 
 Status: everything in this file describes what is ACTUALLY IMPLEMENTED
-in `src/mylang/` so far. It grows as the language grows. Nothing here is
+in `src/ine/` so far. It grows as the language grows. Nothing here is
 final — the whole language (concepts, syntax, architecture) is still
 PROPOSED / EXPERIMENTAL.
 
 ## 1. Files
 
-An Intent Expression program is a text file. Extension: `.ine` (ine = intent expression).
-DECIDED.
+An Ine program is a text file. Extension: `.ine` (the language's
+name is Ine; the extension spells it). DECIDED.
 
 ## 2. Pipeline (as implemented)
 
@@ -21,7 +21,7 @@ DECIDED.
     → backend     (target: model → output; currently HTML when the program describes a page)
 ```
 
-Invoked as `python mylang.py <file.ine> [-o out.html]`.
+Invoked as `ine <file.ine> [-o out.html]`.
 
 ## 3. Grammar (current, EXPERIMENTAL)
 
@@ -149,7 +149,8 @@ heading; a child's `text` property becomes its element content, and a
 non-leaf/leaf child's `title` property renders as an `<h3>`.
 
 Kinds currently declared in the dictionary: page, header, logo,
-navigation, banner, container, card, card-group, footer, viewport.
+navigation, banner, container, card, card-group, footer, title, button,
+image, section, viewport.
 
 The dictionary is consulted by the engine for the element mapping and
 for two machine-readable layout hints (same class of backend detail as
@@ -159,9 +160,39 @@ marks a kind that is pinned to the bottom edge (`footer`). The `defaults`
 and `guess` fields are not yet applied (no CSS stylesheet generation);
 nodes and children in a row get inline flex styles instead.
 
+A single reader — `src/ine/dictionary.py` — loads every entry and answers
+deterministic discovery questions from the data alone (no AI, no
+hardcoded lists): which kinds can follow `make`, which properties a kind
+accepts, which structural children belong inside a kind, and (by
+reversing `contains`) which kinds a child can live inside. Query it
+with `ine --dict [kind | file.ine]`, or in code via
+`ine.dictionary.{suggest, properties_for, value_hint, members, parents,
+for_model}`. The dictionary is advisory: it never rejects a kind or
+property (see the `person` kind in examples/alice).
+
+The dictionary keeps three categories separate:
+
+- **Kinds** — entities a program can declare with `make`.
+- **Properties** — `<name> <property> <value>` statements. `title` and
+  `text` are universal content properties: every declared kind may take
+  them (`page title "Hello"`, `card-1 title "Fast"`, `card-1 text
+  "Something"` — a title is a property, not a child). All other
+  properties are kind-specific advisory hints.
+- **Structural members** — child kinds that belong inside a kind,
+  stated in the direction Ine writes relationships: `<child> inside
+  <parent>` (e.g. `logo inside header`, `card inside card-group`).
+  `defaults.contains` lists only these. No siblings are inferred from a
+  kind's `kind` bucket. Containment is discoverable in both directions:
+  querying a parent shows its children (`ine --dict page` lists
+  "section inside page"), and `ine --dict <child>` reports where it
+  belongs (`belongs inside`), derived by inverting `contains`. Child
+  relationships are grounded in real programs (e.g. `card-group inside
+  container` from cards.ine, `section inside page` from
+  dictionary-demo.ine).
+
 ## 6a. Target: native executable (current, EXPERIMENTAL)
 
-Invoked as `python mylang.py <file.ine> --native`.
+Invoked as `ine <file.ine> --native`.
 
 Pipeline for the native target:
 
@@ -176,7 +207,7 @@ statements → backend_c.emit → .c file → external C compiler → .exe → r
   decimals become `printf("%.17g\n", 1.5)`. Strings are DATA (the `%s`
   argument), never format text, so input like `100%` can never be parsed
   as a C format specifier.
-- The external compiler is found in this order: `MYLANG_CC` environment
+- The external compiler is found in this order: `INE_CC` environment
   variable, then `zig`, then `clang`, then `gcc`. On Windows, clang alone
   cannot link (needs the MSVC runtime `libcmt.lib`); `zig cc` is the
   recommended toolchain because it bundles clang + lld + libc.
@@ -185,7 +216,7 @@ statements → backend_c.emit → .c file → external C compiler → .exe → r
 
 ## 6b. Target: visual window (current, EXPERIMENTAL)
 
-Invoked as `python mylang.py <file.ine> --visual`.
+Invoked as `ine <file.ine> --visual`.
 
 Pipeline for the visual target:
 

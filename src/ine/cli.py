@@ -1,9 +1,10 @@
-"""Command-line entry point for the mylang tool."""
+"""Command-line entry point for the ine tool."""
 
 import argparse
 import os
 import sys
 
+from . import dictionary
 from .backend_html import BackendError, render
 from .backend_visual import VisualError, show as visual_show
 from .interpreter import execute
@@ -43,10 +44,13 @@ def _report_error(error):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(
-        prog="mylang",
-        description="Process a MyLanguage (.ine) program",
+        prog="ine",
+        description="Process an Ine (.ine) program",
     )
-    parser.add_argument("source", help="path to a .ine program")
+    parser.add_argument(
+        "source", nargs="?", default=None,
+        help="path to a .ine program (or a dictionary query with --dict)",
+    )
     parser.add_argument(
         "-o", "--out", default=None,
         help="output file path for the html target (default: output/<name>.html)",
@@ -59,9 +63,18 @@ def main(argv=None):
         "--visual", action="store_true",
         help="open a native window showing the program's visual layout",
     )
+    parser.add_argument(
+        "--dict", action="store_true",
+        help="query the dictionary: a kind name, an .ine program, or the whole vocabulary",
+    )
     args = parser.parse_args(argv)
 
+    if args.source is None and not args.dict:
+        parser.error("the following arguments are required: source")
+
     try:
+        if args.dict:
+            return _dict(args.source)
         if args.native:
             return _native(args.source)
         if args.visual:
@@ -131,6 +144,55 @@ def _visual(source_path):
     print("opening visual window...")
     visual_show(model)
     return 0
+
+
+def _dict(source):
+    if source is None:
+        items = dictionary.suggest()
+        print("what can follow 'make':")
+        for item in items:
+            print(f"  {item.text:20s} {item.note}")
+        print(f"\n{len(items)} kinds declared in the dictionary")
+        return 0
+
+    if os.path.isfile(source):
+        with open(source, "r", encoding="utf-8") as handle:
+            program = handle.read()
+        model = analyze(parse(lex(program)))
+        print(f"context: {os.path.basename(source)} ({len(model.entities)} entities)")
+        empty = True
+        for entity_id in sorted(model.entities):
+            kind = model.entities[entity_id].kind
+            items = dictionary.suggest(kind)
+            if not items:
+                continue
+            empty = False
+            print(f"\n{entity_id} ({kind}):")
+            for item in items:
+                print(f"  {item.text:30s} {item.note}")
+        if empty:
+            print("  (no dictionary-suggested statements)")
+        return 0
+
+    entry = dictionary.find(source)
+    if entry is not None:
+        items = dictionary.suggest(source)
+        print(f"{source} ({entry.get('kind', '?')}):")
+        for item in items:
+            print(f"  {item.text:30s} {item.note}")
+        parent_kinds = dictionary.parents(source)
+        if parent_kinds:
+            print("\nbelongs inside:")
+            for parent in parent_kinds:
+                print(f"  {parent:30s} {source} inside {parent}")
+        return 0
+
+    if os.path.splitext(source)[1] or os.sep in source:
+        print(f"error: '{source}' is not a readable .ine file", file=sys.stderr)
+        return 1
+
+    print(f"error: unknown kind '{source}'", file=sys.stderr)
+    return 1
 
 
 if __name__ == "__main__":

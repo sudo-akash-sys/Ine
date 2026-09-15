@@ -6,16 +6,20 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from mylang.backend_c import emit as emit_c
-from mylang.backend_html import BackendError, render
-from mylang.cli import build
-from mylang.interpreter import execute
-from mylang.lexer import LexError, TokenKind, lex
-from mylang.native import compile_c, find_c_compiler, run_native
-from mylang.parser import (
+from ine.backend_c import emit as emit_c
+from ine.backend_html import BackendError, render
+from ine.cli import build
+from ine.dictionary import (
+    Suggestion, ValueShape, _shape_from, find, for_model, makeable, members, parents,
+    properties_for, suggest, value_hint, value_shape,
+)
+from ine.interpreter import execute
+from ine.lexer import LexError, TokenKind, lex
+from ine.native import compile_c, find_c_compiler, run_native
+from ine.parser import (
     GroupStatement, InsideStatement, MakeStatement, PropertyRef, PropertyStatement, SayStatement, SyntaxError, parse,
 )
-from mylang.semantic import SemanticError, analyze, resolve
+from ine.semantic import SemanticError, analyze, resolve
 
 
 class LexerTests(unittest.TestCase):
@@ -236,6 +240,257 @@ class BackendTests(unittest.TestCase):
         model = analyze(statements)
         with self.assertRaises(BackendError):
             render(model)
+
+
+class DictionaryTests(unittest.TestCase):
+    def test_find_returns_entry_for_declared_kind(self):
+        entry = find("header")
+        self.assertIsNotNone(entry)
+        self.assertEqual(entry["term"], "header")
+        self.assertEqual(entry["element"], "header")
+
+    def test_find_returns_none_for_unknown_kind(self):
+        self.assertIsNone(find("wizard"))
+
+    def test_makeable_kinds_exclude_ambient_and_universal_entries(self):
+        kinds = makeable()
+        for expected in ("page", "header", "logo", "navigation",
+                         "card", "card-group", "footer", "button", "image",
+                         "section", "title"):
+            self.assertIn(expected, kinds)
+        self.assertNotIn("viewport", kinds)
+        self.assertNotIn("universal", kinds)
+
+    def test_suggest_without_kind_lists_every_kind_in_order(self):
+        items = suggest()
+        self.assertEqual([item.source for item in items], ["kind"] * len(items))
+        self.assertEqual([item.text for item in items], makeable())
+        self.assertIn(Suggestion("header", "kind", find("header")["meaning"]), items)
+
+    def test_suggest_kind_lists_declared_and_universal_properties(self):
+        items = suggest("header")
+        texts = [item.text for item in items]
+        self.assertIn("height", texts)
+        self.assertIn("orientation", texts)
+        self.assertIn("title", texts)
+        self.assertIn("text", texts)
+        self.assertIn(Suggestion("height", "property", "compact"), items)
+
+    def test_suggest_kind_lists_structural_members_as_inside(self):
+        items = suggest("header")
+        self.assertIn(Suggestion("logo", "concept", "logo inside header"), items)
+        self.assertIn(
+            Suggestion("navigation", "concept", "navigation inside header"), items
+        )
+
+    def test_card_does_not_suggest_title_text_as_children(self):
+        items = suggest("card")
+        texts = [item.text for item in items]
+        self.assertNotIn(
+            Suggestion("title", "concept", "title inside card"), items
+        )
+        self.assertNotIn(
+            Suggestion("text", "concept", "text inside card"), items
+        )
+        self.assertEqual(texts.count("title"), 1)
+        self.assertEqual(texts.count("text"), 1)
+
+    def test_section_does_not_suggest_title_text_as_children(self):
+        items = suggest("section")
+        self.assertNotIn(
+            Suggestion("title", "concept", "title inside section"), items
+        )
+        self.assertNotIn(
+            Suggestion("text", "concept", "text inside section"), items
+        )
+        self.assertIn(Suggestion("button", "concept", "button inside section"), items)
+        self.assertIn(Suggestion("image", "concept", "image inside section"), items)
+
+    def test_no_sibling_inference_from_kind_buckets(self):
+        for kind in makeable():
+            for item in suggest(kind):
+                self.assertNotEqual(item.source, "related")
+        self.assertNotIn("footer", [s.text for s in suggest("header")])
+        self.assertNotIn("section", [s.text for s in suggest("banner")])
+        self.assertNotIn("banner", [s.text for s in suggest("section")])
+
+    def test_suggest_unknown_kind_is_empty(self):
+        self.assertEqual(suggest("wizard"), [])
+
+    def test_suggest_deduplicates_overlapping_names(self):
+        section = [s.text for s in suggest("section")]
+        self.assertEqual(section.count("title"), 1)
+        self.assertEqual(section.count("text"), 1)
+        header = [s.text for s in suggest("header")]
+        self.assertEqual(header.count("logo"), 1)
+        self.assertEqual(header.count("navigation"), 1)
+
+    def test_properties_include_universal_title_and_text(self):
+        self.assertEqual(
+            properties_for("card"),
+            ["border", "corner-radius", "padding", "text", "title"],
+        )
+
+    def test_properties_for_unknown_kind_is_empty(self):
+        self.assertEqual(properties_for("wizard"), [])
+
+    def test_value_hint_uses_defaults(self):
+        self.assertEqual(value_hint("header", "height"), "compact")
+
+    def test_value_hint_uses_typed_properties(self):
+        self.assertEqual(value_hint("viewport", "width"), "a length")
+
+    def test_value_hint_uses_universal_properties(self):
+        self.assertEqual(
+            value_hint("card", "title"),
+            "the heading or name of the thing",
+        )
+        self.assertEqual(
+            value_hint("card", "text"),
+            "the thing's readable content",
+        )
+
+    def test_value_hint_unknown_property_is_none(self):
+        self.assertIsNone(value_hint("header", "not-a-property"))
+        self.assertIsNone(value_hint("wizard", "anything"))
+
+    def test_value_shape_universal_title_and_text_are_text(self):
+        self.assertEqual(
+            value_shape("header", "title"), ValueShape("text"),
+        )
+        self.assertEqual(
+            value_shape("card", "text"), ValueShape("text"),
+        )
+        self.assertEqual(value_shape("page", "title").choices, ())
+
+    def test_value_shape_plain_property_is_unknown(self):
+        self.assertEqual(value_shape("header", "height"), ValueShape())
+        self.assertEqual(value_shape("card", "border"), ValueShape())
+        self.assertEqual(value_shape("header", "layout"), ValueShape())
+
+    def test_value_shape_uses_existing_declared_types(self):
+        self.assertEqual(value_shape("viewport", "width"), ValueShape("length"))
+        self.assertEqual(value_shape("viewport", "height"), ValueShape("length"))
+
+    def test_value_shape_unknown_kind_or_property_is_unknown(self):
+        self.assertEqual(value_shape("wizard", "anything"), ValueShape())
+        self.assertEqual(value_shape("header", "not-a-property"), ValueShape())
+
+    def test_shape_from_string_and_choice_list(self):
+        self.assertEqual(_shape_from("text"), ValueShape("text"))
+        self.assertEqual(
+            _shape_from(["row", "column"]),
+            ValueShape("choice", ("row", "column")),
+        )
+        self.assertEqual(_shape_from(None), ValueShape())
+        self.assertEqual(_shape_from(""), ValueShape())
+        self.assertEqual(_shape_from([]), ValueShape())
+        self.assertEqual(_shape_from([1, 2]), ValueShape())
+
+    def test_members_are_structural_children_only(self):
+        self.assertEqual(members("header"), ["logo", "navigation"])
+        self.assertEqual(members("page"), ["container", "footer", "header", "section"])
+        self.assertEqual(members("card-group"), ["card"])
+        self.assertEqual(members("container"), ["banner", "card-group"])
+        self.assertEqual(members("card"), [])
+        self.assertEqual(members("banner"), [])
+        self.assertEqual(members("section"), ["button", "image"])
+
+    def test_parents_reverse_the_contains_direction(self):
+        self.assertEqual(parents("header"), ["page"])
+        self.assertEqual(parents("logo"), ["header"])
+        self.assertEqual(parents("navigation"), ["header"])
+        self.assertEqual(parents("banner"), ["container"])
+        self.assertEqual(parents("card"), ["card-group"])
+
+    def test_parents_ground_orphan_kinds_from_real_examples(self):
+        self.assertEqual(parents("card-group"), ["container"])
+        self.assertEqual(parents("section"), ["page"])
+
+    def test_parents_is_empty_for_roots_and_unknowns(self):
+        self.assertEqual(parents("page"), [])
+        self.assertEqual(parents("viewport"), [])
+        self.assertEqual(parents("wizard"), [])
+        self.assertEqual(parents("text"), [])
+
+    def test_parents_never_treat_content_as_children(self):
+        self.assertEqual(parents("title"), [])
+        self.assertEqual(parents("text"), [])
+        self.assertEqual(parents("description"), [])
+
+    def test_for_model_suggests_each_entitys_statements(self):
+        statements = parse(lex(
+            'make page\npage title "Hi"\nmake header\nheader inside page\n'
+        ))
+        model = analyze(statements)
+        items = for_model(model)
+        texts = [item.text for item in items]
+        self.assertIn("header height", texts)
+        self.assertIn("page orientation", texts)
+        self.assertIn("make logo", texts)
+        self.assertIn("make footer", texts)
+        for item in items:
+            if item.text == "make logo":
+                self.assertEqual(item.note, "logo inside header")
+
+    def test_for_model_skips_unknown_kinds(self):
+        statements = parse(lex('make alice person\nalice name "A"\n'))
+        model = analyze(statements)
+        self.assertEqual(for_model(model), [])
+
+    def test_dict_cli_lists_kinds(self):
+        from io import StringIO
+        from contextlib import redirect_stdout
+        from ine.cli import main
+        out = StringIO()
+        with redirect_stdout(out):
+            code = main(["--dict"])
+        self.assertEqual(code, 0)
+        self.assertIn("header", out.getvalue())
+        self.assertIn("what can follow 'make'", out.getvalue())
+
+    def test_dict_cli_suggests_for_a_kind(self):
+        from io import StringIO
+        from contextlib import redirect_stdout
+        from ine.cli import main
+        out = StringIO()
+        with redirect_stdout(out):
+            code = main(["--dict", "card"])
+        self.assertEqual(code, 0)
+        self.assertIn("padding", out.getvalue())
+        self.assertIn("title", out.getvalue())
+        self.assertNotIn("a member of card", out.getvalue())
+        self.assertNotIn("title inside card", out.getvalue())
+
+    def test_dict_cli_shows_structural_members_as_inside(self):
+        from io import StringIO
+        from contextlib import redirect_stdout
+        from ine.cli import main
+        out = StringIO()
+        with redirect_stdout(out):
+            code = main(["--dict", "header"])
+        self.assertEqual(code, 0)
+        self.assertIn("logo inside header", out.getvalue())
+
+    def test_dict_cli_reports_where_a_kind_belongs(self):
+        from io import StringIO
+        from contextlib import redirect_stdout
+        from ine.cli import main
+        out = StringIO()
+        with redirect_stdout(out):
+            code = main(["--dict", "section"])
+        self.assertEqual(code, 0)
+        self.assertIn("belongs inside", out.getvalue())
+        self.assertIn("section inside page", out.getvalue())
+        out = StringIO()
+        with redirect_stdout(out):
+            code = main(["--dict", "card-group"])
+        self.assertEqual(code, 0)
+        self.assertIn("card-group inside container", out.getvalue())
+
+    def test_dict_cli_unknown_kind_fails(self):
+        from ine.cli import main
+        self.assertEqual(main(["--dict", "wizard"]), 1)
 
 
 class SayTests(unittest.TestCase):
@@ -685,7 +940,7 @@ class VisualBackendTests(unittest.TestCase):
             "header inside page\nlogo inside header\n"
         ))
         model = analyze(statements)
-        from mylang.backend_visual import _children_of
+        from ine.backend_visual import _children_of
         self.assertEqual(_children_of(model, "page"), ["header"])
         self.assertEqual(_children_of(model, "header"), ["logo"])
         self.assertEqual(_children_of(model, "logo"), [])
@@ -693,27 +948,27 @@ class VisualBackendTests(unittest.TestCase):
     def test_children_of_root_has_no_children(self):
         statements = parse(lex('make page\npage title "Hi"\n'))
         model = analyze(statements)
-        from mylang.backend_visual import _children_of
+        from ine.backend_visual import _children_of
         self.assertEqual(_children_of(model, "page"), [])
 
     def test_kind_of_returns_entity_kind(self):
         statements = parse(lex("make hero banner\nmake page\nhero inside page\n"))
         model = analyze(statements)
-        from mylang.backend_visual import _kind_of
+        from ine.backend_visual import _kind_of
         self.assertEqual(_kind_of(model, "hero"), "banner")
         self.assertEqual(_kind_of(model, "page"), "page")
 
     def test_bg_returns_explicit_color_for_page(self):
-        from mylang.backend_visual import _bg, KIND_COLORS
-        from mylang.semantic import Model, Entity
+        from ine.backend_visual import _bg, KIND_COLORS
+        from ine.semantic import Model, Entity
         model = Model()
         model.entities["p"] = Entity("p", "page")
         model.relationships = {}
         self.assertEqual(_bg(model, "p"), KIND_COLORS["page"])
 
     def test_bg_inherits_from_parent_when_kind_has_no_color(self):
-        from mylang.backend_visual import _bg
-        from mylang.semantic import Model, Entity
+        from ine.backend_visual import _bg
+        from ine.semantic import Model, Entity
         model = Model()
         model.entities["p"] = Entity("p", "page")
         model.entities["l"] = Entity("l", "logo")
@@ -721,23 +976,23 @@ class VisualBackendTests(unittest.TestCase):
         self.assertEqual(_bg(model, "l"), _bg(model, "p"))
 
     def test_fg_returns_text_color_for_known_kind(self):
-        from mylang.backend_visual import _fg, KIND_TEXT_COLORS
-        from mylang.semantic import Model, Entity
+        from ine.backend_visual import _fg, KIND_TEXT_COLORS
+        from ine.semantic import Model, Entity
         model = Model()
         model.entities["h"] = Entity("h", "header")
         self.assertEqual(_fg(model, "h"), KIND_TEXT_COLORS["header"])
 
     def test_is_leaf_true_for_entity_with_no_children(self):
-        from mylang.backend_visual import _is_leaf
-        from mylang.semantic import Model, Entity
+        from ine.backend_visual import _is_leaf
+        from ine.semantic import Model, Entity
         model = Model()
         model.entities["x"] = Entity("x", "card")
         model.relationships = {}
         self.assertTrue(_is_leaf(model, "x"))
 
     def test_is_leaf_false_for_entity_with_children(self):
-        from mylang.backend_visual import _is_leaf
-        from mylang.semantic import Model, Entity
+        from ine.backend_visual import _is_leaf
+        from ine.semantic import Model, Entity
         model = Model()
         model.entities["p"] = Entity("p", "page")
         model.entities["c"] = Entity("c", "header")
@@ -745,23 +1000,23 @@ class VisualBackendTests(unittest.TestCase):
         self.assertFalse(_is_leaf(model, "p"))
 
     def test_has_text_true_when_text_property_exists(self):
-        from mylang.backend_visual import _has_text
-        from mylang.semantic import Model, Entity
+        from ine.backend_visual import _has_text
+        from ine.semantic import Model, Entity
         model = Model()
         model.entities["h"] = Entity("h", "banner")
         model.properties[("h", "text")] = "Welcome"
         self.assertTrue(_has_text(model, "h"))
 
     def test_has_text_false_when_no_text_property(self):
-        from mylang.backend_visual import _has_text
-        from mylang.semantic import Model, Entity
+        from ine.backend_visual import _has_text
+        from ine.semantic import Model, Entity
         model = Model()
         model.entities["h"] = Entity("h", "banner")
         self.assertFalse(_has_text(model, "h"))
 
     def test_visual_render_returns_a_tk_root(self):
         import tkinter as tk
-        from mylang.backend_visual import render
+        from ine.backend_visual import render
         statements = parse(lex(
             'make page\npage title "Test"\n'
             'make header\nheader inside page\n'
@@ -774,7 +1029,7 @@ class VisualBackendTests(unittest.TestCase):
 
     def test_visual_render_uses_title_override(self):
         import tkinter as tk
-        from mylang.backend_visual import render
+        from ine.backend_visual import render
         statements = parse(lex('make page\npage title "Original"\n'))
         model = analyze(statements)
         root = render(model, title_override="Override Title")
@@ -782,16 +1037,16 @@ class VisualBackendTests(unittest.TestCase):
         root.destroy()
 
     def test_visual_render_no_page_raises_error(self):
-        from mylang.backend_visual import render, VisualError
-        from mylang.semantic import Model, Entity
+        from ine.backend_visual import render, VisualError
+        from ine.semantic import Model, Entity
         model = Model()
         model.entities["h"] = Entity("h", "header")
         with self.assertRaises(VisualError):
             render(model)
 
     def test_visual_render_multiple_pages_raises_error(self):
-        from mylang.backend_visual import render, VisualError
-        from mylang.semantic import Model, Entity
+        from ine.backend_visual import render, VisualError
+        from ine.semantic import Model, Entity
         model = Model()
         model.entities["p1"] = Entity("p1", "page")
         model.entities["p2"] = Entity("p2", "page")
@@ -816,7 +1071,7 @@ class VisualBackendTests(unittest.TestCase):
 
     def test_hero_int_visual_render_creates_window(self):
         import tkinter as tk
-        from mylang.backend_visual import render
+        from ine.backend_visual import render
         source_path = os.path.join(
             os.path.dirname(__file__), "..", "examples", "homepage-hero", "hero.ine"
         )
@@ -831,11 +1086,11 @@ class VisualBackendTests(unittest.TestCase):
 
     def test_visual_render_default_title_when_no_title_property(self):
         import tkinter as tk
-        from mylang.backend_visual import render
+        from ine.backend_visual import render
         statements = parse(lex("make page\n"))
         model = analyze(statements)
         root = render(model)
-        self.assertEqual(root.title(), "MyLanguage")
+        self.assertEqual(root.title(), "Ine")
         root.destroy()
 
     def test_cards_program_builds_model_for_visual(self):
@@ -859,7 +1114,7 @@ class VisualBackendTests(unittest.TestCase):
 
     def test_cards_visual_render_creates_window(self):
         import tkinter as tk
-        from mylang.backend_visual import render
+        from ine.backend_visual import render
         source_path = os.path.join(
             os.path.dirname(__file__), "..", "examples", "homepage-cards", "cards.ine"
         )
@@ -873,36 +1128,36 @@ class VisualBackendTests(unittest.TestCase):
         root.destroy()
 
     def test_layout_of_returns_stack_for_unknown_kind(self):
-        from mylang.backend_visual import _layout_of
-        from mylang.semantic import Model, Entity
+        from ine.backend_visual import _layout_of
+        from ine.semantic import Model, Entity
         model = Model()
         model.entities["x"] = Entity("x", "not-a-real-kind")
         self.assertEqual(_layout_of(model, "x"), "stack")
 
     def test_layout_of_card_group_reads_dictionary_row(self):
-        from mylang.backend_visual import _layout_of
-        from mylang.semantic import Model, Entity
+        from ine.backend_visual import _layout_of
+        from ine.semantic import Model, Entity
         model = Model()
         model.entities["g"] = Entity("g", "card-group")
         self.assertEqual(_layout_of(model, "g"), "row")
 
     def test_position_of_returns_flow_for_unknown_kind(self):
-        from mylang.backend_visual import _position_of
-        from mylang.semantic import Model, Entity
+        from ine.backend_visual import _position_of
+        from ine.semantic import Model, Entity
         model = Model()
         model.entities["x"] = Entity("x", "not-a-real-kind")
         self.assertEqual(_position_of(model, "x"), "flow")
 
     def test_position_of_footer_reads_dictionary_bottom(self):
-        from mylang.backend_visual import _position_of
-        from mylang.semantic import Model, Entity
+        from ine.backend_visual import _position_of
+        from ine.semantic import Model, Entity
         model = Model()
         model.entities["f"] = Entity("f", "footer")
         self.assertEqual(_position_of(model, "f"), "bottom")
 
     def test_cards_visual_packs_cards_side_by_side(self):
         import tkinter as tk
-        from mylang.backend_visual import render
+        from ine.backend_visual import render
         source_path = os.path.join(
             os.path.dirname(__file__), "..", "examples", "homepage-cards", "cards.ine"
         )
@@ -918,7 +1173,7 @@ class VisualBackendTests(unittest.TestCase):
 
     def test_cards_visual_pins_footer_to_bottom(self):
         import tkinter as tk
-        from mylang.backend_visual import render
+        from ine.backend_visual import render
         source_path = os.path.join(
             os.path.dirname(__file__), "..", "examples", "homepage-cards", "cards.ine"
         )

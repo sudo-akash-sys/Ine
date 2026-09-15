@@ -1,0 +1,58 @@
+# dictionary-demo.ine
+# A small coherent landing page written as a first-time Ine user.
+#
+# Discovery trail used to write this file (see the session report for details):
+#   kinds found via            ine --dict
+#   members + properties via   ine --dict <kind>
+#   statement grammar (make / inside / property / say / group) via LANGUAGE.md
+# Anything the dictionary did NOT guide is flagged in a comment below.
+
+make page
+page title "Drift Coffee"
+
+make header
+header inside page
+
+make logo
+logo text "Drift Coffee"
+logo inside header
+
+make navigation
+navigation inside header
+# Note: navigation has no `contains` and there is no "link" kind in the
+# dictionary, so this nav carries no links (same as the real examples).
+
+make container
+container inside page
+
+make banner
+banner text "Welcome to Drift Coffee"
+banner inside container
+
+# card-group is dictionary-contained (container -> card-group; Session 26).
+make card-group card-group
+card-group inside container
+
+# `make 2 card` (multiplicity) and `group` are LANGUAGE.md syntax.
+make 2 card
+group cards = card-1 card-2
+cards inside card-group
+
+card-1 title "Mornings"
+card-1 text "Small-batch brews, served fast."
+card-2 title "Evenings"
+card-2 text "Slow corners, loud music, no rush."
+
+# section is dictionary-contained too (page -> section; Session 26).
+make section
+section title "Order ahead"
+section text "Skip the line: grab your cup early."
+section inside page
+
+# `button label` is suggested by --dict button, but the HTML/visual targets
+# render a node's visible content from its `text` property, so we set `text`.
+make button
+button text "Order now"
+button inside section
+
+say page title
