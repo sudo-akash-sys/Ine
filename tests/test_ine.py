@@ -378,6 +378,8 @@ class DictionaryTests(unittest.TestCase):
 
     def test_shape_from_string_and_choice_list(self):
         self.assertEqual(_shape_from("text"), ValueShape("text"))
+        self.assertEqual(_shape_from("length"), ValueShape("length"))
+        self.assertEqual(_shape_from("row"), ValueShape())
         self.assertEqual(
             _shape_from(["row", "column"]),
             ValueShape("choice", ("row", "column")),

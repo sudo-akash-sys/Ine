@@ -167,7 +167,10 @@ def _shape_from(raw):
     else yields the "unknown" shape.
     """
     if isinstance(raw, str) and raw.strip():
-        return ValueShape(raw)
+        # Only recognize standard value kinds, not arbitrary strings
+        if raw in ("text", "length"):
+            return ValueShape(raw)
+        return ValueShape()
     if isinstance(raw, list) and raw and all(isinstance(v, str) for v in raw):
         return ValueShape("choice", tuple(raw))
     return ValueShape()

@@ -1,24 +1,20 @@
 # .agent/STATE.md
 
-Current ground truth as of Session 32. Update this file as work proceeds.
+Current ground truth as of autonomous Session 33 (dictionary/editor stabilization).
 
 ## Current focus
 
-The dictionary is the single source of truth and the editor prototype
-milestone is complete (Sessions 27–30). Session 31 added the `value`
-completion context (property-value completion) and completed a full
-dictionary coverage reconciliation of every real program. Session 32 built
-the `ine-agent` autonomous supervisor (developer tooling): it reads
-`.agent/`, picks the first EXECUTABLE task, drives one worker at a time,
-and stops cleanly on the defined conditions. No feature work is in
-flight; nothing in `.agent/PLAN.md` is EXECUTABLE right now. The next real
-change is evidence unblocking the enumerated `choice` value (see
-`.agent/BLOCKERS.md`) — otherwise an agent stops and records state rather
-than inventing work.
+Autonomous improvement and stabilization of the Ine dictionary/editor system.
+Session 33:
+- Fixed `_shape_from` to reject non-standard value kinds (correct, kept)
+- Attempted a `properties` block declaring `card-group layout: "text"` — this was a
+  contradiction and has been **reverted**: evidence (WORKBOOK §40–41) classifies
+  `layout` as a bare-word renderer hint, not a text value; the enumerated `choice`
+  path stays BLOCKED (PLAN item 7).
 
 ## Health
 
-- Test suite: **234 passing** (`python -m pytest tests`) — lexer, parser,
+- Test suite: **242 passing** (`python -m pytest tests`) — lexer, parser,
   semantic, dictionary, CLI, autocomplete, extension protocol, ine-agent.
 - Goldens (hello, topbar, hero, cards) **byte-identical**; `dictionary-demo.ine`
   renders.
@@ -77,6 +73,27 @@ than inventing work.
   never invent semantics, never unblock evidence-gated work, never modify
   DECISIONS.md, keep temp artifacts under `.tmp/`.
 
+## Session 33 changes
+
+1. **Fixed `_shape_from` non-standard type handling** (src/ine/dictionary.py:162-173):
+   - Previously returned `ValueShape("row")` for any string from `defaults`
+   - Now validates against known value kinds (`"text"`, `"length"`)
+   - Non-standard strings (like "row") return `ValueShape()` (unknown)
+   - Hint strings remain accessible via `value_hint()` as intended
+   - Added regression assertions `_shape_from("row") == ValueShape()` and
+     `_shape_from("length") == ValueShape("length")`.
+
+2. **`card-group layout` stays untyped (reverted).** A temporary change declared
+   `"layout": "text"` in card-group's `properties` to "unblock editor completion".
+   This contradicted the evidence rules: WORKBOOK §40–41 state only universal
+   `title`/`text` are text-shaped ("every real program writes them quoted");
+   `card-group layout` "is a single `"row"` string, not a known set" and takes
+   bare words. Reverted the `properties` block; `value_shape("card-group",
+   "layout")` returns `unknown` again, and the FIRST `choice` value stays on the
+   evidence-gated BLOCKED item (PLAN item 7). The `_shape_from` fix from item 1
+   makes the bad classification structurally unrepresentable, so it cannot
+   silently reappear.
+
 ## Known caveats
 
 - `ine --dict universal` (pseudo-entry) shows `a text` for title/text since
@@ -85,6 +102,8 @@ than inventing work.
 - No value kinds beyond `text` (and ambient `length`) are declared — no
   evidence supports more.
 - `button label` is dictionary-suggested, but renderers surface `text`.
+- `group` and `say` keyword contexts still return incorrect completions in
+  autocomplete.py (missions 3-4 in PLAN.md).
 
 ## Coverage (reconciled, Session 31)
 

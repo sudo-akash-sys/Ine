@@ -63,19 +63,89 @@ Each item is marked `EXECUTABLE` (pick up now) or `BLOCKED` (precondition
 missing — see `.agent/BLOCKERS.md`). Per the selection rule above, take the
 first `EXECUTABLE` item in list order.
 
-1. `BLOCKED` — **First enumerated `choice` value.** Add `"choice"`-style
+1. `EXECUTABLE` — **Improve context detection for `group` keyword.** When
+   typing `group cards = `, autocomplete returns properties context for the
+   word "group" (which resolves to nothing). The `group` keyword is a
+   statement start, not a kind, and should return no context.
+   - Fix: In `autocomplete.py:context()`, detect `group` keyword at line
+     start and return `None`.
+   - Add tests: `group `, `group cards = `, `group cards = card-1` all return
+     `None`.
+   - Verify: existing tests pass.
+
+2. `EXECUTABLE` — **Improve context detection for `say` keyword.** After
+   `say person `, autocomplete returns properties context for "say" as if it
+   were an entity name. `say` is a keyword that accepts a string, number, or
+   property reference — not properties or members.
+   - Fix: In `autocomplete.py:context()`, detect `say` keyword pattern and
+     return `None` (no completion after `say` statements currently).
+   - Add tests: `say `, `say person`, `say person age` all return `None`.
+   - Future work (not now): property reference completion inside `say`.
+
+3. `EXECUTABLE` — **Add missing dictionary test coverage.** The test suite
+   has good coverage but misses some edge cases:
+   - `value_shape` for kinds with only `defaults` (no `properties` block).
+   - `suggest()` for `viewport` (ambient entry, should return empty).
+   - `properties_for` for `viewport` (ambient, should return width/height).
+   Add these tests to `tests/test_ine.py` in the `DictionaryTests` class.
+
+4. `EXECUTABLE` — **Clean up `.tmp/` directory.** The `.tmp/` directory
+   contains 150+ `ineagent-*` temporary directories from test runs. Add a
+   cleanup step to `test_ine_agent.py` to remove temp roots after tests,
+   and document that `.tmp/` is gitignored temporary storage.
+
+5. `EXECUTABLE` — **Update editor README for value completion.** The
+   `editor/vscode-ine/README.md` says property values are "not suggested yet"
+   but Session 31 added `value` context completion. Update the README to
+   reflect current capabilities:
+   - Context 4: `page title ` → `""` (quoted placeholder for text values).
+   - Note: choice values are supported by the engine but no dictionary entry
+     uses them yet (blocked on evidence).
+
+6. `EXECUTABLE` — **Add type hints to dictionary.py.** The `dictionary.py`
+   module lacks type hints on function signatures. Add hints for:
+   - `find(kind: str) -> dict | None`
+   - `makeable() -> list[str]`
+   - `properties_for(kind: str) -> list[str]`
+   - `value_hint(kind: str, property: str) -> str | None`
+   - `value_shape(kind: str, prop: str) -> ValueShape`
+   - `members(kind: str) -> list[str]`
+   - `parents(kind: str) -> list[str]`
+   - `suggest(kind: str | None = None) -> list[Suggestion]`
+   - `for_model(model) -> list[Suggestion]`
+   Verify: `python -m py_compile src/ine/dictionary.py` passes.
+
+7. `BLOCKED` — **First enumerated `choice` value.** Add `"choice"`-style
    options to a `properties` block (e.g. `"layout": ["row", "column"]` in
    `card-group.json`), then teach the extension's snippet path to offer
    `choice` options. Precondition: a real program or decision showing a
    second `layout` value; only `"row"` is documented today.
 
-Nothing else is EXECUTABLE right now, so per the selection rule an agent
-stops here and records state rather than inventing work. Completed steps
-(`value` completion context, dictionary coverage reconciliation — both
-Session 31; the `ine-agent` autonomous supervisor tool — Session 32)
-settled into `.agent/HISTORY.md`. Autonomous workers are driven by
-`src/ine_agent/` (`ine-agent run`); their operating rules live in
-`AGENTS.md`, and the menu/decision/blocked logic lives in these files.
+8. `EXECUTABLE` — **Add error handling test for malformed dictionary JSON.**
+    The `_load()` function in `dictionary.py` silently skips malformed JSON
+    files (returns empty dict for that file). Add a test verifying that a
+    malformed `dictionary/*.json` does not crash the loader and that valid
+    entries are still loaded.
+
+9. `EXECUTABLE` — **Document dictionary JSON schema in code comments.** Add
+    a docstring to `dictionary.py` explaining the expected JSON structure:
+    - `term`: unique identifier for the kind
+    - `kind`: category (container, bar, surface, etc.)
+    - `element`: HTML element tag
+    - `meaning`: human-readable description
+    - `defaults`: property hints and `contains` list
+    - `properties`: typed property declarations (value → `"text"` or `["choice1", ...]`)
+    - `provided-by`: marks ambient entries (excluded from `makeable`)
+    - `universal`: marks the universal-properties pseudo-entry
+
+10. `EXECUTABLE` — **Add integration test for editor-to-dictionary flow.**
+    Create a test that simulates the full editor completion flow:
+    - Start autocomplete.py subprocess
+    - Send `make ` request, verify kinds returned
+    - Send `page ` request, verify properties + members returned
+    - Send `page title ` request, verify `""` value returned
+    - Send `header inside ` request, verify parents returned
+    This tests the protocol end-to-end beyond unit tests.
 
 ## The four-construct spine (Session 25) — never add a fifth casually
 

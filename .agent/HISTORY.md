@@ -66,3 +66,14 @@ design arc — see RESEARCH_LOG.md / WORKBOOK.md for that era.
   no real agent ever launched), installed entry point
   `ine-agent = "ine_agent.cli:main"`, live smoke test on the real repo
   exits 0. 234 tests total — session ends.
+- **33:** dictionary/editor stabilization under `ine-agent`. Fixed `_shape_from`
+  to reject non-standard value kinds — a plain string like `"row"` now yields
+  `ValueShape()` (unknown) instead of a bogus `ValueShape("row")`, so only
+  declared value kinds (`"text"`, `"length"`) and list-style `choice`s survive;
+  regression assertions added (`_shape_from("row")`, `_shape_from("length")`).
+  A companion change that declared `card-group layout: "text"` to "unblock
+  editor completion" was found to contradict WORKBOOK §40–41 — only universal
+  `title`/`text` are text-shaped; `layout` is a bare-word renderer hint — and
+  was reverted. `value_shape("card-group", "layout")` returns `unknown` again;
+  the first `choice` value remains BLOCKED on evidence. PLAN renumbered
+  (10 executable items + the blocked choice). 242 tests — session ends.
