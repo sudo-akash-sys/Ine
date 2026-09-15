@@ -11,11 +11,26 @@ Session 33:
   contradiction and has been **reverted**: evidence (WORKBOOK §40–41) classifies
   `layout` as a bare-word renderer hint, not a text value; the enumerated `choice`
   path stays BLOCKED (PLAN item 7).
+- Added a `## Candidate missions` section to PLAN.md capturing the commander's
+  next-stage direction (Ine authoring & UI capability: character-based
+  completion, context-aware ranking, value/structure/choice completion, basic
+  visual intent, realistic UI structures, responsive intent, tooling). These are
+  candidates, not commitments: each must clear the five verification gates and
+  graduate to Active before an agent implements it. They are deliberately outside
+  the Active section so the selection rule does not pick them up prematurely. The
+  operating rule mirrors MISSION_PROMPT.md: verify before implementing, preserve
+  discoveries, keep blocked work blocked.
+
+**PLAN expanded (Session 34):** 30 total active items (10 quick wins + 20 research/investigation missions).
+Quick wins 1-10 remain executable. Research missions 11-30 cover dictionary robustness, autocomplete
+edge cases, editor diagnostics, documentation gaps, real-world examples, responsive UI, styling,
+infrastructure, native backend, performance, and ine-agent reliability.
 
 ## Health
 
 - Test suite: **242 passing** (`python -m pytest tests`) — lexer, parser,
   semantic, dictionary, CLI, autocomplete, extension protocol, ine-agent.
+  (Count unchanged — PLAN expansion adds missions, not tests yet.)
 - Goldens (hello, topbar, hero, cards) **byte-identical**; `dictionary-demo.ine`
   renders.
 - Environment: Windows / PowerShell 5.1, Python 3.13.14, node v24.17.0.

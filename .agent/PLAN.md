@@ -63,6 +63,8 @@ Each item is marked `EXECUTABLE` (pick up now) or `BLOCKED` (precondition
 missing — see `.agent/BLOCKERS.md`). Per the selection rule above, take the
 first `EXECUTABLE` item in list order.
 
+### Quick wins — small implementation tasks
+
 1. `EXECUTABLE` — **Improve context detection for `group` keyword.** When
    typing `group cards = `, autocomplete returns properties context for the
    word "group" (which resolves to nothing). The `group` keyword is a
@@ -146,6 +148,301 @@ first `EXECUTABLE` item in list order.
     - Send `page title ` request, verify `""` value returned
     - Send `header inside ` request, verify parents returned
     This tests the protocol end-to-end beyond unit tests.
+
+### Research & investigation — weakness-driven missions
+
+These are research-first missions. Each produces a finding (a FILE note or
+STATE.md update) before any code change. Do not invent solutions; discover
+whether the weakness is real, how severe it is, and what the smallest
+evidence-based fix would be.
+
+#### Dictionary robustness & typing
+
+11. `EXECUTABLE` — **Invalid dictionary entry feedback.** Investigate whether
+    invalid dictionary entries (missing `term`, wrong types, missing required
+    fields) silently disappear without useful feedback. Determine whether
+    `_load()` should log warnings, and what the minimum useful feedback looks
+    like. Do not add a validation framework — just check whether the current
+    silent-skip behavior causes real problems.
+
+12. `EXECUTABLE` — **Value-shape consistency review.** Audit
+    `dictionary.py:_shape_from` and `autocomplete.py:_known_shape` together.
+    Verify that value shapes are represented only when evidence supports them
+    (i.e. `"text"` for quoted strings, `"length"` for ambient measurements,
+    `"choice"` only when a list is declared). Check that no code path
+    invents or infers a shape from data that does not declare one.
+
+13. `EXECUTABLE` — **Dictionary type hints on autocomplete.py.** The
+    `autocomplete.py` module also lacks type hints. Add hints for the public
+    functions (`context`, `resolve_kind`, `complete`) and the internal helpers
+    where it materially improves readability. Verify:
+    `python -m py_compile src/ine/autocomplete.py`.
+
+#### Autocomplete edge cases
+
+14. `EXECUTABLE` — **Autocomplete edge cases: unusual cursor positions.**
+    Test completion with unusual cursor positions: mid-line, at start of
+    line, inside a quoted string, after a comment, after a blank line,
+    after multiple spaces. Document which cases return correct results and
+    which fail gracefully vs. crash. This is a test-and-document mission, not
+    a fix mission.
+
+15. `EXECUTABLE` — **Autocomplete containment completion.** Verify that
+    `header inside ` returns the correct parents (`page`). Test edge cases:
+    `card inside ` (should return `card-group`), `copy inside ` (should
+    return `section`), `page inside ` (should return nothing — top-level).
+    Add tests to `test_autocomplete.py`.
+
+#### Editor diagnostics & error messages
+
+16. `EXECUTABLE` — **Editor diagnostics investigation.** Determine whether
+    VS Code users currently receive useful errors while editing. Check if
+    the extension surfaces any diagnostics (red squiggles, hover errors)
+    or if all errors only appear at compile/render time. Decide whether
+    basic diagnostics (e.g. "unknown kind" on hover) are justified before
+    committing to a full LSP. Produce a recommendation, not a
+    implementation.
+
+17. `EXECUTABLE` — **Backend/parser/semantic error message audit.** Review
+    `LexError`, `SyntaxError`, `SemanticError`, `BackendError`, and
+    `VisualError` for cases where the user gets an unhelpful message (e.g.
+    class name only, no guidance). Identify the 3-5 worst offenders and
+    propose improved messages. Do not change code — just produce a list with
+    before/after suggestions.
+
+#### Documentation
+
+18. `EXECUTABLE` — **Minimum documentation review.** Read README.md,
+    LANGUAGE.md, and dictionary readme as if unfamiliar with Ine. Identify
+    the minimum documentation needed for someone to actually build something.
+    Produce a gap list: what exists, what is missing, what is misleading.
+    Do not write documentation — just identify the gaps.
+
+#### Real-world examples & vocabulary
+
+19. `EXECUTABLE` — **Real-world example: dashboard experiment.** Build a
+    dashboard-style Ine program (data table, summary cards, maybe a chart
+    placeholder). Use only existing dictionary vocabulary. Document every
+    point where the vocabulary falls short (missing kinds, missing
+    properties, missing containment). This is evidence collection for
+    vocabulary expansion, not a feature request. Save the program and
+    findings as notes in `.agent/`.
+
+20. `EXECUTABLE` — **Real-world example: form experiment.** Build a form-style
+    Ine program (inputs, labels, submit button, validation messages). Use
+    only existing dictionary vocabulary. Document gaps. This discovers
+    whether forms are expressible or whether the language lacks fundamental
+    primitives.
+
+21. `EXECUTABLE` — **Vocabulary reconciliation against real programs.** After
+    experiments (missions 19-20), reconcile dictionary coverage against:
+    hello.ine, topbar.ine, hero.ine, cards.ine, dictionary-demo.ine, and
+    the new experiment programs. Classify each gap as: (a) already covered,
+    (b) evidence-gated proposal (add to BLOCKERS.md), or (c) out of scope.
+    Preserve unsupported concepts as discoveries, not inventions.
+
+#### Responsive UI & styling
+
+22. `EXECUTABLE` — **Responsive UI investigation.** Research whether the
+    current language can express responsive intent naturally (e.g. "stack on
+    narrow", breakpoints, conditional layout). Check if `card-group`'s
+    `narrow-layout` default already covers this. Determine whether responsive
+    behavior is a language concern or an implementation concern. Produce a
+    recommendation.
+
+23. `EXECUTABLE` — **Styling/theming limitation investigation.** Investigate
+    the limitation caused by hard-coded backend styling in `backend_html.py`.
+    Determine: (a) what users actually see (hard-coded CSS), (b) whether
+    customization is currently possible via Ine programs, (c) what the
+    smallest evidence-based solution would be if customization is needed.
+    Do not design a theming system — just assess the gap.
+
+#### Infrastructure
+
+24. `EXECUTABLE` — **CI/regression infrastructure investigation.** Investigate
+    what it would take to add automated repository-wide testing (GitHub
+    Actions or equivalent). Determine: (a) what test command to run, (b)
+    whether tests are hermetic (no external dependencies), (c) estimated
+    CI cost, (d) whether this is justified at current project scale.
+    Produce a recommendation with cost estimate.
+
+25. `EXECUTABLE` — **Packaging/distribution investigation.** Investigate what
+    is required to make Ine installable by someone outside the repository.
+    Check: (a) pyproject.toml completeness, (b) entry points, (c) whether
+    `ine` CLI works after `pip install .`, (d) whether the VS Code extension
+    can be packaged (`.vsix`). Do not build a package manager or registry.
+    Just assess readiness and gaps.
+
+#### Editor architecture
+
+26. `EXECUTABLE` — **Editor architecture evaluation.** Evaluate whether the
+    current VS Code prototype (dictionary.py → autocomplete.py → extension.js)
+    is sufficient for the next stage of editor work. Determine: (a) when
+    diagnostics/formatting/hover become justified, (b) whether the JSON-lines
+    protocol is sufficient or whether LSP is needed, (c) estimated effort
+    for each path. Produce a recommendation with trade-offs.
+
+#### Native backend
+
+27. `EXECUTABLE` — **Native backend reality check.** Clarify what the current
+    native/C backend (`backend_native.py`) actually provides. Separate
+    genuine capability from aspirational positioning. Determine: (a) what
+    programs it can handle, (b) what it outputs, (c) whether the output is
+    usable beyond demonstration. Do not build a native runtime unless
+    evidence makes it worthwhile.
+
+#### Performance & reliability
+
+28. `EXECUTABLE` — **Autocomplete worker reliability.** Test the persistent
+    autocomplete worker over a long-running session: send 100+ requests,
+    check for crashes, stale processes, timeout recovery, memory growth.
+    Document findings. If reliability issues exist, identify root causes.
+
+29. `EXECUTABLE` — **ine-agent reliability.** Test ine-agent over multiple
+    cycles: verify it continues through executable missions without stopping
+    prematurely. Check: (a) does it stop while missions remain? (b) are
+    stop conditions correct? (c) does it handle worker crashes gracefully?
+    Document findings.
+
+#### Autonomous development system
+
+30. `EXECUTABLE` — **ine-agent continuous execution fix.** There is a
+    remaining issue where ine-agent can stop while executable missions
+    remain. Investigate the root cause in `src/ine_agent/supervisor.py`
+    (likely the stop-condition logic or prompt construction). Fix the issue
+    and verify that the agent continues through all executable missions
+    without premature termination.
+
+## Candidate missions — Ine authoring & UI capability (next-stage direction)
+
+> **These are candidate missions, not a commitment to implement every item.**
+
+Before implementing a candidate, verify that:
+1. the need is demonstrated by an existing or newly created realistic example;
+2. the current architecture supports it without unnecessary redesign;
+3. it does not conflict with DECIDED language principles;
+4. it does not require inventing unsupported semantics;
+5. it is genuinely more valuable than the next available mission.
+
+If the evidence is insufficient, preserve the idea as a lower-priority
+research/future mission instead of implementing it. Preserve existing
+functionality and regression behavior throughout. Verified, evidence-backed
+candidates graduate into "Active — next smallest steps" with an `EXECUTABLE`
+tag; unsupported ideas stay here. Items here are NOT picked up by the
+selection rule.
+
+### Priority 1 — Make autocomplete feel like a real programming language
+
+1. **Character-based dictionary completion.**
+   - Suggestions should begin appearing as the user types, not only after
+     pressing Space. Typing `m` should surface relevant vocabulary with `make`
+     highly ranked; `ma` should narrow toward `make`; `make` should keep `make`
+     as the top exact match rather than requiring another character/space.
+     Prefix matches ranked above weaker matches.
+   - Only implement if the current dictionary/editor architecture can support
+     this cleanly.
+
+2. **Instant/contextual suggestions.**
+   - Investigate why completion currently behaves primarily around trigger
+     characters, and make suggestions appear naturally while typing. Preserve
+     the dictionary as the vocabulary source; do not add a second vocabulary
+     inside the extension.
+
+3. **Context-aware ranking.**
+   - The same typed letters should produce different useful suggestions
+     depending on cursor position: `make h` → header; `header t` → title;
+     `card-1 t` → title, text. Investigate whether this can be implemented
+     without making autocomplete overly complex.
+
+### Priority 2 — Complete syntax automatically where the language already requires it
+
+4. **Value/snippet completion.**
+   - When a property requires a quoted value, the editor should provide the
+     syntax automatically: completing `page title` should naturally produce
+     `page title ""` with the cursor inside the quotes. Do not hard-code
+     property knowledge in the extension; use dictionary value-shape info.
+
+5. **Automatic structural completion (investigation).**
+   - Determine whether Ine can provide useful larger completions based on known
+     structure (when creating a known UI entity, suggest the next natural
+     pieces). Do **not** auto-generate large structures merely because possible;
+     first determine whether this improves authoring without making Ine feel
+     like a code generator.
+
+6. **Completion for known choices (investigation).**
+   - If the dictionary eventually contains evidence-backed choices, completion
+     could offer the valid known options. Do not invent choices; keep currently
+     evidence-blocked choices blocked.
+
+### Priority 3 — Basic styling / visual intent
+
+7. **Basic visual properties (investigation).**
+   - Determine whether Ine should support a small set of visual intent:
+     background, foreground/text color, borders, spacing, sizing, typography,
+     corner radius, alignment, possibly opacity. The goal is **not** to
+     recreate CSS. Only add properties that can be represented consistently
+     across the relevant backend(s) and are justified by real examples.
+
+8. **CSS/backend separation.**
+   - Investigate how much styling is currently hard-coded inside the HTML
+     backend, and whether styling should eventually become dictionary-driven.
+     Preserve current rendered output (goldens) while experimenting. Do not
+     redesign the backend merely to make it theoretically extensible.
+
+9. **Basic theme/customization experiment.**
+   - Build a small real example that requires changing colors, spacing,
+     typography, etc., and use the experiment to discover what Ine actually
+     needs. Preserve useful discoveries even if deferred.
+
+### Priority 4 — More realistic UI structures
+
+10. **More substantial UI example.**
+    - Create or investigate a realistic example: dashboard, settings page,
+      data-oriented interface, form, application shell. The purpose is to
+      discover where Ine naturally stops being expressive — not simply to
+      expand the dictionary.
+
+11. **Tables.**
+    - Investigate whether a table/data-grid concept is genuinely needed. If the
+      realistic example demonstrates the need, research the smallest natural Ine
+      representation. Do not add a table construct merely because HTML has tables.
+
+12. **Forms and inputs.**
+    - Same evidence-based approach: investigate inputs, labels, controls,
+      selection, submission, etc. Only turn demonstrated requirements into
+      language/dictionary work.
+
+13. **More structural UI.**
+    - Investigate things such as lists, modal/dialog, dropdown, navigation,
+      sections/groups, reusable structures. Real usage determines priority.
+
+### Priority 5 — Responsive design
+
+14. **Responsive intent (investigation).**
+    - Determine whether Ine can naturally express intent such as `on mobile`
+      / `stack` or equivalent semantics — but do **not** invent syntax yet.
+      First research/build a realistic responsive example and determine what
+      information the language actually needs.
+    - Note: `card-group` already documents a `narrow-layout` default; active
+      mission 22 investigates whether that already covers this intent.
+
+15. **Backend responsive implementation.**
+    - Determine how responsive intent could map to HTML/CSS, preserving the
+      distinction between Ine's intent and CSS implementation details.
+
+### Priority 6 — Tooling / developer experience
+
+16. **Editor diagnostics.** Investigate inline errors and warnings; determine
+    the minimum useful diagnostic system before committing to a full LSP.
+    (Active mission 16 covers this investigation.)
+17. **Formatting.** Investigate whether Ine's intentionally simple syntax allows
+    a deterministic formatter; only implement if it provides clear value.
+18. **Hover/documentation.** Investigate showing dictionary meaning/value
+    information directly in the editor.
+19. **Packaging.** Investigate making Ine easily installable outside the
+    repository. (Active mission 25 covers this investigation.)
+20. **CI.** Add reliable automated regression testing if not already present.
+    (Active mission 24 covers this investigation.)
 
 ## The four-construct spine (Session 25) — never add a fifth casually
 

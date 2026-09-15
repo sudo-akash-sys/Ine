@@ -77,3 +77,15 @@ design arc — see RESEARCH_LOG.md / WORKBOOK.md for that era.
   was reverted. `value_shape("card-group", "layout")` returns `unknown` again;
   the first `choice` value remains BLOCKED on evidence. PLAN renumbered
   (10 executable items + the blocked choice). 242 tests — session ends.
+- **33 (addendum):** captured the commander's next-stage plan as a
+  `## Candidate missions` section in PLAN.md — Ine authoring & UI capability:
+  character-based completion and context-aware ranking, automatic
+  value/structure/choice completion, basic visual intent (not "add CSS"),
+  realistic UI structures (dashboard, tables, forms), responsive intent, and
+  tooling (diagnostics, formatting, hover, packaging, CI). Each candidate has a
+  five-point verification gate (real-example evidence, architecture fit,
+  no conflict with DECIDED principles, no invented semantics, value vs. the
+  next available mission) and must graduate to Active before implementation.
+  The section is outside Active on purpose, so the selection rule never picks
+  candidates as executable work; overlapping active research missions are
+  cross-referenced instead of duplicated.
