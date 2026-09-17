@@ -240,7 +240,14 @@ Model → backend_visual.render → tkinter window (real OS window)
   (blocking).
 - Currently requires a display server (tkinter). No headless mode yet.
 
-## 7. Known limits (as of Session 22)
+## 7. Known limits (current)
+
+This section lists what a `.ine` program genuinely cannot express yet. It
+is not a frozen snapshot: value shapes (Session 30), the advisory
+dictionary-discovery and `properties`-block typed declarations (§6), the
+JSON-lines editor completion protocol (§6, `src/ine/autocomplete.py`), and
+the `ine-agent` autonomous supervisor (`src/ine_agent/`) are all current
+features, described in their own sections — they are not limits.
 
 - Only strings and numbers as values. No booleans, lists, or other
   types yet.

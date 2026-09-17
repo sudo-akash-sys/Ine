@@ -7,9 +7,11 @@ conditions) stays outside this module, so a future worker change never
 touches the supervisor loop.
 """
 
+import io
 import os
 import shutil
 import subprocess
+import threading
 
 
 class WorkerResult:
@@ -54,20 +56,85 @@ class CliWorker(Worker):
             return override
         return shutil.which(self.cmd_name) or self.cmd_name
 
-    def run(self, root, prompt):
+    def _capture(self, argv, root):
+        """Run `argv` in `root`; return (exit_code, combined stdout+stderr).
+
+        Stdout/stderr are decoded explicitly as UTF-8 (with surrogateescape)
+        instead of the locale default (cp1252 on Windows), so agent output
+        containing non-CP1252 bytes (e.g. UTF-8 byte 0x90) never raises
+        UnicodeDecodeError at the subprocess boundary. surrogateescape does
+        not drop data: unmatched bytes are preserved losslessly.
+        """
+        proc = subprocess.run(
+            argv,
+            cwd=root,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="surrogateescape",
+            timeout=None,
+        )
+        output = proc.stdout
+        if proc.stderr:
+            output += "\n" + proc.stderr
+        return proc.returncode, output
+
+    def _stream(self, argv, root, on_line):
+        """Run `argv` in `root`, relaying live output lines to `on_line`.
+
+        Both pipes are drained concurrently (one thread each) so a worker
+        writing a lot to stdout and stderr never deadlocks on full pipe
+        buffers. Decoding is the same UTF-8/surrogateescape boundary as
+        `_capture`, so live lines carry the same bytes as the captured
+        result. The combined output is still returned, so streaming never
+        loses data.
+        """
+        proc = subprocess.Popen(
+            argv,
+            cwd=root,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        out_lines, err_lines = [], []
+        lock = threading.Lock()
+
+        def drain(pipe, dst):
+            text = io.TextIOWrapper(
+                pipe, encoding="utf-8", errors="surrogateescape", newline=""
+            )
+            with text:
+                for line in text:
+                    with lock:
+                        dst.append(line)
+                    if on_line is not None:
+                        on_line(line)
+
+        threads = [
+            threading.Thread(target=drain, args=(proc.stdout, out_lines)),
+            threading.Thread(target=drain, args=(proc.stderr, err_lines)),
+        ]
+        try:
+            for thread in threads:
+                thread.start()
+            proc.wait()
+        except BaseException:
+            proc.kill()
+            proc.wait()
+            raise
+        finally:
+            for thread in threads:
+                thread.join()
+        output = "".join(out_lines)
+        if err_lines:
+            output += "\n" + "".join(err_lines)
+        return proc.returncode, output
+
+    def run(self, root, prompt, on_line=None):
         argv = [self._exe(), *self.default_args, prompt]
         try:
-            proc = subprocess.run(
-                argv,
-                cwd=root,
-                capture_output=True,
-                text=True,
-                timeout=None,
-            )
-            output = proc.stdout
-            if proc.stderr:
-                output += "\n" + proc.stderr
-            return WorkerResult(proc.returncode, output)
+            if on_line is None:
+                return WorkerResult(*self._capture(argv, root))
+            return WorkerResult(*self._stream(argv, root, on_line))
         except OSError as exc:
             return WorkerResult(1, "could not start {}: {}".format(self.cmd_name, exc))
 
@@ -84,20 +151,12 @@ class OpenCodeWorker(CliWorker):
     env_var = "INE_AGENT_OPENCODE"
     default_args = ("run", "--pure")
 
-    def run(self, root, prompt):
+    def run(self, root, prompt, on_line=None):
         argv = [self._exe(), *self.default_args, "--dir", str(root), prompt]
         try:
-            proc = subprocess.run(
-                argv,
-                cwd=root,
-                capture_output=True,
-                text=True,
-                timeout=None,
-            )
-            output = proc.stdout
-            if proc.stderr:
-                output += "\n" + proc.stderr
-            return WorkerResult(proc.returncode, output)
+            if on_line is None:
+                return WorkerResult(*self._capture(argv, root))
+            return WorkerResult(*self._stream(argv, root, on_line))
         except OSError as exc:
             return WorkerResult(1, "could not start opencode: {}".format(exc))
 
@@ -127,7 +186,7 @@ class StubWorker(Worker):
         self.steps = list(steps)
         self.calls = []
 
-    def run(self, root, prompt):
+    def run(self, root, prompt, on_line=None):
         exit_code, output = 0, ""
         after = None
         if self.steps:
@@ -137,6 +196,9 @@ class StubWorker(Worker):
                 after = step[2]
         self.calls.append({"root": root, "prompt": prompt,
                            "exit_code": exit_code, "output": output})
+        if on_line is not None and output:
+            for line in output.splitlines(True):
+                on_line(line)
         if after is not None:
             after(root)
         return WorkerResult(exit_code, output)

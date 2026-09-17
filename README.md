@@ -41,9 +41,9 @@ Traditional programming forces you to write implementation code directly. Ine mo
 
 | Implementation-Level | Intent-Level |
 |---------------------|--------------|
-| `display: flex; justify-content: space-between` | `logo left, navigation right` |
-| `position: fixed; bottom: 0` | `footer stay at bottom` |
-| `border-radius: 8px; box-shadow: 0 4px 12px` | `card with subtle shadow` |
+| `display: flex; justify-content: space-between` | `logo inside header` |
+| `position: fixed; bottom: 0` | `footer position "bottom"` |
+| `padding: 20px` | `card padding "comfortable"` |
 
 The language is kept deliberately small — a handful of statements — so a
 first program takes minutes, and the dictionary grows the vocabulary
@@ -225,25 +225,28 @@ The **dictionary** is central to Ine. It maps human-friendly concepts to semanti
 
 ```json
 {
-  "card": {
-    "element": "article",
-    "description": "A content container with title and description",
-    "properties": ["title", "description", "image"]
+  "term": "card",
+  "kind": "surface",
+  "element": "article",
+  "meaning": "A self-contained content unit with a title and a body, framed so it reads as one block.",
+  "defaults": {
+    "padding": "comfortable",
+    "border": "subtle",
+    "corner-radius": "slight"
   },
-  "card-group": {
-    "element": "section",
-    "layout": "row",
-    "description": "Container for side-by-side cards"
+  "implementation": {
+    "html": "article or div",
+    "guess": ["border: 1px solid light", "border-radius: 6-10px", "padding: 20px"]
   }
 }
 ```
 
-The dictionary contains:
+Each file is one kind. The dictionary contains:
 
 - **Semantic meaning** — what a concept *means*
 - **Default values** — sensible starting points
 - **Implementation hints** — element mapping, layout rules
-- **Constraints** — valid properties, relationships
+- **Structural containment** — which children belong inside
 
 This separation means:
 
@@ -300,7 +303,7 @@ Each backend is an **adapter** that translates the same semantic model into its 
 ## What Works Today
 
 Everything below is implemented and covered by the test suite
-(`python -m unittest discover -s tests`, 151 passing):
+(`python -m pytest tests` from the repo root):
 
 - Entity declaration and properties (`make`, `<name> <prop> <value>`)
 - Multiplicity (`make <count> <kind>` — e.g. `make 3 card` creates `card-1/2/3`)
@@ -322,10 +325,10 @@ Everything below is implemented and covered by the test suite
 
 Designed and on the roadmap, but does not work today:
 
-- Multiplicity ("three cards") is solved as creation sugar: `make 3 card`
-  creates `card-1/2/3`, and `group cards = card-1 card-2 card-3` names the
-  collection (`cards inside card-group` and `cards text "..."` expand per
-  member). There is no `every` keyword and no way to say "all members of
+- Multiplicity is **implemented**: `make 3 card` creates `card-1/2/3`, and
+  `group cards = card-1 card-2 card-3` names the collection so
+  `cards inside card-group` and `cards text "..."` expand per member. The
+  gap is only the `every` keyword — there is no way to say "all members of
   every group"
 - More relationship types (`beside`, `contains`, `opens`)
 - State, conditions, events, and actions

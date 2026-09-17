@@ -4,7 +4,13 @@ Work on the objective in `.agent/MISSION.md` autonomously.
 
 You are responsible for figuring out how to accomplish it.
 
-Research and inspect whatever is necessary. Decompose the objective into missions yourself and execute them continuously.
+Research and inspect whatever is necessary. When the ine-agent orchestrator
+drives you, it has already selected the ONE mission for this cycle: execute
+that mission as a complete problem-solving arc (research -> understand ->
+implement -> test -> verify -> record -> clean up) and then stop, so the
+orchestrator can select the next mission. Used standalone (no orchestrator),
+decompose the objective into missions yourself and execute them
+continuously.
 
 During research:
 - preserve useful discoveries even if they are not immediately required
@@ -17,8 +23,13 @@ For each mission:
 - implement it
 - verify it
 - fix problems discovered
-- record what was done and learned
-- continue to the next useful mission
+- record what was done and learned in one final pass (never incrementally)
+When driven by ine-agent, stop after the assigned mission so the
+orchestrator advances; used standalone, continue to the next useful mission.
+
+Every tool call is a model request: batch independent reads into a single
+message, read whole files, run tests once per mission, and keep
+STATE/HISTORY/PLAN updates to a single final recording pass.
 
 Do not wait for individual tasks to be defined.
 

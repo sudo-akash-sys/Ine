@@ -1,0 +1,26 @@
+# form.ine — a form-style program written with ONLY the current dictionary
+# vocabulary. Evidence for PLAN mission 20: no control kinds exist, so this
+# shows what a contact form reduces to.
+#
+# Field kinds (input, textarea, select, checkbox, radio, label, field,
+# form) are absent from the dictionary; the only control is `button`, and
+# buttons live inside sections.
+
+make page
+page title "Contact"
+
+make section
+section title "Get in touch"
+section inside page
+
+# Closest reachable approximation: a section with a submit-style button.
+# There is no field to attach the button to and no way to collect input.
+make send button
+send text "Send message"
+send inside section
+
+make footer
+footer inside page
+footer text "Ine — form experiment"
+
+say page title

@@ -27,11 +27,38 @@ a child can live inside.
 Everything is derived from the JSON data. A kind with no dictionary
 entry simply has no suggestions (the dictionary is advisory, never a
 validator — see examples/alice/alice.ine).
+
+## dictionary/*.json schema
+
+Each file declares one kind in JSON:
+
+- `term`         — unique identifier for the kind (the file's key).
+- `kind`         — category the concept belongs to (container, bar,
+                   surface, ambient, ...); informational only.
+- `element`      — HTML element tag the backend renders it with.
+- `meaning`      — human-readable description (shown as completion detail).
+- `defaults`     — property hints and the `contains` list; each value is a
+                   hint string (`"compact"`) shown in completions, except
+                   `contains`, which lists structural child kinds.
+- `properties`   — typed property declarations: property -> `"text"` (a
+                   quoted string) or `"length"` (a measurement), or a list
+                   of allowed choices (a `"choice"` value). Drives
+                   `value_shape()` / `value_hint()`.
+- `provided-by`  — present on ambient entries (viewport): the kind is
+                   supplied by the host, so it is excluded from `makeable()`.
+- `universal`    — marks the universal-properties pseudo-entry: its
+                   `properties` block defines `title`/`text`, available on
+                   every declared kind; never in `makeable()`.
 """
 
 import json
 import os
+import warnings
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .semantic import Model
 
 DICTIONARY_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "dictionary"
@@ -62,7 +89,7 @@ class ValueShape:
     choices: tuple = ()
 
 
-def _load():
+def _load() -> dict[str, dict]:
     found = {}
     if not os.path.isdir(DICTIONARY_DIR):
         return found
@@ -73,17 +100,34 @@ def _load():
         try:
             with open(path, "r", encoding="utf-8") as handle:
                 entry = json.load(handle)
-        except (OSError, ValueError):
+        except OSError as exc:
+            warnings.warn(
+                f"dictionary: skipping {name}: cannot read file ({exc})"
+            )
             continue
-        if isinstance(entry, dict) and entry.get("term"):
-            found[entry["term"]] = entry
+        except ValueError:
+            warnings.warn(
+                f"dictionary: skipping {name}: invalid JSON"
+            )
+            continue
+        if not isinstance(entry, dict):
+            warnings.warn(
+                f"dictionary: skipping {name}: not a JSON object"
+            )
+            continue
+        if not entry.get("term"):
+            warnings.warn(
+                f"dictionary: skipping {name}: missing 'term'"
+            )
+            continue
+        found[entry["term"]] = entry
     return found
 
 
-_ENTRIES = None
+_ENTRIES: dict[str, dict] | None = None
 
 
-def entries():
+def entries() -> dict[str, dict]:
     """All dictionary entries, keyed by term (loaded once)."""
     global _ENTRIES
     if _ENTRIES is None:
@@ -91,12 +135,12 @@ def entries():
     return _ENTRIES
 
 
-def find(kind):
+def find(kind: str) -> dict | None:
     """The dictionary entry for a kind, or None if it is not declared."""
     return entries().get(kind)
 
 
-def _is_regular_kind(entry):
+def _is_regular_kind(entry: dict | None) -> bool:
     """True for kinds a program can name with `make` (not ambient, not the
     universal-properties pseudo-entry)."""
     return (
@@ -106,7 +150,7 @@ def _is_regular_kind(entry):
     )
 
 
-def _universal_defaults():
+def _universal_defaults() -> dict:
     """The `defaults` block of the universal-properties entry, if any."""
     entry = entries().get("universal")
     if not isinstance(entry, dict):
@@ -117,7 +161,7 @@ def _universal_defaults():
     return defaults
 
 
-def makeable():
+def makeable() -> list[str]:
     """Kinds a program can declare with `make` (ambient and pseudo-entries
     excluded)."""
     return sorted(
@@ -125,7 +169,7 @@ def makeable():
     )
 
 
-def properties_for(kind):
+def properties_for(kind: str) -> list[str]:
     """Property names a kind can be given: its declared property hints plus
     the universal `title`/`text` content properties."""
     entry = find(kind)
@@ -143,7 +187,7 @@ def properties_for(kind):
     return sorted(names)
 
 
-def value_hint(kind, property):
+def value_hint(kind: str, property: str) -> str | None:
     """What a property expects, or None if the dictionary does not say."""
     entry = find(kind)
     if entry is None:
@@ -159,7 +203,7 @@ def value_hint(kind, property):
     return None
 
 
-def _shape_from(raw):
+def _shape_from(raw) -> ValueShape:
     """Normalize one raw `properties`-block value into a ValueShape.
 
     A plain string names a value kind ("text", "length", ...); a list of
@@ -176,7 +220,7 @@ def _shape_from(raw):
     return ValueShape()
 
 
-def value_shape(kind, prop):
+def value_shape(kind: str, prop: str) -> ValueShape:
     """The value shape a property accepts on a kind, or ValueShape()
     (type "unknown") when the dictionary does not say.
 
@@ -201,7 +245,7 @@ def value_shape(kind, prop):
     return ValueShape()
 
 
-def members(kind):
+def members(kind: str) -> list[str]:
     """Linguistic children a kind's entry says belong inside it (structural
     members; e.g. header -> logo, navigation)."""
     entry = find(kind)
@@ -216,7 +260,7 @@ def members(kind):
     return sorted(concepts)
 
 
-def parents(kind):
+def parents(kind: str) -> list[str]:
     """Kinds a child of this kind can live inside — the reverse of
     `members`. Derived from `contains` data alone (e.g. card-group ->
     container, section -> page). Returns [] for undeclared kinds and for
@@ -229,7 +273,7 @@ def parents(kind):
     )
 
 
-def suggest(kind=None):
+def suggest(kind: str | None = None) -> list[Suggestion]:
     """What could sensibly follow `make [kind]` right now.
 
     With no kind: every kind a program can declare. With a kind: the
@@ -252,7 +296,7 @@ def suggest(kind=None):
     return items
 
 
-def for_model(model):
+def for_model(model: "Model") -> list[Suggestion]:
     """Suggestions valid in the context of a parsed program.
 
     For every declared entity, its entity-prefixed property statements.
@@ -275,7 +319,7 @@ def for_model(model):
     return results
 
 
-def _label(value):
+def _label(value) -> str:
     if isinstance(value, list):
         return "one of " + ", ".join(str(v) for v in value)
     return str(value)

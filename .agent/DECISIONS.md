@@ -36,6 +36,20 @@ decision — nothing is copied here until it is real.
 - **Evidence rule**: no value kind or containment entry is declared without
   support in existing dictionary data or real programs.
 - **Temporary files** live in `.tmp/` (gitignored), never committed.
+- **Autonomous-loop division of labor** (Mission 111): the deterministic
+  ine-agent supervisor selects the next EXECUTABLE mission and advances the
+  plan between worker cycles; a worker executes EXACTLY the assigned mission
+  as one complete arc (research → implement → test → verify → record →
+  clean up) and then stops — it does not re-select missions inside one
+  invocation. STATE.md / HISTORY.md updates happen once, as the worker's
+  final recording pass.
+- **Observed-usage telemetry is warn-only** (EXPERIMENTAL, Mission 111): the
+  supervisor reports locally observed OpenCode usage (requests/tokens/cost
+  at run start, each mission boundary, and run end) and may warn/notify the
+  commander once per run via `--usage-warn-requests`. These numbers are
+  OBSERVED local usage, NOT the provider quota, and the warning is purely
+  advisory — no hard pause or budget enforcement until real runs correlate
+  observed usage with actual quota/rejection events.
 
 ## PROPOSED / EXPERIMENTAL / UNDECIDED
 

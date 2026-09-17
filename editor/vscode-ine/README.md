@@ -34,6 +34,8 @@ query a cursor position maps to:
 - after `make `                      -> makeable kinds (`dictionary.makeable()`)
 - after a declared kind / entity     -> its properties + members
   (`dictionary.suggest(kind)`)
+- after `kind property `             -> the property's value shape
+  (`dictionary.value_shape`): text -> `""`, choice -> its options
 - after `inside `                    -> valid parents (`dictionary.parents(kind)`),
   powered by the dictionary's reverse containment
 
@@ -42,6 +44,7 @@ query a cursor position maps to:
 1. `make he<...>`                    -> `header`
 2. `header <...>`                    -> `logo`, `navigation`, `title`, `text`, ...
 3. `header inside p<...>`            -> `page`
+4. `page title <...>`                -> `""` (quoted placeholder for text values)
 
 Entities declared by `make name kind`, multiplicity (`make 2 card` ->
 `card-1 ...`), and groups (`group cards = ...`) are resolved from the
@@ -68,6 +71,10 @@ Optional: set `INE_PYTHON` to a specific Python executable.
 Prototype. No packaging, no diagnostics/formatting/hover, no config. One
 warm Python process is started on activation and reused across keystrokes
 (it respawns automatically if it dies); the first suggestion still pays
-Python startup. Contexts 1-3 work; property *values*
-(`page title "..."`), multi-kind `make` arguments, and completion after a
-property name are not suggested yet.
+Python startup. Contexts 1-4 work — property *values* are suggested
+(`page title ` inserts `""`; for `length`-shaped properties current
+dictionary entries declare no completion). Optional `"choice"` values are
+supported by the engine (each option becomes a suggestion) but no
+dictionary entry uses them yet, so nothing offers them today. Multi-kind
+`make` arguments and completion while typing a property name (cursor short
+of the trailing space) are not suggested.

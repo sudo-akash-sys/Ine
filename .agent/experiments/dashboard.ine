@@ -1,0 +1,76 @@
+# dashboard.ine — a dashboard-style program written with ONLY the current
+# dictionary vocabulary (page, header, logo, navigation, container,
+# card-group, card, section, button, image, footer, title/text).
+#
+# Evidence-collection experiment (PLAN mission 19): find precisely where the
+# vocabulary runs out. Every point that could not be expressed is recorded
+# in .agent/NOTES.md (Mission 19). Nothing here uses an undeclared kind.
+
+make page
+page title "Operations Dashboard"
+
+make header
+header inside page
+make logo
+logo text "Acme Ops"
+logo inside header
+make navigation
+navigation inside header
+
+# KPI summary row. `make container` twice would collide on the default
+# entity name, so the second container gets an explicit name (kpi-rows).
+make kpi-rows container
+kpi-rows inside page
+make metrics card-group
+metrics inside kpi-rows
+make 3 card
+group kpis = card-1 card-2 card-3
+kpis inside metrics
+card-1 title "Uptime"
+card-1 text "99.98% trailing 30d"
+card-2 title "Throughput"
+card-2 text "12.4k req/min"
+card-3 title "Latency"
+card-3 text "38 ms p95"
+
+# Chart placeholder. There is no `chart`/`table` kind, so `image` stands in
+# for a chart. A section can hold image + button members.
+make traffic section
+traffic title "Traffic over time"
+traffic inside page
+make image
+image inside traffic
+
+# A second card-group row reusing `make 3 card` would collide with the first
+# batch (multiplicity always numbers from 1, so card-1..card-3 already
+# exist). Explicit names must be used instead.
+make deploy-lists container
+deploy-lists inside page
+make deployments card-group
+deployments inside deploy-lists
+make deploy-1 card
+make deploy-2 card
+make deploy-3 card
+group ships = deploy-1 deploy-2 deploy-3
+ships inside deployments
+ships text "shipped 12:40 UTC"
+deploy-1 title "api-v3"
+deploy-2 title "web-2.1"
+deploy-3 title "worker-4"
+
+# Actions. Buttons live inside sections, one distinct entity per button.
+make admin section
+admin title "Admin actions"
+admin inside page
+make rotate-keys button
+rotate-keys text "Rotate keys"
+rotate-keys inside admin
+make refresh-view button
+refresh-view text "Refresh view"
+refresh-view inside admin
+
+make footer
+footer inside page
+footer text "© 2026 Acme Ops — internal dashboard"
+
+say page title

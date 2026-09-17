@@ -37,7 +37,10 @@ def build(source_path, out_path):
 def _report_error(error):
     message = error.message
     line = getattr(error, "line", None)
-    if line is not None:
+    column = getattr(error, "column", None)
+    if column is not None:
+        message = f"{message} (line {line}, column {column})"
+    elif line is not None:
         message = f"{message} (line {line})"
     print(f"error: {message}", file=sys.stderr)
 

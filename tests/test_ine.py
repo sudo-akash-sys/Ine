@@ -1,8 +1,11 @@
+import json
 import os
 import shutil
 import sys
 import tempfile
 import unittest
+import warnings
+from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
@@ -20,6 +23,23 @@ from ine.parser import (
     GroupStatement, InsideStatement, MakeStatement, PropertyRef, PropertyStatement, SayStatement, SyntaxError, parse,
 )
 from ine.semantic import SemanticError, analyze, resolve
+
+
+def _has_display():
+    """Return True when a windowing system is reachable via tkinter."""
+    try:
+        import tkinter as tk
+        root = tk.Tk()
+        root.destroy()
+        return True
+    except Exception:
+        return False
+
+
+def _skip_without_display(fn):
+    """Mark fn so it is skipped when no display server is available."""
+    fn._requires_display = True
+    return unittest.skipUnless(_has_display(), "requires a display server")(fn)
 
 
 class LexerTests(unittest.TestCase):
@@ -331,6 +351,18 @@ class DictionaryTests(unittest.TestCase):
             ["border", "corner-radius", "padding", "text", "title"],
         )
 
+    def test_properties_for_ambient_viewport_returns_width_height(self):
+        self.assertEqual(properties_for("viewport"), ["height", "width"])
+
+    def test_suggest_ambient_viewport_lists_declared_properties(self):
+        self.assertEqual(
+            suggest("viewport"),
+            [
+                Suggestion("height", "property", "a length"),
+                Suggestion("width", "property", "a length"),
+            ],
+        )
+
     def test_properties_for_unknown_kind_is_empty(self):
         self.assertEqual(properties_for("wizard"), [])
 
@@ -368,6 +400,11 @@ class DictionaryTests(unittest.TestCase):
         self.assertEqual(value_shape("card", "border"), ValueShape())
         self.assertEqual(value_shape("header", "layout"), ValueShape())
 
+    def test_value_shape_defaults_only_kind_properties_are_unknown(self):
+        self.assertEqual(value_shape("card", "padding"), ValueShape())
+        self.assertEqual(value_shape("card", "corner-radius"), ValueShape())
+        self.assertEqual(value_shape("header", "orientation"), ValueShape())
+
     def test_value_shape_uses_existing_declared_types(self):
         self.assertEqual(value_shape("viewport", "width"), ValueShape("length"))
         self.assertEqual(value_shape("viewport", "height"), ValueShape("length"))
@@ -388,6 +425,37 @@ class DictionaryTests(unittest.TestCase):
         self.assertEqual(_shape_from(""), ValueShape())
         self.assertEqual(_shape_from([]), ValueShape())
         self.assertEqual(_shape_from([1, 2]), ValueShape())
+
+    def test_malformed_dictionary_json_is_skipped_without_crashing(self):
+        from ine import dictionary
+        with tempfile.TemporaryDirectory() as tmp:
+            with open(os.path.join(tmp, "good.json"), "w", encoding="utf-8") as h:
+                json.dump({"term": "widget", "meaning": "a thing"}, h)
+            with open(os.path.join(tmp, "broken.json"), "w", encoding="utf-8") as h:
+                h.write("this is { not valid json !!!")
+            with open(os.path.join(tmp, "not-json.json"), "w", encoding="utf-8") as h:
+                h.write("plain text, not JSON at all")
+            with open(os.path.join(tmp, "not-dict.json"), "w", encoding="utf-8") as h:
+                json.dump(["list", "not", "a", "dict"], h)
+            with open(os.path.join(tmp, "no-term.json"), "w", encoding="utf-8") as h:
+                json.dump({"meaning": "no term key"}, h)
+            with mock.patch.object(dictionary, "DICTIONARY_DIR", tmp):
+                with warnings.catch_warnings(record=True) as caught:
+                    warnings.simplefilter("always")
+                    data = dictionary._load()
+        self.assertEqual(list(data), ["widget"])
+        self.assertEqual(data["widget"]["meaning"], "a thing")
+        messages = [str(w.message) for w in caught]
+        self.assertEqual(len(messages), 4)
+        for name in ("broken.json", "not-json.json", "not-dict.json", "no-term.json"):
+            self.assertTrue(
+                any(name in message and "skipping" in message for message in messages),
+                f"expected a skip warning naming {name}, got {messages}",
+            )
+        self.assertTrue(
+            all("good.json" not in message for message in messages),
+            "the valid file must not be reported as skipped",
+        )
 
     def test_members_are_structural_children_only(self):
         self.assertEqual(members("header"), ["logo", "navigation"])
@@ -493,6 +561,427 @@ class DictionaryTests(unittest.TestCase):
     def test_dict_cli_unknown_kind_fails(self):
         from ine.cli import main
         self.assertEqual(main(["--dict", "wizard"]), 1)
+
+
+class DictionaryIntegrityTests(unittest.TestCase):
+    """Guard on the shipped dictionary/*.json files themselves.
+
+    These read the real files directly (not the loader's cache), so a
+    duplicate term, a typo in a containment list, or an untyped property
+    value fails loudly instead of silently degrading completion.
+    """
+
+    # Containment members that may appear in a `contains` list without
+    # being a declared kind — a documented scope boundary. Empty today:
+    # every member resolves to a declared kind.
+    SCOPE_BOUNDARY_MEMBERS: set[str] = set()
+
+    def setUp(self):
+        from ine import dictionary
+        self.paths = {}  # term -> file name (detects duplicates)
+        self.entries = []
+        for name in sorted(os.listdir(dictionary.DICTIONARY_DIR)):
+            if not name.endswith(".json"):
+                continue
+            with open(
+                os.path.join(dictionary.DICTIONARY_DIR, name),
+                "r", encoding="utf-8",
+            ) as handle:
+                entry = json.load(handle)
+            self.entries.append(entry)
+            self.paths[entry["term"]] = name
+        self.declared = set(self.paths)
+
+    def test_every_entry_has_term_and_meaning(self):
+        for entry in self.entries:
+            self.assertIn("term", entry, entry)
+            self.assertIn("meaning", entry, entry)
+            self.assertTrue(str(entry["meaning"]).strip())
+
+    def test_term_values_are_unique_across_files(self):
+        self.assertEqual(len(self.paths), len(self.entries))
+
+    def test_containment_members_resolve_or_are_in_scope_boundary(self):
+        allowed = self.declared | self.SCOPE_BOUNDARY_MEMBERS
+        for entry in self.entries:
+            defaults = entry.get("defaults")
+            if not isinstance(defaults, dict):
+                continue
+            contains = defaults.get("contains")
+            if not isinstance(contains, list):
+                continue
+            for child in contains:
+                self.assertIn(
+                    child, allowed,
+                    f"{entry['term']} contains undeclared kind {child!r}",
+                )
+
+    def test_property_values_are_valid_shape_inputs(self):
+        for entry in self.entries:
+            declared = entry.get("properties")
+            if not isinstance(declared, dict):
+                continue
+            for prop, raw in declared.items():
+                shape = _shape_from(raw)
+                self.assertNotEqual(
+                    shape.type, "unknown",
+                    f"{entry['term']}.properties/{prop} is not a valid "
+                    f"value shape: {raw!r}",
+                )
+
+    def test_every_makeable_kind_declares_an_element(self):
+        for term in makeable():
+            entry = find(term)
+            self.assertIsNotNone(entry, f"makeable kind {term!r} is missing")
+            self.assertTrue(
+                str(entry.get("element", "")).strip(),
+                f"makeable kind {term!r} declares no element",
+            )
+
+    def test_members_and_parents_are_exact_inverse_over_shipped_kinds(self):
+        # Mission 64 reliability net: containment is an exact inverse under
+        # the reader API. For every shipped kind pair, `B in members(A)` iff
+        # `A in parents(B)` — no pair may appear in only one direction.
+        kinds = makeable()
+        self.assertGreater(len(kinds), 0)
+        pairs = [(a, b) for a in kinds for b in kinds
+                 if b in members(a)]
+        self.assertGreater(
+            len(pairs), 0,
+            "no containment pairs declared — the inverse check is vacuous")
+        for a in kinds:
+            for b in kinds:
+                self.assertEqual(
+                    b in members(a),
+                    a in parents(b),
+                    "members/parents asymmetry for shipped pair ({}, {})"
+                    .format(a, b),
+                )
+
+
+class BackendMetadataContractTests(unittest.TestCase):
+    """The backends must honor the dictionary's declared metadata, not their
+    own fallback defaults (Mission 65).
+
+    Guards the Session 25 freeze at the test level: when the dictionary
+    declares `element` / `layout` / `position` for a makeable kind, the HTML
+    and visual backends return exactly that value, and the four shipped
+    goldens still render byte-identical to their examples.
+    """
+
+    def test_html_backend_returns_declared_element_and_layout(self):
+        from ine.backend_html import (
+            DEFAULT_ELEMENT, _element_for_kind, _layout_for_kind,
+        )
+        declared_element = [k for k in makeable() if find(k).get("element")]
+        declared_layout = [k for k in makeable() if find(k).get("layout")]
+        self.assertGreater(len(declared_element), 0)
+        self.assertGreater(
+            len([k for k in declared_element
+                 if find(k).get("element") != DEFAULT_ELEMENT]),
+            0,
+            "no kind declares a non-default element — the element check is "
+            "vacuous",
+        )
+        for kind in declared_element:
+            self.assertEqual(
+                _element_for_kind(kind), find(kind).get("element"),
+                f"HTML element for {kind} must come from the dictionary",
+            )
+        self.assertEqual(
+            _layout_for_kind("card-group"), "row",
+            "HTML layout for card-group must come from the dictionary",
+        )
+        self.assertEqual(declared_layout, ["card-group"])
+        self.assertNotEqual(declared_layout[0], "stack")
+
+    def test_visual_backend_returns_declared_layout_and_position(self):
+        from ine.backend_visual import _layout_of, _position_of
+        from ine.semantic import Entity, Model
+        declared_layout = [k for k in makeable() if find(k).get("layout")]
+        declared_position = [k for k in makeable() if find(k).get("position")]
+        self.assertEqual(declared_layout, ["card-group"])
+        self.assertEqual(declared_position, ["footer"])
+        for kind in declared_layout:
+            model = Model(entities={"x": Entity("x", kind)})
+            self.assertEqual(
+                _layout_of(model, "x"), find(kind).get("layout"),
+                f"visual layout for {kind} must come from the dictionary",
+            )
+        for kind in declared_position:
+            model = Model(entities={"x": Entity("x", kind)})
+            self.assertEqual(
+                _position_of(model, "x"), find(kind).get("position"),
+                f"visual position for {kind} must come from the dictionary",
+            )
+
+    def test_shipped_goldens_render_byte_identical(self):
+        examples = {
+            "hello": os.path.join(
+                os.path.dirname(__file__), "..", "examples", "hello", "hello.ine"),
+            "topbar": os.path.join(
+                os.path.dirname(__file__), "..", "examples",
+                "homepage-topbar", "topbar.ine"),
+            "hero": os.path.join(
+                os.path.dirname(__file__), "..", "examples",
+                "homepage-hero", "hero.ine"),
+            "cards": os.path.join(
+                os.path.dirname(__file__), "..", "examples",
+                "homepage-cards", "cards.ine"),
+        }
+        golden_dir = os.path.join(os.path.dirname(__file__), "expected")
+        for name, source in examples.items():
+            with tempfile.TemporaryDirectory() as tmp:
+                out_path = os.path.join(tmp, name + ".html")
+                build(source, out_path)
+                with open(out_path, "r", encoding="utf-8") as handle:
+                    actual = handle.read()
+                with open(os.path.join(golden_dir, name + ".html"),
+                          "r", encoding="utf-8") as handle:
+                    expected = handle.read()
+                self.assertEqual(actual, expected,
+                                 "{}.html golden drifted from a fresh render"
+                                 .format(name))
+
+
+class VocabularyCoverageTests(unittest.TestCase):
+    """Lock the 'all real programs are covered by the dictionary' claim.
+
+    Parse every real program under examples/ and .agent/experiments/ and
+    assert that every kind, property, and containment pair either resolves
+    through the dictionary (find / members / parents / properties_for) or
+    falls in a documented scope-boundary set. Catches silent regressions
+    when vocabulary changes — and only fails if a program silently loses
+    coverage without the boundary or BLOCKERS being updated first.
+    """
+
+    # Kinds / properties that real programs use but the dictionary does not
+    # declare. Boundary is documented (alice.ine custom domain + NOTES).
+    CUSTOM_DOMAIN_KINDS: set[str] = {"person"}
+    CUSTOM_DOMAIN_PROPERTIES: set[str] = {"name", "age", "height"}
+
+    def setUp(self):
+        root = os.path.dirname(os.path.dirname(__file__))
+        examples = os.path.join(root, "examples")
+        experiments = os.path.join(root, ".agent", "experiments")
+        self.programs = []
+        for dirpath in (examples, experiments):
+            if not os.path.isdir(dirpath):
+                continue
+            for name in sorted(os.listdir(dirpath)):
+                if name.endswith(".ine"):
+                    self.programs.append(os.path.join(dirpath, name))
+        self.assertGreater(len(self.programs), 0, "no programs found to reconcile")
+        from ine import dictionary as dictmod
+        self.declared = dictmod.makeable()
+        self.members = dictmod.members
+        self.find = dictmod.find
+        self.properties_for = dictmod.properties_for
+        self.results = []
+        for path in self.programs:
+            with open(path, "r", encoding="utf-8") as f:
+                src = f.read()
+            try:
+                stmts = parse(lex(src + "\n"))
+            except Exception:
+                self.results.append((path, "skip", set(), set(), set()))
+                continue
+            kinds = set()
+            props = set()
+            containment_pairs = set()
+            entities = {}
+            groups = {}
+            for s in stmts:
+                if isinstance(s, MakeStatement):
+                    kinds.add(s.kind)
+                    entities[s.target] = s.kind
+                elif isinstance(s, PropertyStatement):
+                    props.add(s.name)
+                elif isinstance(s, PropertyRef):
+                    props.add(s.name)
+                elif isinstance(s, GroupStatement):
+                    groups[s.name] = tuple(s.members)
+                    for n in s.members:
+                        kinds.add(entities.get(n, n))
+                elif isinstance(s, InsideStatement):
+                    child_names = groups.get(s.child, (s.child,))
+                    parent_names = groups.get(s.parent, (s.parent,))
+                    for cname in child_names:
+                        for pname in parent_names:
+                            child_kind = entities.get(cname, cname)
+                            parent_kind = entities.get(pname, pname)
+                            containment_pairs.add((child_kind, parent_kind))
+            self.results.append(
+                (path, "ok", kinds, props, containment_pairs))
+
+    def test_entity_kinds_resolve_through_dictionary(self):
+        boundary = self.CUSTOM_DOMAIN_KINDS
+        failures = []
+        for path, status, kinds, _, _ in self.results:
+            for kind in kinds:
+                if kind not in boundary and kind not in self.declared:
+                    failures.append((os.path.basename(path), kind))
+        self.assertEqual(
+            failures, [],
+            "entity kinds not in dictionary or boundary: "
+            + str(failures),
+        )
+
+    def test_properties_resolve_through_dictionary(self):
+        for path, status, kinds, props, _ in self.results:
+            if status != "ok":
+                continue
+            for prop in props:
+                if prop in ("title", "text"):
+                    continue
+                if prop in self.CUSTOM_DOMAIN_PROPERTIES:
+                    continue
+                resolved = False
+                for kind in kinds:
+                    if kind in self.declared and prop in self.properties_for(kind):
+                        resolved = True
+                        break
+                self.assertTrue(
+                    resolved,
+                    f"{os.path.basename(path)}: property {prop!r} not "
+                    f"declared on any entity kind used in the program",
+                )
+
+    def test_containment_pairs_resolve_through_dictionary(self):
+        for path, status, _, _, containment_pairs in self.results:
+            if status != "ok":
+                continue
+            for child_kind, parent_kind in containment_pairs:
+                members = self.members(parent_kind)
+                self.assertIn(
+                    child_kind, members,
+                    f"{os.path.basename(path)}: {child_kind} inside "
+                    f"{parent_kind} not in dictionary members",
+                )
+
+
+class EvidenceGateTests(unittest.TestCase):
+    """Lock the BLOCKERS.md evidence gates forward (Mission 53).
+
+    "Advisory, never a validator" cuts both ways: the dictionary must NOT
+    silently grow vocabulary a reconciliation or a WORKBOOK decision is
+    still pending on. These tests read the real reader API and fail loudly
+    if a future well-meaning vocabulary addition quietly overrides a
+    recorded evidence gate without commander approval.
+    """
+
+    # Kinds the Session 31/37 reconciliation explicitly ruled out until
+    # evidence or a WORKBOOK decision lands (see BLOCKERS.md): `search`
+    # (proposed header member, never used in a real program), `subtitle` /
+    # `description` (stripped from `contains`, no evidence), and the field
+    # kinds (`input`) + `table` / `chart` gaps from the dashboard/form
+    # experiments (Missions 19-21).
+    VETOED_KINDS = frozenset({
+        "search", "subtitle", "description", "input", "table", "chart",
+    })
+
+    def test_vetoed_kinds_are_not_declared(self):
+        undeclared = [k for k in sorted(self.VETOED_KINDS)
+                      if find(k) is not None]
+        self.assertEqual(
+            undeclared, [],
+            "evidence-gated kinds declared without commander approval: "
+            + str(undeclared),
+        )
+        self.assertEqual(
+            set(makeable()) & self.VETOED_KINDS, set(),
+            "evidence-gated kinds became makeable",
+        )
+        for kind in sorted(self.VETOED_KINDS):
+            self.assertEqual(
+                suggest(kind), [],
+                f"vetoed kind {kind!r} now yields suggestions",
+            )
+
+    def test_vetoed_properties_are_not_declared_anywhere(self):
+        # `subtitle` / `description` must not reappear as content properties
+        # (WORKBOOK §36 re-grounded only title/text), and `search` must not
+        # resurface as a header property.
+        for term in makeable():
+            props = set(properties_for(term))
+            self.assertFalse(
+                props & self.VETOED_KINDS,
+                f"{term} declares vetoed properties: "
+                f"{sorted(props & self.VETOED_KINDS)}",
+            )
+
+    def test_button_is_not_a_header_member(self):
+        # WORKBOOK L544 proposes `button inside header`; the evidence is
+        # `button inside section` (dictionary-demo.ine). There is no second
+        # authority: the header's membership must not grow a button without
+        # a decision.
+        self.assertNotIn(
+            "button", members("header"),
+            "button inside header added to containment without evidence",
+        )
+
+    def test_card_group_layout_stays_unknown(self):
+        # Session 33 revert: `card-group layout` takes bare words and is not
+        # a text/choice shape; only "row" is documented, so the shape must
+        # remain unknown until the first `choice` value (PLAN item 7) lands.
+        shape = value_shape("card-group", "layout")
+        self.assertEqual(shape.type, "unknown")
+        self.assertEqual(shape.choices, ())
+
+
+class AliceCustomDomainTests(unittest.TestCase):
+    """End-to-end guard for the canonical "dictionary is advisory"
+    program (examples/alice/alice.ine).
+
+    alice.ine declares a custom domain (person/name/age/height) the
+    dictionary does not know and must not need to know. These tests lock
+    the output shape the real file produces today and that the custom
+    domain stays outside the dictionary's reach (for_model contributes
+    nothing for it, while ordinary page programs still get suggestions)."""
+
+    ALICE_SOURCE = os.path.join(
+        os.path.dirname(__file__), "..", "examples", "alice", "alice.ine"
+    )
+    HELLO_SOURCE = os.path.join(
+        os.path.dirname(__file__), "..", "examples", "hello", "hello.ine"
+    )
+
+    def _model(self, path):
+        with open(path, "r", encoding="utf-8") as handle:
+            source = handle.read()
+        statements = parse(lex(source + "\n"))
+        return analyze(statements)
+
+    def test_alice_ine_builds_and_outputs_exactly_its_three_values(self):
+        statements = parse(lex(self._read(self.ALICE_SOURCE)))
+        model = analyze(statements)
+        resolved = resolve(statements, model)
+        self.assertEqual(list(model.entities), ["alice"])
+        self.assertEqual(model.entities["alice"].kind, "person")
+        self.assertEqual(execute(resolved), ["Alice", 25, 1.7])
+
+    def test_alice_ine_is_not_an_html_program_today(self):
+        # The HTML backend needs a page entity; alice.ine is a native/say
+        # program, so building it today renders nothing (BackendError) and
+        # writes no file. Pins the output shape as it exists today —
+        # do not invent an HTML shape for a native-only program.
+        with tempfile.TemporaryDirectory() as tmp:
+            out_path = os.path.join(tmp, "out.html")
+            with self.assertRaises(BackendError):
+                build(self.ALICE_SOURCE, out_path)
+            self.assertFalse(os.path.exists(out_path))
+
+    def test_for_model_contributes_nothing_for_alice_custom_domain(self):
+        # Reads the REAL program — companion to
+        # test_for_model_skips_unknown_kinds.
+        self.assertEqual(for_model(self._model(self.ALICE_SOURCE)), [])
+
+    def test_for_model_still_suggests_for_ordinary_page_programs(self):
+        self.assertGreater(len(for_model(self._model(self.HELLO_SOURCE))), 0)
+
+    def _read(self, path):
+        with open(path, "r", encoding="utf-8") as handle:
+            return handle.read()
 
 
 class SayTests(unittest.TestCase):
@@ -927,6 +1416,61 @@ class EndToEndTests(unittest.TestCase):
             self.assertIn("<h3>Reliable</h3>", output)
 
 
+class CliErrorTests(unittest.TestCase):
+    """`_report_error` prints the message text plus a location clause.
+    Errors that carry a column (LexError) now report both line and column;
+    errors with only a line (SyntaxError/SemanticError/BackendError) keep the
+    existing `(line L)` format."""
+
+    def test_lex_error_report_includes_column(self):
+        from io import StringIO
+        from contextlib import redirect_stderr
+        from ine.cli import main
+        err = StringIO()
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "bad.ine")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("make page @\n")
+            with redirect_stderr(err):
+                code = main([path])
+        self.assertEqual(code, 1)
+        output = err.getvalue()
+        self.assertIn("unexpected character '@'", output)
+        self.assertIn("(line 1, column 11)", output)
+
+    def test_syntax_error_report_includes_line_only(self):
+        from io import StringIO
+        from contextlib import redirect_stderr
+        from ine.cli import main
+        err = StringIO()
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "bad.ine")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("say page\n")
+            with redirect_stderr(err):
+                code = main([path])
+        self.assertEqual(code, 1)
+        output = err.getvalue()
+        self.assertIn("property", output)
+        self.assertIn("(line 1)", output)
+        self.assertNotIn("column", output)
+
+    def test_message_text_is_not_altered_by_location_clause(self):
+        from io import StringIO
+        from contextlib import redirect_stderr
+        from ine.cli import main
+        err = StringIO()
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "bad.ine")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("make page @\n")
+            with redirect_stderr(err):
+                code = main([path])
+        self.assertEqual(code, 1)
+        output = err.getvalue()
+        self.assertTrue(output.startswith("error: unexpected character '@' "))
+
+
 class VisualBackendTests(unittest.TestCase):
     """Tests for the visual backend's model-consumption logic.
 
@@ -1016,6 +1560,7 @@ class VisualBackendTests(unittest.TestCase):
         model.entities["h"] = Entity("h", "banner")
         self.assertFalse(_has_text(model, "h"))
 
+    @_skip_without_display
     def test_visual_render_returns_a_tk_root(self):
         import tkinter as tk
         from ine.backend_visual import render
@@ -1029,6 +1574,7 @@ class VisualBackendTests(unittest.TestCase):
         self.assertEqual(root.title(), "Test")
         root.destroy()
 
+    @_skip_without_display
     def test_visual_render_uses_title_override(self):
         import tkinter as tk
         from ine.backend_visual import render
@@ -1071,6 +1617,7 @@ class VisualBackendTests(unittest.TestCase):
         self.assertIn("main", model.entities)
         self.assertIn("hero", model.entities)
 
+    @_skip_without_display
     def test_hero_int_visual_render_creates_window(self):
         import tkinter as tk
         from ine.backend_visual import render
@@ -1086,6 +1633,7 @@ class VisualBackendTests(unittest.TestCase):
         self.assertEqual(root.title(), "Company Name")
         root.destroy()
 
+    @_skip_without_display
     def test_visual_render_default_title_when_no_title_property(self):
         import tkinter as tk
         from ine.backend_visual import render
@@ -1114,6 +1662,7 @@ class VisualBackendTests(unittest.TestCase):
         self.assertEqual(model.relationships["card-3"], "card-group")
         self.assertEqual(model.relationships["footer"], "page")
 
+    @_skip_without_display
     def test_cards_visual_render_creates_window(self):
         import tkinter as tk
         from ine.backend_visual import render
@@ -1157,6 +1706,7 @@ class VisualBackendTests(unittest.TestCase):
         model.entities["f"] = Entity("f", "footer")
         self.assertEqual(_position_of(model, "f"), "bottom")
 
+    @_skip_without_display
     def test_cards_visual_packs_cards_side_by_side(self):
         import tkinter as tk
         from ine.backend_visual import render
@@ -1173,6 +1723,7 @@ class VisualBackendTests(unittest.TestCase):
             self.assertEqual(frame.pack_info()["side"], "left")
         root.destroy()
 
+    @_skip_without_display
     def test_cards_visual_pins_footer_to_bottom(self):
         import tkinter as tk
         from ine.backend_visual import render
@@ -1215,6 +1766,72 @@ class VisualBackendTests(unittest.TestCase):
             if result is not None:
                 return result
         return None
+
+
+class DisplayGuardTests(unittest.TestCase):
+    """Verify _has_display() returns False when tkinter cannot create a window."""
+
+    def test_returns_false_when_tk_raises(self):
+        import tkinter as tk
+        real_tk = tk.Tk
+        try:
+            tk.Tk = mock.Mock(side_effect=tk.TclError("no display"))
+            self.assertFalse(_has_display())
+        finally:
+            tk.Tk = real_tk
+
+    def test_returns_true_when_tk_succeeds(self):
+        import tkinter as tk
+        real_tk = tk.Tk
+        try:
+            def _fake():
+                r = mock.Mock()
+                return r
+            tk.Tk = _fake
+            self.assertTrue(_has_display())
+        finally:
+            tk.Tk = real_tk
+
+    def test_all_window_tests_have_skip_decorator(self):
+        window_tests = [
+            "test_visual_render_returns_a_tk_root",
+            "test_visual_render_uses_title_override",
+            "test_hero_int_visual_render_creates_window",
+            "test_visual_render_default_title_when_no_title_property",
+            "test_cards_visual_render_creates_window",
+            "test_cards_visual_packs_cards_side_by_side",
+            "test_cards_visual_pins_footer_to_bottom",
+        ]
+        for name in window_tests:
+            fn = getattr(VisualBackendTests, name)
+            self.assertTrue(
+                getattr(fn, "_requires_display", False),
+                f"{name} is missing the display-server skip guard",
+            )
+
+
+class ExperimentsRenderTests(unittest.TestCase):
+    """Every evidence-collection experiment in .agent/experiments must
+    lex, parse, analyze, and render to HTML. Guards the Missions 19/20
+    evidence programs as the dictionary evolves."""
+
+    def test_every_experiment_lexes_parses_analyzes_and_renders(self):
+        experiments_dir = os.path.join(
+            os.path.dirname(__file__), "..", ".agent", "experiments"
+        )
+        for exp_name in sorted(os.listdir(experiments_dir)):
+            if not exp_name.endswith(".ine"):
+                continue
+            with self.subTest(experiment=exp_name):
+                source_path = os.path.join(experiments_dir, exp_name)
+                with open(source_path, "r", encoding="utf-8") as handle:
+                    source = handle.read()
+                with tempfile.TemporaryDirectory() as tmp:
+                    out_path = os.path.join(tmp, "out.html")
+                    build(source_path, out_path)
+                    with open(out_path, "r", encoding="utf-8") as handle:
+                        output = handle.read()
+                    self.assertIn("<!DOCTYPE html>", output)
 
 
 class NativeBackendTests(unittest.TestCase):

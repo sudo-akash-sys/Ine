@@ -44,20 +44,37 @@ When given a mission:
 
 1. Inspect the current repository state.
 2. Read `.agent/MISSION.md`.
-3. Read `.agent/STATE.md`.
-4. Read the relevant parts of `.agent/PLAN.md`.
-5. Consult `.agent/DECISIONS.md` before making architectural or language
+3. If the ine-agent orchestrator launched you, the current-state essentials
+   are embedded in your prompt — use them and do not re-read the whole of
+   STATE.md or PLAN.md. Otherwise read `.agent/STATE.md` and the relevant
+   parts of `.agent/PLAN.md`.
+4. Consult `.agent/DECISIONS.md` before making architectural or language
    decisions.
-6. Check `.agent/BLOCKERS.md` if the task may require commander input.
-7. Determine the next safe engineering task.
-8. Implement it.
-9. Run appropriate focused tests.
-10. Review the changes.
-11. Update `.agent/STATE.md`.
-12. Update `.agent/HISTORY.md`.
-13. Continue to the next safe task.
+5. Check `.agent/BLOCKERS.md` if the task may require commander input.
+6. Determine the work required for THIS mission.
+7. Implement it.
+8. Run appropriate focused tests once per mission — at the end of the work,
+   not after every edit.
+9. Review the changes.
+10. Update `.agent/STATE.md` and `.agent/HISTORY.md`, and tag the mission in
+    `.agent/PLAN.md` (DONE / BLOCKED) — all in ONE final recording pass,
+    never incrementally as you work.
+11. Stop. See "Orchestrator division of labor" below for why.
 
-Do not stop merely because one subtask is complete.
+Do not stop merely because one subtask is complete — drive the assigned
+mission to a verified finish before you record it.
+
+### Orchestrator division of labor (under ine-agent)
+
+The deterministic supervisor in `src/ine_agent/` selects the next
+EXECUTABLE mission, advances the plan between worker cycles, records
+blocked / failed / human-gated missions, writes the durable run report
+(`.agent/RUN_REPORTS.md`), and notifies the commander. The worker executes
+exactly the assigned mission as a complete
+research -> understand -> implement -> test -> verify -> record -> clean up
+arc, then stops; it does NOT re-scan `.agent/PLAN.md` to select further
+missions inside one invocation. That keeps what is genuinely autonomous
+around *completing one mission well* while removing redundant model work.
 
 ## Do not ask the commander about ordinary implementation choices.
 
@@ -100,6 +117,25 @@ Start with:
 Then inspect only files relevant to the current task.
 
 Use repository state rather than replaying historical conversation.
+
+## Resource efficiency (every tool call is a model request)
+
+On quota-metered plans each model round-trip costs a request. When working
+under a budget (e.g. the free tier), treat frugality as part of the task:
+
+- Batch independent reads/greps/listings into a SINGLE message — a
+  parallel tool batch is one request; sequential ones are several.
+- Read files whole, once. Do not slice-re-read a file and do not re-read a
+  file you just wrote.
+- Run tests once per mission (focused tests at the end of the work; broader
+  regression at meaningful checkpoints), not after every edit.
+- Prefer direct work over spawning subagents or calling web fetch/search;
+  each of those opens its own request chain.
+- Keep context lean: read what the task requires, not the repository.
+
+When running under ine-agent, the supervisor records observed
+request/token usage per mission in `.agent/RUN_REPORTS.md`. Those numbers
+are locally observed OpenCode usage, not the exact provider quota.
 
 ## Verification
 

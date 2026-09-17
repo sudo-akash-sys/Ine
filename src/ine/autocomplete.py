@@ -9,6 +9,7 @@ position maps to:
     <kind> <..>         -> dictionary.suggest(kind)   (properties + members)
     <kind> <property>   -> dictionary.value_shape(kind, property)  (value)
     <child> inside <..> -> dictionary.parents(child_kind)  (reverse containment)
+    validate            -> lex + parse the buffer          (diagnostics)
 
 No AI, synonyms, fuzzy matching, or hardcoded vocabulary.
 
@@ -26,6 +27,18 @@ produces one response:
      "items": [{"label", "insert", "detail", "type"}, ...]}   type in
     "kind" | "property" | "concept" | "parent" | "value"
 
+A validation query is distinguished by the `validate` key instead:
+
+    {"validate": true, "buffer": <full program text>, "id"?}
+
+    -> {"validate": true,
+        "diagnostics": [{"line", "column", "message"}, ...]}
+
+Diagnostics are parse-level only (lex + parse), never semantic, so the
+dictionary never red-underlines — advisory stays advisory. Lines and
+columns are 0-based, matching the completion protocol; `column` is
+omitted when the parser cannot know one (syntax errors point at a line).
+
 The loop keeps running until stdin closes, so an editor can hold one
 long-lived process and stream queries without paying Python startup per
 keystroke. A single request is still answered one-for-one (stdin EOF
@@ -41,9 +54,11 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from ine import dictionary
+from ine.lexer import LexError, lex
+from ine.parser import SyntaxError, parse
 
 
-def context(line, column):
+def context(line: str, column: int) -> dict | None:
     """The completion context at `column` in `line`, or None.
 
     Returns one of:
@@ -64,6 +79,10 @@ def context(line, column):
         partial = words.pop()
     if words == ["make"] or (words == [] and partial in ("make", "m", "ma", "mak")):
         return {"type": "kind"}
+    if words and words[0] == "make" and len(words) > 1:
+        return None
+    if words and words[0] in ("group", "say"):
+        return None
     if "inside" in words:
         index = words.index("inside")
         if index < 1:
@@ -76,7 +95,7 @@ def context(line, column):
     return None
 
 
-def resolve_kind(buffer, name):
+def resolve_kind(buffer: str, name: str) -> str | None:
     """The dictionary kind behind a name in the buffer.
 
     Resolution (lenient, no full parse): the name is a declared dictionary
@@ -112,13 +131,13 @@ def resolve_kind(buffer, name):
     return None
 
 
-def _known_shape(shape):
+def _known_shape(shape) -> str | None:
     """The protocol value for a dictionary ValueShape: its type when the
     dictionary declares one, else None."""
     return shape.type if shape.type != "unknown" else None
 
 
-def _items(ctx, buffer):
+def _items(ctx, buffer) -> list[dict]:
     if ctx is None:
         return []
     if ctx["type"] == "kind":
@@ -192,9 +211,38 @@ def _items(ctx, buffer):
     return []
 
 
-def complete(payload):
-    """Answer one editor completion query."""
+def _validate(buffer: str) -> list[dict]:
+    """Parse-level diagnostics for `buffer`: lex + parse only.
+
+    Returns one entry per error:
+        {"line", "column", "message"} for lex errors (0-based line/column)
+        {"line", "message"}           for syntax errors (parser has no column)
+    A buffer that lexes and parses cleanly returns [].
+    """
+    try:
+        tokens = lex(buffer)
+        parse(tokens)
+    except LexError as error:
+        return [
+            {
+                "line": error.line - 1,
+                "column": error.column - 1,
+                "message": error.message,
+            }
+        ]
+    except SyntaxError as error:
+        return [{"line": error.line - 1, "message": error.message}]
+    return []
+
+
+def complete(payload: dict) -> dict:
+    """Answer one editor query: a validation or a completion query."""
     buffer = payload.get("buffer", "")
+    if payload.get("validate"):
+        result = {"validate": True, "diagnostics": _validate(buffer)}
+        if "id" in payload:
+            result["id"] = payload["id"]
+        return result
     line_index = payload.get("line", 0)
     column = payload.get("column", 0)
     lines = buffer.splitlines()
@@ -213,14 +261,17 @@ def complete(payload):
     return result
 
 
-def _respond(payload):
+def _respond(payload) -> dict:
     try:
         return complete(payload)
     except Exception as exc:  # keep the protocol alive for any input
-        return {"error": str(exc), "items": []}
+        result = {"error": str(exc), "items": []}
+        if isinstance(payload, dict) and "id" in payload:
+            result["id"] = payload["id"]
+        return result
 
 
-def main():
+def main() -> None:
     for raw in sys.stdin:
         line = raw.strip()
         if not line:

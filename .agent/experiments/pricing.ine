@@ -1,0 +1,75 @@
+# pricing.ine — a three-tier pricing page written with ONLY the current
+# dictionary vocabulary (page, header, logo, navigation, container, banner,
+# card-group, card, section, button, footer, title/text).
+#
+# Evidence-collection experiment (PLAN mission 54): feed the BLOCKED `link`
+# mission (61) with real-program data. Every line the vocabulary could not
+# guide is flagged with `vocab gap:` and listed in .agent/NOTES.md
+# ("## Mission 54"). Nothing here uses an undeclared kind.
+
+make page
+page title "Ine Cloud — Pricing"
+
+make header
+header inside page
+make logo
+logo text "Ine Cloud"
+logo inside header
+make navigation
+navigation inside header
+# vocab gap: navigation has no `contains` — the dictionary declares no
+# link/button membership and no destination for any nav item, so the nav
+# bar renders as an empty strip with no clickable targets (dictionary-demo
+# notes the same).
+
+make content container
+content inside page
+
+make pitch banner
+pitch text "Pick the plan that fits."
+pitch inside content
+
+# Three tiers. `make 3 card` supplies card-1..card-3; the group places them.
+make plans card-group
+plans inside content
+make 3 card
+group tiers = card-1 card-2 card-3
+tiers inside plans
+
+# Each tier is one card. A pricing card really wants a price value and a
+# list of features, but a card carries only `title` + one `text` string and
+# no numeric/boolean values, so the list is crammed into one text line.
+card-1 title "Starter"
+card-1 text "Free — highlights: 3 projects, community support, 1 GB."
+card-2 title "Pro"
+card-2 text "$29/month — highlights: unlimited projects, priority support, 100 GB."
+card-3 title "Enterprise"
+card-3 text "Custom — highlights: SSO, SLA, dedicated support."
+# vocab gap: no per-tier line item list, no price field, no boolean flags
+# (e.g. "includes SSO") — each card holds one undifferentiated text string.
+
+# Per-tier "Choose plan" button: buttons belong inside sections only, and
+# sections belong inside the page — a button cannot sit inside a pricing
+# card, so each tier has no call-to-action of its own. One shared section
+# below is the only place a CTA can structurally live.
+# vocab gap: `button inside card` / a section inside a card-group are both
+# undeclared containment pairs.
+make choose section
+choose title "Ready to start?"
+choose inside page
+choose text "Free plan, no credit card required."
+
+# The CTA cannot navigate anywhere: there is no link kind, no property that
+# carries a URL, and no click behavior. The closest reachable statement is
+# text that merely *mentions* a destination.
+make pick button
+pick text "View all plans at example.com/pricing"
+pick inside choose
+# vocab gap: this is display text, not a link — nothing makes the text
+# clickable, nothing gives it a destination.
+
+make footer
+footer text "© 2026 Ine Cloud — pricing"
+footer inside page
+
+say page title

@@ -7,7 +7,7 @@ from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from ine.autocomplete import complete, context, resolve_kind
+from ine.autocomplete import _respond, complete, context, resolve_kind
 from ine.dictionary import ValueShape, makeable, parents, suggest, value_hint
 
 
@@ -64,6 +64,122 @@ class ContextTests(unittest.TestCase):
     def test_make_pair_is_not_a_kind_context(self):
         self.assertIsNone(context("make hero banner", 16))
 
+    def test_group_keyword_statement_start_is_no_context(self):
+        self.assertIsNone(context("group ", 6))
+        self.assertIsNone(context("group cards = ", 14))
+        self.assertIsNone(context("group cards = card-1", 19))
+
+    def test_say_keyword_statement_start_is_no_context(self):
+        self.assertIsNone(context("say ", 4))
+        self.assertIsNone(context("say person", 10))
+        self.assertIsNone(context("say person age", 14))
+
+
+class CursorEdgeCaseTests(unittest.TestCase):
+    """Unusual cursor positions: document what is correct, what degrades
+    gracefully, and that nothing crashes (test-and-document mission 14)."""
+
+    @staticmethod
+    def items(buffer, column, line=0):
+        return complete({"buffer": buffer, "line": line, "column": column})["items"]
+
+    def test_cursor_at_line_start_is_no_context(self):
+        self.assertIsNone(context("make page", 0))
+        self.assertEqual(self.items("make page", 0), [])
+
+    def test_cursor_after_blank_line_is_no_context(self):
+        buffer = "make page\ncontent\n\n"
+        self.assertIsNone(context("", 0))
+        self.assertEqual(complete({"buffer": buffer, "line": 2, "column": 0})["items"], [])
+
+    def test_cursor_after_multiple_spaces_keeps_context(self):
+        self.assertEqual(context("header     ", 10), {
+            "type": "properties", "kind_word": "header", "partial": "",
+        })
+
+    def test_cursor_midline_while_typing_keyword_is_kind_context(self):
+        self.assertEqual(context("make p", 6), {"type": "kind"})
+        self.assertEqual({i["label"] for i in self.items("make p", 6)},
+                         set(makeable()))
+
+    def test_cursor_inside_a_quoted_value_is_no_context(self):
+        self.assertIsNone(context('page title "Ho', 15))
+        self.assertEqual(self.items('page title "Ho', 15), [])
+
+    def test_cursor_at_the_end_of_a_complete_value_is_no_context(self):
+        self.assertIsNone(context('page title "Home" ', 17))
+
+    def test_cursor_after_comment_on_own_line_is_no_context(self):
+        self.assertIsNone(context("# header ", 9))
+        self.assertEqual(self.items("# header ", 9), [])
+
+    def test_cursor_after_inline_comment_is_no_context(self):
+        # A finished `make` declaration has nothing more to complete, even
+        # when an inline comment follows it (mission 43 fix for the mission
+        # 14 misclassification).
+        result = complete({"buffer": "make page # note ", "line": 0, "column": 18})
+        self.assertNotIn("error", result)
+        self.assertEqual(result["context"], None)
+        self.assertEqual(result["items"], [])
+
+    def test_complete_make_statement_starts_no_context(self):
+        # A finished declaration has nothing left to complete; only a
+        # half-typed kind while the cursor is still on it stays in the
+        # `kind` context.
+        for line in ("make page ", "make hero banner ", "make page # note ",
+                     "make 3 card "):
+            with self.subTest(line=line):
+                self.assertIsNone(context(line, len(line)))
+        for line in ("make p", "make he"):
+            with self.subTest(line=line):
+                self.assertEqual(context(line, len(line)), {"type": "kind"})
+
+    def test_cursor_mid_identifier_keeps_property_context(self):
+        self.assertEqual(context("card-1 tit", 10), {
+            "type": "properties", "kind_word": "card-1", "partial": "tit",
+        })
+
+
+class ContainmentCompletionTests(unittest.TestCase):
+    """`<child> inside ` must answer from `parents()` (mission 15)."""
+
+    @staticmethod
+    def items(buffer, column, line=0):
+        return complete({"buffer": buffer, "line": line, "column": column})["items"]
+
+    def test_header_inside_returns_page(self):
+        self.assertEqual(
+            [i["label"] for i in self.items("header inside ", 14)],
+            parents("header"),
+        )
+        self.assertEqual(parents("header"), ["page"])
+
+    def test_card_inside_returns_card_group(self):
+        self.assertEqual(parents("card"), ["card-group"])
+        self.assertEqual(
+            [i["label"] for i in self.items("card inside ", 13)],
+            ["card-group"],
+        )
+
+    def test_banner_inside_returns_container(self):
+        self.assertEqual(parents("banner"), ["container"])
+        self.assertEqual(
+            [i["label"] for i in self.items("banner inside ", 15)],
+            ["container"],
+        )
+
+    def test_page_inside_returns_nothing_top_level(self):
+        self.assertEqual(parents("page"), [])
+        self.assertEqual(self.items("page inside ", 13), [])
+
+    def test_copy_inside_returns_nothing_undeclared(self):
+        self.assertEqual(parents("copy"), [])
+        self.assertEqual(self.items("copy inside ", 13), [])
+
+    def test_case_sensitivity_no_completion_for_caps(self):
+        self.assertEqual(parents("Page"), [])
+        self.assertEqual(self.items("Page inside ", 13), [])
+
 
 class ResolveKindTests(unittest.TestCase):
     def test_name_is_a_dictionary_kind(self):
@@ -89,6 +205,58 @@ class ResolveKindTests(unittest.TestCase):
 
     def test_numbers_are_not_entity_names(self):
         self.assertIsNone(resolve_kind("make 2 card\n", "2"))
+
+
+class BufferContextTests(unittest.TestCase):
+    """Multi-line buffers: entities declared ABOVE the cursor must resolve
+    property / value / inside contexts on later lines; a `say` line yields
+    no context while the surrounding lines still do. Locks the
+    buffer-scanning contract of resolve_kind (mission 46)."""
+
+    @staticmethod
+    def items(buffer, column, line=0):
+        return complete({"buffer": buffer, "line": line, "column": column})["items"]
+
+    def test_kind_above_cursor_resolves_property_context(self):
+        buffer = "make hero banner\nhero titl"
+        self.assertEqual(context(buffer.splitlines()[1], 9), {
+            "type": "properties", "kind_word": "hero", "partial": "titl",
+        })
+        self.assertEqual([i["label"] for i in self.items(buffer, 9, line=1)],
+                         [i.text for i in suggest("banner")])
+
+    def test_multiplicity_above_cursor_resolves_property_context(self):
+        buffer = "make 2 card\ncard-1 tit"
+        self.assertEqual(context(buffer.splitlines()[1], 10), {
+            "type": "properties", "kind_word": "card-1", "partial": "tit",
+        })
+        self.assertEqual([i["label"] for i in self.items(buffer, 10, line=1)],
+                         [i.text for i in suggest("card")])
+
+    def test_kind_above_cursor_resolves_value_context(self):
+        buffer = "make hero banner\nhero title "
+        self.assertEqual(context(buffer.splitlines()[1], 11), {
+            "type": "value", "kind_word": "hero", "prop": "title",
+        })
+        self.assertEqual([i["label"] for i in self.items(buffer, 11, line=1)],
+                         ['""'])
+
+    def test_group_above_cursor_resolves_inside_context(self):
+        buffer = "make 2 card\ngroup cards = card-1 card-2\ncards inside "
+        self.assertEqual(context(buffer.splitlines()[2], 13), {
+            "type": "inside", "child": "cards", "partial": "",
+        })
+        self.assertEqual([i["label"] for i in self.items(buffer, 13, line=2)],
+                         parents("card"))
+
+    def test_say_line_has_no_context_but_neighbors_do(self):
+        buffer = "make p\nsay hello\npage t"
+        self.assertIsNone(context(buffer.splitlines()[1], 9))
+        self.assertEqual(self.items(buffer, 9, line=1), [])
+        self.assertEqual(context(buffer.splitlines()[0], 6), {"type": "kind"})
+        self.assertEqual(context(buffer.splitlines()[2], 6), {
+            "type": "properties", "kind_word": "page", "partial": "t",
+        })
 
 
 class CompletionTests(unittest.TestCase):
@@ -309,6 +477,66 @@ class ProtocolTests(unittest.TestCase):
         proc.stdin.close()
         proc.wait(timeout=10)
 
+    def test_missing_buffer_is_an_empty_response(self):
+        result = complete({"line": 0, "column": 5})
+        self.assertIn("items", result)
+        self.assertEqual(result["items"], [])
+
+    def test_missing_line_defaults_to_the_first_line(self):
+        result = complete({"buffer": "make ", "column": 5})
+        self.assertEqual([i["label"] for i in result["items"]], makeable())
+
+    def test_missing_column_defaults_to_zero(self):
+        result = complete({"buffer": "make ", "line": 0})
+        self.assertEqual(result["items"], [])
+
+    def test_null_column_uses_the_whole_line(self):
+        result = complete({"buffer": "make ", "line": 0, "column": None})
+        self.assertNotIn("error", result)
+        self.assertIn("items", result)
+        self.assertEqual([i["label"] for i in result["items"]], makeable())
+
+    def test_wrong_type_line_is_an_error_response(self):
+        result = _respond({"buffer": "make ", "line": "x", "column": 5})
+        self.assertIn("error", result)
+        self.assertEqual(result["items"], [])
+
+    def test_id_is_echoed_even_on_an_error_response(self):
+        result = _respond({"buffer": "make ", "line": "x", "column": 5, "id": 7})
+        self.assertIn("error", result)
+        self.assertEqual(result["id"], 7)
+
+    def test_malformed_keys_then_valid_completion_in_one_session(self):
+        # Well-formed-but-wrong payloads must each yield a valid JSON
+        # response and leave the persistent worker alive; the same session
+        # still answers a normal completion afterwards (mission 47).
+        proc = subprocess.Popen(
+            [sys.executable, os.path.abspath(self._script())],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+
+        def ask(payload):
+            proc.stdin.write(json.dumps(payload) + "\n")
+            proc.stdin.flush()
+            return json.loads(proc.stdout.readline())
+
+        result = ask({"line": 0, "column": 5})
+        self.assertEqual(result["items"], [])
+        result = ask({"buffer": "make ", "line": "x", "column": 5, "id": 7})
+        self.assertIn("error", result)
+        self.assertEqual(result["id"], 7)
+        result = ask({"validate": True, "buffer": "make @\n"})
+        self.assertEqual(len(result["diagnostics"]), 1)
+        result = ask({"buffer": "page title ", "line": 0, "column": 11, "id": 11})
+        self.assertNotIn("error", result)
+        self.assertEqual(result["id"], 11)
+        self.assertEqual([i["label"] for i in result["items"]], ['""'])
+        proc.stdin.close()
+        self.assertEqual(proc.wait(timeout=10), 0)
+
     def test_error_line_does_not_kill_the_loop(self):
         proc = subprocess.Popen(
             [sys.executable, os.path.abspath(self._script())],
@@ -333,6 +561,129 @@ class ProtocolTests(unittest.TestCase):
             proc.stdin.write(line)
             proc.stdin.flush()
             check(json.loads(proc.stdout.readline()))
+        proc.stdin.close()
+        self.assertEqual(proc.wait(timeout=10), 0)
+
+    def test_editor_flow_end_to_end(self):
+        """One live session answering the four contexts an editor asks."""
+        proc = subprocess.Popen(
+            [sys.executable, os.path.abspath(self._script())],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+        buffer = "make page\npage title \"Home\"\nmake header\nheader inside page\n"
+        requests = [
+            ({"buffer": buffer + "make ", "line": 4, "column": 5, "id": 1},
+             "kind",
+             lambda r: (self.assertEqual(r["id"], 1),
+                        self.assertEqual({i["label"] for i in r["items"]},
+                                         set(makeable())))),
+            ({"buffer": buffer + "page ", "line": 4, "column": 5, "id": 2},
+             "properties",
+             lambda r: (self.assertEqual(r["id"], 2),
+                        self.assertEqual([i["label"] for i in r["items"]],
+                                         [i.text for i in suggest("page")]))),
+            ({"buffer": buffer + "page title ", "line": 4, "column": 11, "id": 3},
+             "value",
+             lambda r: (self.assertEqual(r["id"], 3),
+                        self.assertEqual([i["label"] for i in r["items"]], ['""']))),
+            ({"buffer": buffer + "header inside ", "line": 4, "column": 15, "id": 4},
+             "inside",
+             lambda r: (self.assertEqual(r["id"], 4),
+                        self.assertEqual([i["label"] for i in r["items"]],
+                                         parents("header")))),
+        ]
+        for payload, expected, check in requests:
+            proc.stdin.write(json.dumps(payload) + "\n")
+            proc.stdin.flush()
+            result = json.loads(proc.stdout.readline())
+            self.assertNotIn("error", result)
+            self.assertEqual(result["context"]["type"], expected)
+            check(result)
+        proc.stdin.close()
+        self.assertEqual(proc.wait(timeout=10), 0)
+
+
+class ValidateTests(unittest.TestCase):
+    """The validation query ({"validate": true, "buffer": ...}) returns
+    parse-level diagnostics: a clean buffer -> [], lex errors carry
+    line + column, syntax errors carry line (the parser has no column),
+    and errors never break the protocol loop."""
+
+    @staticmethod
+    def validate(buffer):
+        return complete({"validate": True, "buffer": buffer})
+
+    def test_validate_clean_buffer_returns_empty(self):
+        result = self.validate('make page\npage title "Home"\n')
+        self.assertTrue(result["validate"])
+        self.assertEqual(result["diagnostics"], [])
+
+    def test_validate_empty_buffer_returns_empty(self):
+        self.assertEqual(self.validate("")["diagnostics"], [])
+
+    def test_validate_lex_error_reports_line_and_column(self):
+        result = self.validate('make page\npage title "oops\n')
+        self.assertEqual(len(result["diagnostics"]), 1)
+        diag = result["diagnostics"][0]
+        self.assertEqual(diag["line"], 1)
+        self.assertIn("column", diag)
+        self.assertIn("unterminated string", diag["message"])
+
+    def test_validate_unexpected_character_reports_exact_column(self):
+        diag = self.validate("make page @\n")["diagnostics"][0]
+        self.assertEqual(diag["line"], 0)
+        self.assertEqual(diag["column"], 10)
+        self.assertEqual(diag["message"], "unexpected character '@'")
+
+    def test_validate_syntax_error_reports_line_without_column(self):
+        # `say page` parses as a name expecting '.property'; the NEWLINE
+        # token after the name is not a property, so this is a syntax error
+        # with a line and no column.
+        diag = self.validate("say page\n")["diagnostics"][0]
+        self.assertEqual(diag["line"], 0)
+        self.assertNotIn("column", diag)
+        self.assertIn("property", diag["message"])
+
+    def test_validate_response_is_distinct_from_completion(self):
+        result = self.validate("make page\n")
+        self.assertEqual(result, {"validate": True, "diagnostics": []})
+        self.assertNotIn("context", result)
+        self.assertNotIn("items", result)
+
+    def test_validate_response_echoes_id(self):
+        result = complete({"validate": True, "buffer": "make page\n", "id": 7})
+        self.assertEqual(result["id"], 7)
+
+    @staticmethod
+    def _script():
+        return os.path.join(
+            os.path.dirname(__file__), "..", "src", "ine", "autocomplete.py"
+        )
+
+    def test_validate_then_completion_in_one_live_session(self):
+        # Protocol liveness: a validate query over a broken buffer must not
+        # kill the worker; the next completion still answers.
+        proc = subprocess.Popen(
+            [sys.executable, os.path.abspath(self._script())],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+        proc.stdin.write(json.dumps({"validate": True, "buffer": "make page @\n"}) + "\n")
+        proc.stdin.flush()
+        first = json.loads(proc.stdout.readline())
+        self.assertNotIn("error", first)
+        self.assertTrue(first["validate"])
+        self.assertEqual(len(first["diagnostics"]), 1)
+        proc.stdin.write(json.dumps({"buffer": "page title ", "line": 0, "column": 11}) + "\n")
+        proc.stdin.flush()
+        second = json.loads(proc.stdout.readline())
+        self.assertNotIn("error", second)
+        self.assertEqual([i["label"] for i in second["items"]], ['""'])
         proc.stdin.close()
         self.assertEqual(proc.wait(timeout=10), 0)
 
