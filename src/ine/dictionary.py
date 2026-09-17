@@ -60,9 +60,27 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .semantic import Model
 
-DICTIONARY_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "dictionary"
-)
+def _dictionary_dir() -> str:
+    """Locate the shipped dictionary data directory.
+
+    Preferred resolution goes through the installed package
+    (importlib.resources), so an installed wheel — which carries
+    `dictionary/*.json` as package data — resolves the same data files a
+    source checkout does. Falls back to the package-sibling data directory
+    of this module.
+    """
+    try:
+        from importlib.resources import files as _resources_files
+
+        candidate = _resources_files("ine").joinpath("dictionary")
+        if candidate.is_dir():
+            return os.fspath(candidate)
+    except Exception:
+        pass
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "dictionary")
+
+
+DICTIONARY_DIR = _dictionary_dir()
 
 
 @dataclass(frozen=True)

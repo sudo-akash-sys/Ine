@@ -1,0 +1,92 @@
+# dynamic-ui.ine — a UI that changes state, written with ONLY the current
+# dictionary vocabulary (page, header, logo, navigation, container,
+# card-group, card, section, button, footer, title/text).
+#
+# Evidence-collection experiment (PLAN mission 75): expand/collapse
+# sections, show/hide elements, conditional layout are the "state / can
+# change" intent. This program shows what that intent reduces to when the
+# only grouping is `group` + multiplicity and no value can change.
+# Every line the vocabulary could not guide is flagged with `vocab gap:`
+# and listed in .agent/NOTES.md ("## Mission 75").
+
+make page
+page title "Deploy Console"
+
+make header
+header inside page
+make logo
+logo text "Acme Ops"
+logo inside header
+make navigation
+navigation inside header
+
+# The two "views" a dynamic UI would switch between: expandable detail
+# panels. Today both are just sections — nothing can show/hide them.
+make summary section
+summary title "Deployments (2 of 6 shown)"
+summary inside page
+make details section
+details title "Expanded logs - hidden until you expand"
+details inside page
+# vocab gap: "2 of 6 shown" is static text — the notion that 4 rows are
+# collapsed cannot be expressed, so the count cannot be derived. There is
+# no visible/expanded state bit; `details` exists in every render with all
+# its children, permanently.
+
+# Conditional layout: a different arrangement under a condition. Today
+# both containers always render.
+make primary container
+primary inside page
+make secondary container
+secondary inside page
+make main-rows card-group
+main-rows inside primary
+make extra-rows card-group
+extra-rows inside secondary
+make 2 card
+group shown = card-1 card-2
+shown inside main-rows
+card-1 title "Pods"
+card-1 text "4 running"
+card-2 title "Region"
+card-2 text "us-east-1"
+# vocab gap: `primary` and `secondary` are always rendered one after the
+# other as two containers; there is no "if <condition>, show secondary /
+# stack primary" expression. The Mission 59 BLOCKED narrow rule is the only
+# conditional any backend could honor, and it is frozen.
+
+# A toggle would change this button's state (enabled/disabled, pressed).
+make toolbar section
+toolbar title "Controls"
+toolbar inside page
+make expand button
+expand text "Expand all"
+expand inside toolbar
+make pause button
+pause text "Pause auto-refresh"
+pause inside toolbar
+# vocab gap: neither button can change — no disabled/enabled flag
+# (`button.interactive` documents Ine has no booleans), no pressed state,
+# no action trigger (Mission 74 finding), so "Expand all" cannot flip the
+# `details` panel's visibility.
+
+# Collapsible groups: `group` + multiplicity is compile-time static too.
+make stack container
+stack inside page
+make layers card-group
+layers inside stack
+make layer-1 card
+make layer-2 card
+make layer-3 card
+group layers_rows = layer-1 layer-2 layer-3
+layers_rows inside layers
+layers_rows text "collapsed"   # vocab gap: "collapsed" is display text, not state
+layer-1 title "layer-a"
+layer-2 title "layer-b"
+layer-3 title "layer-c"
+# vocab gap: the group is fixed at authoring time — `group` names a static
+# set of already-made entities; it can never expand, collapse, reorder, or
+# animate. There is no runtime data to bind to.
+
+say page title
+say card-1 text

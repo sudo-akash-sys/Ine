@@ -86,7 +86,13 @@ cannot set them from `.ine` today (renderer concern, not dictionary).
 
 **Dead vocabulary (noted, not proposed for removal).** `link`, standalone
 `title`, and standalone `heading` are declared but appear in zero real
-programs. They may become relevant if link navigation is built.## Evidence-gated implementations in PLAN (items 58, 59, 61)
+programs. They may become relevant if link navigation is built.
+> mission 62 (reconciliation): corrected — of the three, only `title` is a
+> declared term (title.json); `link`/`heading` are semantic bucket names
+> (navigation's `kind` is `link-collection`; title's `kind` is `heading`),
+> never dictionary files (git history empty). `title` as a *kind* is
+> unused (`make title` in zero programs) but the universal `title`
+> property is in constant use.## Evidence-gated implementations in PLAN (items 58, 59, 61)
 
 These are the CSS/styling and link implementation missions. They are BLOCKED
 in PLAN.md on a lifted Session 25 backend freeze and commander scope, not on

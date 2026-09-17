@@ -11,6 +11,8 @@ env/
 
 # Generated output
 output/
+build/
+dist/
 
 # Temporary experiments / generated artifacts
 .tmp/

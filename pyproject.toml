@@ -16,3 +16,6 @@ ine-agent = "ine_agent.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+ine = ["dictionary/*.json"]

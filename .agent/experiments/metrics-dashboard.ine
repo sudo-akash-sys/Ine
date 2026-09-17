@@ -1,0 +1,121 @@
+# metrics-dashboard.ine — an operations metrics dashboard written with ONLY
+# the current dictionary vocabulary (page, header, logo, navigation,
+# container, card-group, card, section, button, footer, title/text).
+#
+# Evidence-collection experiment (PLAN mission 72): feed the typed-value
+# (number / boolean / date) type-system decision with real-program data.
+# A metrics dashboard needs currency and percentage formatting, enabled/
+# disabled states, and timestamp display; this program shows what that
+# intent reduces to when the only value a property can carry is text.
+# Every line the vocabulary could not guide is flagged with `vocab gap:`
+# and listed in .agent/NOTES.md ("## Mission 72").
+
+make page
+page title "Metrics Dashboard"
+
+make header
+header inside page
+make logo
+logo text "Acme Ops"
+logo inside header
+make navigation
+navigation inside header
+
+# KPI row. Numbers lex and parse as NUMBER tokens (the pipeline stores real
+# int/float values), but the dictionary declares `text`/`title` as text
+# values and the HTML backend prints them through str() with no formatting:
+# no thousands separator, no percent sign, no currency prefix, no locale.
+make kpi-rows container
+kpi-rows inside page
+make metrics card-group
+metrics inside kpi-rows
+make 4 card
+group kpis = card-1 card-2 card-3 card-4
+kpis inside metrics
+card-1 title "Revenue"
+card-1 text 1234567.89
+# vocab gap: the value is a bare number, yet the program MEANS a currency
+# amount. There is no number type tracked by the dictionary and no format
+# intent (currency/locale/precision), so the reader cannot know it should
+# render as $1,234,567.89; the author must pre-format the string instead,
+# which turns the value into opaque text (unusable for math, sorting, or a
+# chart). `value_shape("card","text")` is "text", so the editor offers a
+# quoted-string snippet — never a numeric placeholder.
+
+card-2 title "Uptime"
+card-2 text 99.98
+# vocab gap: the 99.98 is a percentage by convention only — no unit, no
+# percent type, no decimal-count control. As a bare string the renderer
+# prints 99.98 and cannot append the "%" consistently across cards.
+
+card-3 title "Workload"
+card-3 text 42
+# vocab gap: an integer with no declared type. Two KPIs on the same
+# dashboard render identically even though one means 42.0% and the other
+# means 1234567.89 (a currency); the distinction lives only in the author's
+# head, as a pre-formatted string convention.
+
+card-4 title "Queued jobs"
+card-4 text "0 of 12"
+# vocab gap: a string-concatenated ratio. "0 of 12" cannot be sorted or
+# graphed; a real typed pair (0, 12) would render differently and stay
+# computable. String concatenation is the ONLY tool today, and it hard-codes
+# the display format into the source.
+
+# Status panel: an enabled/disabled boolean is inexpressible. Because `make N
+# <kind>` restarts numbering from 1 per statement, the second batch needs
+# explicit names (same collision Mission 55 documented).
+make status-panel container
+status-panel inside page
+make flags card-group
+flags inside status-panel
+make gate-1 card
+make gate-2 card
+make gate-3 card
+group toggles = gate-1 gate-2 gate-3
+toggles inside flags
+gate-1 title "Feature flags"
+gate-1 text "enabled"
+gate-2 title "Maintenance mode"
+gate-2 text "disabled"
+gate-3 title "Read replica"
+gate-3 text "degraded"
+# vocab gap: "enabled" / "disabled" / "degraded" are display strings, not
+# boolean or enumerated state. There is no boolean value (button.interactive
+# already documents: "not settable yet: Ine has no boolean values"), so
+# nothing can toggle, and no state color/icon can be derived from a word.
+# A boolean would also give the backend a truth value to branch on — a
+# string cannot.
+
+# Timestamp panel: dates are strings with no format or timezone.
+make deploy-panel container
+deploy-panel inside page
+make deploys card-group
+deploys inside deploy-panel
+make dep-1 card
+make dep-2 card
+make dep-3 card
+group releases = dep-1 dep-2 dep-3
+releases inside deploys
+dep-1 title "v2.14"
+dep-1 text "2026-09-17 12:40 UTC"
+dep-2 title "v2.13"
+dep-2 text "2026-09-16 09:15 UTC"
+dep-3 title "v2.12"
+dep-3 text "2026-09-15 22:03 UTC"
+# vocab gap: three timestamps as literal strings. No date type means no
+# "3h ago" rendering, no sortable comparison, no timezone math, and no
+# validation (the strings exist as atoms; a typo is invisible to the
+# language).
+
+# The footer carries a relative-time string, baked in at authoring time.
+make footer
+footer text "Last synced 2 minutes ago"
+footer inside page
+# vocab gap: relative time is baked into the text; no runtime can recompute
+# it, because there is no timestamp value to diff.
+
+say page title
+say card-1 text
+say card-2 text
+say 42

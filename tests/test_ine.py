@@ -2,6 +2,7 @@ import json
 import os
 import shutil
 import sys
+import subprocess
 import tempfile
 import unittest
 import warnings
@@ -1917,6 +1918,56 @@ class NativeBackendTests(unittest.TestCase):
             c_path, exe_path = compile_c(resolved, "probe", work_dir=tmp)
             output = run_native(exe_path)
             self.assertEqual(output.splitlines(), ["Alice", "25"])
+
+
+class ReadmeQuickStartTests(unittest.TestCase):
+    """The README quick-start flow must run exactly as documented
+    (Mission 70). Protects the docs' promises against engine drift."""
+
+    @staticmethod
+    def _run_ine(cwd, *args):
+        env = dict(os.environ)
+        env["PYTHONPATH"] = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src")
+        return subprocess.run(
+            [sys.executable, "-m", "ine", *args], cwd=cwd, env=env,
+            capture_output=True, text=True)
+
+    def test_readme_quick_start_flow_runs_exactly_as_documented(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with open(os.path.join(tmp, "hello.ine"), "w",
+                      encoding="utf-8") as handle:
+                handle.write('make page\npage title "Hello, Ine"\n')
+            proc = self._run_ine(
+                tmp, "hello.ine", "-o", "hello.html")
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            for expected in (
+                "read:       hello.ine",
+                "entities:   1",
+                "properties: 1",
+                "wrote:      hello.html",
+            ):
+                self.assertIn(expected, proc.stdout)
+            with open(os.path.join(tmp, "hello.html"), "r",
+                      encoding="utf-8") as handle:
+                html = handle.read()
+            self.assertIn("<title>Hello, Ine</title>", html)
+            self.assertIn("<h1>Hello, Ine</h1>", html)
+
+    def test_readme_dict_commands_each_exit_zero(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with open(os.path.join(tmp, "hello.ine"), "w",
+                      encoding="utf-8") as handle:
+                handle.write('make page\npage title "Hi"\n')
+            for args in (
+                ("--dict",),
+                ("--dict", "card"),
+                ("--dict", "header"),
+                ("--dict", "hello.ine"),
+            ):
+                with self.subTest(args=args):
+                    proc = self._run_ine(tmp, *args)
+                    self.assertEqual(proc.returncode, 0, proc.stderr)
 
 
 if __name__ == "__main__":

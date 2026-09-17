@@ -1,0 +1,82 @@
+# data-table.ine — tabular data display written with ONLY the current
+# dictionary vocabulary (page, header, logo, navigation, container,
+# card-group, card, section, button, footer, title/text).
+#
+# Evidence-collection experiment (PLAN mission 73): a table needs rows,
+# columns, headers, and sortable values. This program shows what that
+# intent reduces to when the only structural grouping is a card-group of
+# cards and the only value a property carries is text.
+# Every line the vocabulary could not guide is flagged with `vocab gap:`
+# and listed in .agent/NOTES.md ("## Mission 73").
+
+make page
+page title "Deployments"
+
+make header
+header inside page
+make logo
+logo text "Acme Ops"
+logo inside header
+make navigation
+navigation inside header
+
+# A table is a set of rows sharing a column shape. The dictionary has no
+# table/row/cell kinds, so every row becomes a card and every column a
+# text property. Rows only sit inside a card-group inside a container.
+make table container
+table inside page
+make rows card-group
+rows inside table
+make row-1 card
+make row-2 card
+make row-3 card
+make 4 card
+# vocab gap: `make 4 card` after the explicit row cards does NOT collide
+# this time (explicit names are on a different batch), but `make N card`
+# still restarts at card-1..card-4. Four real rows need eight cards in
+# reality; here three explicit rows demonstrate the shape.
+
+group table_rows = row-1 row-2 row-3 card-1 card-2 card-3 card-4
+table_rows inside rows
+row-1 title "Service | Version | Status | Region"
+row-1 text "api | v2.14 | live | us-east-1"
+row-2 title "web | v2.1 | live | eu-west-1"
+row-2 text "worker | v4.3 | paused | us-east-1"
+row-3 title "db | v9.0 | draining | ap-south-1"
+# vocab gap: a "table" is column headers crammed into a title string and
+# cell values crammed into a text string. There is no column concept, no
+# per-cell property, no header row vs. data row, and no alignment: nothing
+# about this renders as a grid. The separator (" | ") is a display
+# convention living in the source; a cell's value cannot be referenced,
+# sorted, or reformatted separately from the whole string.
+
+card-1 title "rank"
+card-1 text "1st place"
+card-2 title "score"
+card-2 text "998"
+card-3 title "trend"
+card-3 text "up"
+card-4 title "notes"
+card-4 text "sorted by rank"
+# vocab gap: was *supposed* to show a second "sortable data" perspective,
+# but a card's only values are its own title/text — there is no way to say
+# "sort this column" or "this cell belongs to a column". Sorting intent
+# cannot exist because the data is not structurally tabular.
+
+# Sort/action affordance: a table usually has a sort control.
+make toolbar section
+toolbar title "Table actions"
+toolbar inside page
+make sort button
+sort text "Sort by version"
+sort inside toolbar
+# vocab gap: the button prints but does nothing — no interaction model
+# (mission 74) and no way to associate "sort by version" with a specific
+# column.
+
+make footer
+footer text "Ine — data-table experiment"
+footer inside page
+
+say page title
+say row-1 title

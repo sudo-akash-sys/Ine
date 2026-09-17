@@ -1366,6 +1366,116 @@ class PlanHygieneTests(unittest.TestCase):
             self.assertIsNone(first)
 
 
+class ControlPlaneHealthTests(unittest.TestCase):
+    """Cross-file persistence contract the autonomous loop relies on
+    (Mission 67).
+
+    STATE.md's header session must match the latest HISTORY.md session
+    heading, and every BLOCKED plan item must stay cross-referenced in
+    BLOCKERS.md. A future session that forgets the 'record' step breaks
+    these — the fix is a record correction, not a code change.
+    """
+
+    def _state_session(self):
+        state_path = os.path.join(REPO_ROOT, ".agent", "STATE.md")
+        with open(state_path, encoding="utf-8") as f:
+            head = "".join(f.readline() for _ in range(4))
+        match = re.search(r"Session (\d+)", head)
+        self.assertIsNotNone(
+            match, "STATE.md's header line must name a session number")
+        return int(match.group(1))
+
+    def _latest_history_session(self):
+        history_path = os.path.join(REPO_ROOT, ".agent", "HISTORY.md")
+        latest = None
+        with open(history_path, encoding="utf-8") as f:
+            for line in f:
+                match = re.match(r"^#{2,3} Session (\d+)", line)
+                if match:
+                    latest = int(match.group(1))
+        self.assertIsNotNone(
+            latest, "HISTORY.md must contain at least one 'Session N' heading")
+        return latest
+
+    def test_state_session_header_matches_latest_history_entry(self):
+        self.assertEqual(self._state_session(), self._latest_history_session())
+
+    def test_every_blocked_plan_item_cross_referenced_in_blockers(self):
+        blockers_path = os.path.join(REPO_ROOT, ".agent", "BLOCKERS.md")
+        with open(blockers_path, encoding="utf-8") as f:
+            blockers_text = f.read()
+        items = PlanHygieneTests()._load_plan_items()
+        blocked = [num for num, tag, _ in items if tag == "BLOCKED"]
+        self.assertGreaterEqual(
+            len(blocked), 1, "plan should carry at least one BLOCKED item")
+        for num in blocked:
+            self.assertIn(
+                str(num), blockers_text,
+                "BLOCKED item {} not cross-referenced in BLOCKERS.md"
+                .format(num))
+
+
+class NotesPlanCrossReferenceTests(unittest.TestCase):
+    """The research -> record half of the autonomous loop (Mission 68).
+
+    Every plan finding mission (an item whose body promises a `## Mission N`
+    section in NOTES.md) must actually have that section, and every
+    `## Mission N` section must map back to a numbered plan item. A finding
+    mission marked DONE without recording fails loudly here.
+    """
+
+    FINDING_MISSION_MARKER = re.compile(r'NOTES "## Mission (\d+)')
+
+    def _notes_sections(self):
+        notes_path = os.path.join(REPO_ROOT, ".agent", "NOTES.md")
+        sections = set()
+        with open(notes_path, encoding="utf-8") as f:
+            for line in f:
+                match = re.match(r"^## Mission (\d+)", line)
+                if match:
+                    sections.add(int(match.group(1)))
+        return sections
+
+    def _plan_numbers(self):
+        plan_path = os.path.join(REPO_ROOT, ".agent", "PLAN.md")
+        numbers = set()
+        with open(plan_path, encoding="utf-8") as f:
+            for line in f:
+                match = re.match(r"^\s*(\d+)\.\s*`", line)
+                if match:
+                    numbers.add(int(match.group(1)))
+        return numbers
+
+    def _plan_finding_missions(self):
+        plan_path = os.path.join(REPO_ROOT, ".agent", "PLAN.md")
+        found = set()
+        with open(plan_path, encoding="utf-8") as f:
+            for line in f:
+                for match in self.FINDING_MISSION_MARKER.finditer(line):
+                    found.add(int(match.group(1)))
+        return found
+
+    def test_every_plan_finding_mission_is_recorded_in_notes(self):
+        sections = self._notes_sections()
+        missing = sorted(
+            num for num in self._plan_finding_missions()
+            if num not in sections
+        )
+        self.assertEqual(
+            missing, [],
+            "plan finding mission(s) promised in NOTES.md but never "
+            "recorded: {}".format(missing))
+
+    def test_every_notes_mission_maps_back_to_a_plan_item(self):
+        plan_numbers = self._plan_numbers()
+        orphan = sorted(num for num in self._notes_sections()
+                        if num not in plan_numbers)
+        self.assertEqual(
+            orphan, [],
+            "NOTES '## Mission {}' has no matching numbered PLAN item".format(
+                orphan[0] if orphan else 0))
+
+
 class RecordingNotifier:
     """Fake notifier: records every (title, body, report) call for
     assertions. Mirrors the real notifier's persistent-popup contract."""

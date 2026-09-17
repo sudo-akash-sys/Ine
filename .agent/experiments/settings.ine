@@ -1,0 +1,74 @@
+# settings.ine — a settings-style panel written with ONLY the current
+# dictionary vocabulary (page, header, logo, container, card-group, card,
+# section, button, footer, title/text).
+#
+# Evidence-collection experiment (PLAN mission 55): feed the BLOCKED CSS/
+# styling missions (56-58) and the typed-value gates with real-program data.
+# A real settings panel has labeled groups, status rows, and an action row;
+# this program shows what that intent reduces to under the declared schema.
+# Every line the vocabulary could not guide is flagged with `vocab gap:`
+# and listed in .agent/NOTES.md ("## Mission 55").
+
+make page
+page title "Settings"
+
+make header
+header inside page
+make logo
+logo text "Ine"
+logo inside header
+
+# A settings panel is labeled groups of rows. The dictionary's only grouping
+# inside a container is a card-group of cards, so every group becomes a
+# card-group and every setting row one card (title + a single text string).
+make options container
+options inside page
+
+make security card-group
+security inside options
+make notify card-group
+notify inside options
+make 4 card
+group profile_rows = card-1 card-2
+profile_rows inside security
+group notify_rows = card-3 card-4
+notify_rows inside notify
+card-1 title "Password"
+card-1 text "Last changed 3 weeks ago"
+card-2 title "Two-factor authentication"
+card-2 text "Enabled"
+# vocab gap: each setting row is one undifferentiated title + text — no
+# status shape (on/off), no boolean value, no toggle, no control kind to
+# change anything.
+
+card-3 title "Email notifications"
+card-3 text "Digest weekly"
+card-4 title "Product updates"
+card-4 text "Off"
+# vocab gap: no state value — "Off" is display text, not an enabled/disabled
+# flag; no color/emphasis can mark a risky setting.
+
+# The action row: buttons belong inside sections and sections belong inside
+# the page, so the save row is a section-level strip, not a row inside a
+# group.
+make actions section
+actions title "Actions"
+actions inside page
+make save button
+save text "Save changes"
+save inside actions
+# vocab gap: no disabled state for the save button, no confirmation, no link
+# to a "reset" view.
+
+make status section
+status title "Status"
+status text "Connected — settings synced."
+status inside page
+# vocab gap: the status line is plain text; no indicator, no color, no
+# machine-readable state value.
+
+make footer
+footer text "Ine — settings experiment"
+footer inside page
+
+say page title

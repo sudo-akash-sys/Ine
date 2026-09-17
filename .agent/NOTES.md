@@ -795,6 +795,556 @@ item 61 records.
 
 **Status.** Evidence recorded; program builds and renders. No code changes.
 
+## Mission 55 - Settings panel experiment (styling evidence)
+
+**Scope.** Write a settings-style panel (labeled groups, status rows, an
+action row) with ONLY the declared vocabulary (page, header, logo,
+container, card-group, card, section, button, footer, title/text).
+Program: `.agent/experiments/settings.ine`.
+
+**What the program expresses (all dictionary-guided).** One page with a
+header (logo), a container holding two labeled card-groups of four setting
+rows (`make 4 card` + two `group` splits), a page-level action section with
+a save button, a status section, and a footer. It lexes, parses, analyzes,
+and renders: the output contains all four setting rows, the save button,
+and the status line (auto-guarded by `ExperimentsRenderTests`).
+
+**Every inexpressible point (the finding).** Each is real friction a
+settings panel actually hits:
+
+1. **A setting row is one undifferentiated `title` + `text` card.** The
+   dictionary's only way to group rows inside content is container ->
+   card-group -> card. There is no toggle/checkbox/select/label/row kind,
+   no boolean value, no enabled/disabled state — "Enabled" / "Off" are
+   display strings, not data. (Converges with Missions 19-21 and 54: no
+   typed values.)
+2. **`make N kind` numbering restarts per statement.** A second `make 2 card`
+   on the page re-offers card-1/card-2 and collides; the panel must use ONE
+   `make 4 card` then split with `group`. For any page larger than one small
+   group, numbered-instance naming is unstable and error-prone — a genuine
+   naming gap in the core, not a styling concern.
+3. **No state/status shape.** The status line is plain text; there is no
+   indicator value, no busy/idle/error state, nothing machine-readable.
+4. **No risk emphasis.** A risky setting ("Product updates: Off") cannot be
+   emphasized; no color/emphasis property exists anywhere.
+5. **The action row is forced to page level.** `button` is contained only by
+   `section`, and `section` only by `page` — a save button cannot sit inside
+   a settings card-group, so the CTA must live in a separate page-level
+   section.
+6. **No disabled button state.** The save button cannot be disabled or
+   styled as destructive; no such property exists.
+
+**Recommendation for the CSS missions (56-58).** Items 3, 4, and 6 are
+exactly the "HOW" concerns the commander's review flagged: they should live
+in a theme/template import layer, not the language's syntax. The one true
+*core* gap here is item 2 (stable, scoped instance names), which is a
+values/naming fix — the same seam the typed-value evidence already points
+at — not a styling one.
+
+## Mission 56 - Stylable-surface audit
+
+**Scope.** Exhaustive inventory of what a `.ine` user can and cannot set
+today: every property that reaches a renderer, every declared-but-unread
+physical hint, and every style the backends hard-code. Feeds BLOCKED 58/59.
+
+**What reaches a renderer today (inventory, verified against
+`src/ine/backend_html.py` and `src/ine/backend_visual.py` line-by-line):**
+- `element` (every kind) — read by the HTML backend only. backend_html
+  `_element_for_kind` maps kind -> tag (page/header/nav/footer/...).
+  The visual backend never consults `element`; it hand-builds per-kind
+  widgets.
+- `layout` (`"row"` on card-group; everything else defaults to stack) —
+  read by BOTH backends. HTML: `display:flex;gap:20px` (backend_html
+  `_open_tag`); visual: `_layout_of` side-by-side packing. It is the ONLY
+  physical property that visibly works today.
+- `position` (`"bottom"` on footer) — read by the VISUAL backend only
+  (`_position_of`, pins the bar to the bottom edge). backend_html never
+  reads `position`; a footer renders in normal flow (verified: footer is
+  the page's last child, so the visual difference is incidental).
+- Universal `title`/`text` (quoted strings) — HTML renders page title as
+  `<title>`+`<h1>`, leaf/section titles as `<h3>`, text as raw content;
+  visual renders labels.
+- Totally hard-coded, settable by NOTHING:
+  - HTML: `flex:1` on row children, `gap:20px`, `class` names, the `<h1>`/
+    `<h3>` hierarchy, no stylesheet, no colors, no `<meta viewport>`.
+  - Visual: `KIND_COLORS`/`KIND_TEXT_COLORS` Python dicts, Arial fonts
+    (10-22pt), the 800x600 window, padx/pady values (4-48), card
+    `highlightthickness=1` border.
+
+**Declared-but-unread physical hints (dictionary vs backend, each file):**
+- `card.json` defaults: `padding` (comfortable), `border` (subtle),
+  `corner-radius` (slight) — read by NO backend. (`implementation.guess`
+  even suggests the literal CSS: "border: 1px solid light",
+  "border-radius: 6-10px", "padding: 20px".)
+- `banner.json` defaults: `text-alignment` (center), `padding` (generous),
+  `separation` — read by NO backend.
+- `navigation.json` defaults: `orientation`, `link-spacing`, `link-style`,
+  `order` — read by NO backend (a nav renders as an empty `<nav>`).
+- `card-group.json` defaults: `fallback`, `narrow-layout` ("stack
+  members"), `narrow-class` ("viewport.width == narrow") — the `narrow-*`
+  responsive vocabulary is read by NO backend; `layout: row` IS read.
+- `logo.json` defaults: `interactive` (false) — unread (also documents
+  "not settable yet: Ine has no boolean values").
+- `footer.json` `position: bottom` — visual-only (see above).
+
+**Smallest backend-only change that makes the FIRST property honest.**
+Mission 23's recommendation holds and the Mission 57 probe confirms it:
+wire `card`'s three default hints and `banner`'s `padding`/`text-alignment`
+into inline styles in `backend_html.py` ONLY — a single per-kind style map
+in `_open_tag` (~5 lines), zero parser/semantic/dictionary changes. That is
+the precise, reviewable surface for BLOCKED mission 58.
+
+**Classification.** Everything unread is, without exception, the "HOW"
+layer the commander wants out of the language: spacing, radius, borders,
+alignment, and responsive collapse. The audit confirms the dictionary
+should stay a *semantic* vocabulary; the physical hints are backend-flavored
+metadata that one honest backend change (58) will either legitimize or
+reveal as removable.
+
+## Mission 57 - CSS-intent-to-HTML mapping proposal
+
+**Scope.** Produce the concrete mapping from the already-declared physical
+hints to HTML inline CSS and capture a literal before/after diff by running
+the golden examples + evidence experiments through a TEMPORARY patched copy
+of `backend_html.py` (`.tmp/backend_html_patched.py`) — the in-tree module
+was never modified.
+
+**Mapping (hint -> exact CSS fragment, from the dictionary's own
+`defaults` + `implementation.guess`):**
+- `card.padding` comfortable -> `padding:20px`
+- `card.border` subtle -> `border:1px solid #e0e0e0`
+- `card.corner-radius` slight -> `border-radius:8px`
+- `banner.padding` generous -> `padding:3rem`
+- `banner.text-alignment` center -> `text-align:center`
+No other hint is proposed for mission 58's scope (navigation/card-group
+hints stay out until separate decisions).
+
+**Probe results (`.tmp/m57_probe.py`, diffs in `.tmp/m57_diffs.txt`):**
+- In-tree build vs every golden: **byte-identical**
+  (`tests/expected/{hello,topbar,hero,cards}.html` — GOLDENS_HONORED).
+- Patched probe diffs — exactly the reviewable contract 58 will produce:
+  - `hello`, `topbar`: no diff (no card or banner element).
+  - `hero`: banner `div class="hero"` gains
+    `style="padding:3rem;text-align:center;flex:1"`.
+  - `cards`: banner gains the style; each card `article` gains
+    `style="flex:1;padding:20px;border:1px solid #e0e0e0;border-radius:8px;flex:1"`.
+  - `settings`: all four setting cards gain the card style.
+  - `pricing`: banner + all three tier cards gain their styles.
+
+**Quirk the probe exposed (must be part of the 58 contract).** A card
+inside a `layout: row` card-group receives `flex:1` from the parent-row
+rule AND the style column, producing a duplicate `...;flex:1`. The real
+implementation must MERGE into the existing `style` attribute (dedupe
+`flex:1`), not append blindly — otherwise the goldens change twice.
+
+**Scope statement for BLOCKED mission 58.** First property only: the five
+hint->CSS fragments above, inline styles, `backend_html.py` only, goldens
+updated deliberately once the commander accepts this mapping scope.
+
+## Mission 60 - Link semantics investigation
+
+**Scope.** What is a link in Ine: a kind (a `link` entity inside
+navigation) or a property (`<name> link "url"`)? Scan WORKBOOK for declared
+link/navigation intent, reconcile with the unused `link` terminology
+(BLOCKERS: dead vocabulary) and Mission 54's pricing evidence, and propose
+the smallest natural representation.
+
+**WORKBOOK intent (verified).** The homepage slice (Session 16/§28) is
+page, header, logo, navigation; navigation's dictionary meaning is "An
+ordered set of links to destinations in the software." Its `element` is
+`nav`, its `implementation.guess` is "nav with anchor elements", and its
+defaults describe link *styling* (`orientation`, `link-spacing`,
+`link-style`, `order`) — but it declares NO `contains`, so a user has no
+place to put a link and no way to attach a destination (Mission 54: a nav
+renders as an empty strip; a CTA can only fake a link inside `text`).
+
+**Candidate representations, with evidence for/against:**
+- **(a) A `link` KIND contained by navigation.** `make link home` /
+  `home inside navigation` / `home text "Home"` / `home href "index.html"`.
+  - For: matches navigation's own meaning ("ordered set of links"); matches
+    Mission 54's recommendation; the parser already accepts any property
+    name with a quoted-string value (`parser._parse_property` — verified,
+    no whitelist), so **zero language/parser/semantic changes** are
+    needed — only a `dictionary/link.json` (element "a") and a small
+    backend anchor-emission branch. Fits `contains` (structure) + Value on
+    Property (text) inside the four-construct spine exactly.
+  - Against: none of the four golden examples need it yet; a `link` kind
+    outside navigation (a lone CTA) still needs `button`-level reach (but
+    buttons can keep playing that role via the same href property).
+- **(b) A `link` PROPERTY on arbitrary kinds** (`navigation link "..."`,
+  `pick link "url"`).
+  - For: smallest surface (one property).
+  - Against: a URL is not a single-value concept in a nav ("Home", "Docs"
+    need BOTH a label and a destination — one string can't carry both
+    cleanly); the four-construct spine ties VALUE to a Property on an
+    ENTITY, so a property-based nav forces N properties per item with no
+    per-item entity; contradicts navigation's meaning of an *ordered set*.
+- **(c) Property on `button`-style kinds only** (`pick link "url"`).
+  - For: gives CTAs a destination without a new kind.
+  - Against: still leaves *navigation* (the name says "links") with no
+    items; the nav remains an empty strip — the exact friction Mission 54
+    measured.
+
+**Recommendation (for the commander decision gating 61).** Adopt
+representation (a): a `link` kind contained by `navigation`, carrying the
+universal `text` for the label and a destination property (dictionary
+declares `href` with a `text` value shape, `"url"` hint). Exact markup a
+`link` renders to: `<a class="<id>" href="<value>">label</a>`; navigation
+emits its members as `<a>` inside the existing `<nav>`. Smallest backend
+change: in `backend_html.py`, one per-kind branch (or the existing
+leaf-render path armed by `element: a`) + one `src="href"` attribute from
+the model property — nothing in the parser or semantic layer changes.
+
+**Pending (keeps 61 BLOCKED).** A WORKBOOK or commander SYNTAX decision
+(kind vs property), the Session 25 freeze lift for `backend_html.py`, and
+acceptance of Missions 54/60 evidence. This finding deliberately does NOT
+edit `dictionary/*.json`, parser, semantic, or any backend.
+
+## Mission 62 - Dead-vocabulary kinds (`link`, `title`, `heading`)
+
+**Scope.** Reconcile why `link`, standalone `title`, and standalone
+`heading` are claimed as "dead vocabulary" (BLOCKERS Session 37) when they
+appear in zero real programs.
+
+**Finding (verified against the shipped dictionary and git history).** Two
+of the three were never dictionary terms at all:
+- `dictionary/link.json` and `dictionary/heading.json` NEVER existed
+  (git log across all refs is empty for both). The current `makeable()`
+  list is 13 kinds: banner, button, card, card-group, container, footer,
+  header, image, logo, navigation, page, section, title.
+- `link` and `heading` are SEMANTIC BUCKET names, not terms:
+  `navigation.json` has `"kind": "link-collection"` and `title.json` has
+  `"kind": "heading"`. The Session 37 record conflated a kind's
+  `kind`-bucket with a declared vocabulary term.
+- Exactly ONE declared term matches the claim: `title` (title.json, element
+  `h3`, meaning "A heading or name, for a page, section, or card"). It is
+  used in zero programs as a *kind* (`make title` appears nowhere — grep of
+  all examples/experiments) but the `title` PROPERTY is used everywhere
+  (universal.json declares `title`/`text` on every regular kind).
+
+**Record correction (append-only, original preserved).** The BLOCKERS
+bullet is amended with a mission-62 remark (see BLOCKERS.md) so future
+workers don't chase a nonexistent `link`/`heading` vocabulary.
+
+**Recommendation (no vocabulary removed, no code change).**
+1. Keep `title` declared — it is the rendering contract for `<h3>` headings
+   and the universal property model, and its term/kind distinction is
+   legitimate. Optionally sharpen its `meaning` to note standalone `make
+   title` is for a page/section name node and that headings normally come
+   from the universal `title` property — do NOT gate or remove without the
+   commander.
+2. Treat `link`/`heading` as NON-KINDS unless link navigation (Mission 60)
+   lands — at which point only a `link` term would be added, never `heading`.
+
+## Mission 71 — Field kinds evidence experiment
+
+Program: `.agent/experiments/contact-form.ine` (builds clean; guarded by
+`ExperimentsRenderTests` + `VocabularyCoverageTests`). A realistic contact
+form — name, email, topic, message, consent checkboxes, submit — written
+with ONLY the declared vocabulary. It reduces to a container of three
+card-groups (6 cards total) plus a page-level submit section: cards holding
+`title` (the field label) and `text` (the literal display string), and one
+`button`. That is the entire expressible surface for a form.
+
+**Where the vocabulary fails (evidence, not requests).**
+1. **No field kinds at all.** None of `input`, `textarea`, `select`,
+   `checkbox`, `radio`, `label`, `field`, `form` is declared (0 of 8). The
+   closest carrier is a `card` whose `text` is *display content*: there is no
+   value/placeholder distinction, no editable value, and no way to attach the
+   field to the submit. Mission 20's finding is unchanged at the vocabulary
+   level; this experiment adds the *structure* the decision must cover.
+2. **No multi-line control.** The message body is a single string
+   (`card-4 text "How can we help?"`) — no rows/resize, no character count.
+3. **No option set.** The `Topic` card can hold one literal string; the
+   alternatives (Support, Sales) cannot be listed. This is exactly the
+   missing first `choice` value (PLAN item 7 / BLOCKERS): a select or radio
+   group is the real-program demand for `choice`.
+4. **No boolean/state.** Consent checkboxes are `text "Unchecked"` — display
+   text, not a checked/unchecked value the runtime can toggle. Same missing
+   boolean as `button.interactive` ("not settable yet: Ine has no boolean
+   values") and `card-group layout`'s missing choice.
+5. **No label-for association.** A field label is just a card `title`; there
+   is no relation binding a label to the field it names, and no focus order.
+6. **No submit/interaction semantics.** No required/optional, no validation
+   or error surface, no disabled/enabled submit, no loading, and no
+   navigation target for the button.
+7. **Property/renderer mismatch surfaced.** The dictionary suggests
+   `button label`, but renderers surface `text` — writing a form makes this
+   inconsistency concrete (`send text "Send message"` is what actually
+   renders). Worth a small reconcile in the button entry (its own item).
+8. **Grouping forces card-groups.** Cards can only sit inside a `card-group`,
+   and a container only contains card-groups (or banners), so a form's field
+   rows are one card-group per row and a single field still needs a
+   one-member card-group. Structural fit is awkward but works.
+
+**Minimal field-set assessment (the six candidates named by the mission).**
+- *input / textarea*: both are needed and clearly distinct (single-line vs
+  multi-line). A `field` surface kind with a `mode` property would compress
+  them, but the two behaviours are different enough (validation, sizing) that
+  a base `field` + typed `mode` is the cleaner shape to weigh.
+- *select*: expresses a `choice` value — couples the field vocabulary to the
+  typed-value decision (item 7), so it cannot land before `choice` does.
+- *checkbox / radio*: both express a boolean/selected value; radio additionally
+  needs a named option group (a `choice` with one selection). These share the
+  boolean gap, so they belong to the same typed-value tier.
+- *label*: not a kind but an association — the smallest honest form is a
+  `label` property on a field (the field itself carries its label), avoiding a
+  new relation construct.
+
+**Dependency note for the commander.** The field set splits into two tiers:
+(a) *control kinds that need no new value type* — input, textarea (and a
+`label` property) — implementable with the current text-only value model once
+a field/control vocabulary is approved; and (b) *controls that require the
+typed-value decision first* — select, radio (choice) and checkbox (boolean),
+which cannot land until item 7's first `choice` and a boolean exist. No
+syntax, semantics, or dictionary change was made; this is evidence only.
+
+## Mission 75 — State/conditions evidence experiment (dynamic UI)
+
+Program: `.agent/experiments/dynamic-ui.ine` (builds clean to HTML; guarded
+by `ExperimentsRenderTests` + `VocabularyCoverageTests`). A deploy console
+that *tries* to express state change — expand/collapse panels, conditional
+layout, a toggle button, collapsible groups — written with ONLY declared
+vocabulary. Static intent works; every dynamic intent reduces to text.
+
+**Where state fails (evidence, not requests).**
+1. **No visible/expanded bit.** `details` ("Expanded logs - hidden until you
+   expand") renders permanently with all its content; a collapsed panel
+   cannot be expressed, so an expand/collapse toggle has no operand. The
+   summary's "2 of 6 shown" is author-baked text; the count of hidden rows
+   cannot be derived or changed.
+2. **No conditions.** `primary` and `secondary` containers always render in
+   sequence; there is no "if X, show secondary / stack on primary"
+   expression. The only conditional any backend could honor today is
+   Mission 59's BLOCKED single narrow media rule — and it is frozen, by
+   design (conditions/state stay UNDECIDED).
+3. **Buttons cannot change.** "Expand all" / "Pause auto-refresh" render but
+   can never flip anything: no disabled/enabled flag (button.interactive =
+   "not settable yet: Ine has no boolean values", also a Mission 72/74
+   finding), no pressed state, no action trigger. A button is a static,
+   inert element in every renderer.
+4. **`group` is compile-time static.** `layers_rows` names a fixed set of
+   already-made entities (`layer-1/2/3`) set once at authoring time; it can
+   never expand, collapse, reorder, or animate. "collapsed" on the group is
+   display text with no runtime meaning.
+5. **Nothing recomputes.** No dynamic value exists in the pipeline — the
+   runtime has no state to bind, no clock, no user input, no events. State
+   change would be a **fifth construct** (WORKBOOK §25 gate), which this
+   experiment confirms is not merely syntax: it is a semantic + runtime +
+   backend capability that does not exist at any layer.
+
+**Assessment for the conditions/state decision (BLOCKERS).**
+- The dashboard/settings/metrics experiments show "state" in three distinct
+  needs: (a) *display state that renders differently even without input*
+  (enabled/disabled/expanded) — a value + style read, matches the boolean/
+  typed-value+tier and styling tracks, NOT a new construct; (b) *collection
+  dynamics* (show/hide/reorder known members) — needs a runtime binding that
+  nothing in the pipeline has; (c) *live data* — needs an execution/runtime
+  story beyond rendering. Only (a) is reachable today (via booleans +
+  backend reads once the typed-value decision lands). (b)/(c) are full fifth
+  constructs and stay UNDECIDED.
+- No syntax, semantics, dictionary, or backend change was made; evidence
+  only. PLAN item 75 tagged `DONE`; next EXECUTABLE = item 76 (native
+  target expansion research).
+
+## Mission 74 — Interactive controls investigation
+
+Research-only; no code changed. Question: what is the minimal interaction
+model for Ine forms/dashboards — which of submit / change / focus /
+validation / error-state map to the existing `button` concept and which need
+new constructs? Evidence base: the real-program experiments already in this
+file (Missions 19/20 dashboard+form, 54 pricing, 55 settings, 71
+contact-form, 72 metrics-dashboard, 73 data-table) plus the dictionary
+entries that document interaction today.
+
+**What interaction vocabulary is declared (and actually used).**
+1. `button` is the only control kind (`kind: "control"`, `element:
+   "button"`). Its declared defaults record the admission: `interactive` =
+   "activation behavior - not settable yet: Ine has no boolean values".
+2. `interactive` is also declared as a default on `logo` (see BLOCKERS /
+   Mission 21 reconciliation) and is read by no backend — the only
+   "interaction" metadata is a documented gap.
+3. `navigation` declares `link-spacing`/`link-style`/`order` layout hints;
+   no click target exists (BLOCKED item 61, `link`).
+4. Everything interaction-shaped in real programs is fakery. In contact-form
+   (71): a submit `button` that renders but fires nothing; consent "flags" as
+   `text "Unchecked"`; no field association. In metrics-dashboard (72):
+   STATE is display text. In data-table (73): `sort` button that connects to
+   no column. In pricing (54): CTAs with no destination (link gap).
+
+**The interaction concepts in the mission, mapped to what exists.**
+- *submit* — today it is `button text "Send"` in a section; there is no
+  action, no success/failure surface, no state change. Submission cannot even
+  be *declared*, because declaring it needs semantics ("when clicked, do
+  X") — a trigger construct that does not exist.
+- *change* — a control reflecting a new value. There are no controls with
+  values (fields don't exist, Mission 71; toggles don't exist, Mission 72),
+  so change has no operand. It is gated behind the field + typed-value
+  decisions.
+- *focus* — keyboard/focus order exists only implicitly (HTML backend emits
+  real `<button>` elements, so browsers apply native tab order); Ine has no
+  focus vocabulary and no access to it.
+- *validation* — nothing validates, by design (dictionary is advisory).
+  Validation lives entirely at the renderer/user level, if at all. Needs
+  value types first (a validated email is only meaningful on a field with a
+  typed value).
+- *error state* — no way to attach error/status text or emphasize a failing
+  element (no state colors, no boolean-conditional class, no status value).
+  The closest is a `section text "..."` prose line (settings, Mission 55) —
+  content, not state.
+
+**Finding: interaction has no first-class surface, and the smallest honest
+model is a *trigger*, not a general event system.** The one universally
+demonstrated need across all six experiments is "an element that, when
+activated, does something" — the submit button, the sort button, the CTA.
+That is a *trigger*: activation + a behavior reference. Everything else
+(change/focus/validation/error-state) is gated on constructs that do not
+exist yet (fields, booleans, typed values) and should NOT be designed ahead
+of that evidence.
+
+**Recommended minimal interaction model (for the commander/WORKBOOK
+decision).**
+1. **Trigger on a button, not a new construct.** Add a declared interaction
+   property (e.g. `action`) whose value references a target — but note this
+   is itself evidence-gated: `button.interactive` records "no boolean
+   values", so even the *presence* of an action is currently inexpressible
+   as a flag. The boolean (or first `choice`) decision (item 7 / BLOCKERS)
+   is the true precondition for any trigger semantics.
+2. **Defer event kinds (change/focus/submit lifecycle) entirely.** No real
+   program needs them yet; writing them early invents semantics. Once fields
+   (tier-a, Mission 71) and the typed-value number/boolean tiers (Mission
+   72) land, `change`/`focus` get operands and should be revisited with
+   real programs.
+3. **Status is a value problem, not an event problem.** The dashboards need
+   capitalized "Enabled/Disabled/Degraded" state and error emphasis; that is
+   a boolean/status VALUE + a styling read, not an interaction model. It
+   belongs on the typed-value (72) and styling (56-58) tracks, not here.
+4. **Sort/CTA "buttons that do nothing" are the same symptom twice**
+   (pricing CTA, data-table sort) — both are triggers pointing at a missing
+   `link` target (BLOCKED item 61) or a missing action. Until either lands,
+   buttons are decorative in every renderer, which is the honest status.
+
+**Verification.** No code changed; no new tests (research-only). All
+statements trace to dictionary entries (button.json `interactive` default),
+the shipped dictionary members (section→button), and the experiments'
+recorded `vocab gap:` lines (NOTES Missions 19/20/54/55/71/72/73). This
+finding feeds the BLOCKED `interaction semantics` evidence gates and, once
+buttons/fields/values exist, the interaction-model decision.
+
+## Mission 73 — Data table evidence experiment
+
+Program: `.agent/experiments/data-table.ine` (builds clean to HTML; guarded
+by `ExperimentsRenderTests` + `VocabularyCoverageTests`). A deployments
+table — header-shaped rows, cell values, and a sort affordance — written
+with ONLY the declared vocabulary. It reduces to a card-group of cards whose
+`title` carries the row's "column headers" and whose `text` carries the row's
+"cells" as a single pipe-delimited string; the "table" renders as stacked
+articles, never a grid.
+
+**Where the table fails (evidence, not requests).**
+1. **No table/row/cell kinds.** None of `table`, `row`, `cell`, `column`,
+   `header` is declared. A row is a `card`; the row's structure can only be
+   flattened: headers into the `title` string (`"Service | Version | Status
+   | Region"`), cells into the `text` string (`"api | v2.14 | live |
+   us-east-1"`). The separator is a source-text convention; nothing renders
+   as aligned columns.
+2. **No column identity.** A cell value cannot be referenced or formatted
+   separately from the row string — no `row-1 status` property, no way to
+   say "this value is the status of that row"; the whole row is one opaque
+   string. The strength of a table is addressing a cell; here a cell is
+   unreachable.
+3. **No header/data distinction.** `title` doubles as the header row on the
+   first card and as a value on others; there is no way to mark a row as a
+   header, so skip-a-header semantics, sticky headers, or scope semantics
+   are inexpressible.
+4. **No sorting/column semantics.** The sort button (`Sort by version`)
+   renders but connects to nothing: no column reference, no order pair, no
+   interaction model (the same gap Mission 74 will document). Sorting cannot
+   be expressed, so it cannot be reordered or serialized.
+5. **Structural workaround asymmetries.** Rows sit only inside a card-group
+   inside a container, so a table is a container → card-group → N cards — no
+   horizontal headings row above the data rows, no footer/summary row, no
+   row-span/col-span. Multiplicity numbering restarts per statement (Mission
+   55/72 collision reproduced conceptually): building 6 rows requires `make N
+   card` plus explicit names or a collision.
+6. **Formatting limitation vs Mission 72.** Even where a cell "sorts" as a
+   chapter of a string, values are text: numeric cells (`998`) cannot be
+   right-aligned, locale-formatted, or compared; the same typed-value gap
+   from Mission 72 lands on the column axis.
+
+**Assessment for the table decision (BLOCKERS: chart/table kinds).**
+- *table* can be approximated TODAY only as a display convention (the
+  documented card-group workaround) — structurally it is rows of parallel
+  cards, and a reasonable near-term representation is a declared `table`
+  kind that contains `row` cards with per-cell properties (a row = card whose
+  `title` is the primary cell + declared `cell-*` properties or a nested
+  value list). It needs NO new value type for plain text cells, but column
+  identity wants a per-cell property naming, and sorting/formatting wants
+  typed values (Mission 72's number tier) + interaction semantics
+  (Mission 74). It therefore splits across the same two tiers as fields:
+  structural `table`/`row` can land on the text-value model; column
+  sorting/formatting is gated on typed values + interaction.
+- No syntax, semantics, dictionary, or backend change was made; evidence
+  only, feeding the chart/table evidence gate.
+
+## Mission 72 — Typed values experiment (metrics dashboard)
+
+Program: `.agent/experiments/metrics-dashboard.ine` (builds clean to HTML;
+guarded by `ExperimentsRenderTests` + `VocabularyCoverageTests`). An
+operations dashboard — revenue/uptime/workload/queue KPIs, a status panel,
+a deploy-timestamp panel, a footer sync time — written with ONLY the declared
+vocabulary. The pipeline already lexes/parses numeric literals as NUMBER
+tokens and stores real `int`/`float` values in the semantic model, and the
+HTML backend prints them through `str()`. That is the whole numeric story
+today; everything else is a string.
+
+**Where typed values fail (evidence, not requests).**
+1. **No number type / no formatting intent.** `card-1 text 1234567.89`
+   renders exactly `1234567.89` — no thousands separator, no currency prefix,
+   no decimal-count control, no percent sign. `99.98` (a percentage) and `42`
+   (an integer count) render identically to their literals; the renderer
+   cannot append "%" or "$" because the *meaning* of a number is never
+   carried. `value_shape("card","text")` is `"text"`, so the editor's value
+   completion offers a quoted-string snippet even for a numeric intent. All
+   formatting must be pre-baked into the source as strings.
+2. **Formatting-vs-value coupling.** `card-4 text "0 of 12"` is a
+   concatenated string ratio: not sortable, not graphed, not differentially
+   formatted. A typed pair (0, 12) would render and compute; a string only
+   displays. This is the concrete "strings fall short" case — the value's
+   structure is lost at authoring time.
+3. **No boolean.** Status rows are `text "enabled"` / `"disabled"` /
+   `"degraded"` — display strings, not a truth value. Nothing can toggle,
+   no state color/icon derives, and no backend can branch on a given value.
+   This is the same gap `button.interactive` / `logo.interactive` already
+   document ("not settable yet: Ine has no boolean values").
+4. **No date/timestamp.** Deploy times are literal strings
+   (`"2026-09-17 12:40 UTC"`): no "3h ago" relative render, no sortable
+   comparison, no timezone math, no validation (a typo is syntactically
+   invisible). The footer's "Last synced 2 minutes ago" is baked at
+   authoring time; a runtime cannot recompute it.
+5. **Multiplicity collision again (bonus, already recorded).** The second
+   `make N card` batch after `make 4 card` collides on card-1..card-N (Mission
+   55 finding reproduced), so the status/timestamp panels used explicit
+   names. Confirms the existing gap; no new decision.
+
+**Assessment for the type-system decision (item 7 / BLOCKERS).** The three
+candidate types split cleanly by how much they need:
+- *number* — the pipeline already carries `int`/`float` values end to end.
+  The smallest honest step is a dictionary-level value shape (e.g. a
+  `"number"` shape w/ optional format) plus a backend formatting read;
+  grammar/parser/semantic already accept numeric literals. Lowest cost.
+- *boolean* — needs a `true`/`false` literal (lexer/parser) OR reusing a
+  two-term `choice`; either way it finally makes `interactive` settable. The
+  `choice`-first path was already recommended (Mission 7).
+- *date* — highest cost: needs a parseable literal, a canonical
+  representation, and rendering rules; the demonstrable need here is display
+  formatting, not arithmetic. Recommend classing date with the display-only
+  tier (like styling), not the core type tier, until a program needs
+  date math.
+
+No syntax, semantics, dictionary, or backend change was made; this is
+evidence only, feeding the typed-value decision gates.
+
 ## Mission 111 - Autonomous-worker request frugality (baseline metrics)
 
 Commander-approved enforcement arc: cut Big Pickle / OpenCode model-request

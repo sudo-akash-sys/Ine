@@ -1,10 +1,13 @@
 # The Ine dictionary
 
-The dictionary is **the single discoverable vocabulary** of Ine. Every
-file in this directory declares one concept — usually a kind a program can
-create with `make`, but also ambient concepts and the universal-properties
-pseudo-entry. `src/ine/dictionary.py` is the only place that reads these
-files, and it answers discovery questions from them alone:
+The dictionary is **the single discoverable vocabulary** of Ine. Every JSON
+file in the shipped data directory — `src/ine/dictionary/*.json` (package
+data, resolved through `importlib.resources` so an installed wheel sees the
+same files as a source checkout) — declares one concept: usually a kind a
+program can create with `make`, but also ambient concepts and the
+universal-properties pseudo-entry. `src/ine/dictionary.py` is the only
+place that reads these files, and it answers discovery questions from them
+alone:
 
 - what can follow `make`?                               (`makeable`)
 - what properties does a kind accept?                   (`properties_for`)

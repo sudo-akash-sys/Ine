@@ -11,7 +11,20 @@ attempts-reset-on-progress, and the evidence-gated vocabulary veto; Mission
 telemetry); Missions 64-65 are DONE (members/parents symmetry test +
 backend metadata contract / golden guard) and the commander's notification
 polish is wired (streamlined `Ine · …` banners, round-tile icon, chime);
-the next EXECUTABLE is item 54, the pricing-page evidence experiment).
+Missions 54-70 are DONE (54-55 evidence experiments; 56/57/60/62 research
+findings — stylable-surface audit, CSS-intent mapping probe, link semantics,
+dead vocabulary; 63 dictionary data moved into the package so wheels carry
+the vocabulary; 66 editor README refresh; 67-68 control-plane and
+NOTES↔PLAN cross-reference tests; 69 capstone full-suite + dry-run contract;
+70 README-commands test — see "Session 41 continuation: batch 56-70" below);
+Mission 72 is DONE (typed-values experiment — see "Session 41 continuation:
+typed-value evidence (Mission 72)" below); Mission 73 is DONE (data-table
+experiment — see "Session 41 continuation: data-table evidence (Mission 73)"
+below); Mission 74 is DONE (interactive-controls investigation — see
+"Session 41 continuation: interaction semantics research (Mission 74)"
+below); Mission 75 is DONE (dynamic-ui evidence experiment — see "Session 41
+continuation: state/conditions evidence (Mission 75)" below));
+the next EXECUTABLE is item 76, the native-target expansion research).
 
 ## Current focus
 
@@ -32,8 +45,10 @@ the only body line; the popup uses the round-tile window icon
 64-65 (reliability nets) are DONE: members/parents exact-inverse test +
 backend metadata contract/golden guard. Item 47 was found still tagged
 `EXECUTABLE` in PLAN.md despite Session 40 implementation — corrected
-(record gap). Next executable per the selection rule: item 54 (pricing-page
-evidence experiment). Session 37 closed the research missions (11-30):
+(record gap). Mission 54 had the same record gap (pricing.ine and its
+NOTES finding were complete but untagged) — closed; Mission 55 (settings
+panel evidence) done in the same pass. Next executable per the selection
+rule: item 72 (typed-values experiment). Session 37 closed the research missions (11-30):
 evidence-collection experiments (dashboard, form), a vocabulary
 reconciliation, responsive / styling / CI / packaging / editor-architecture /
 native-backend assessments (all findings in `.agent/NOTES.md`), a worker
@@ -42,10 +57,18 @@ evidence (still no `choice` value or WORKBOOK decision).
 
 ## Health
 
-- Test suite: **383 passing** (`python -m pytest tests`, 9 subtests) —
+- Test suite: **389 passing** (`python -m unittest discover -s tests`, 10
+  subtests) —
   lexer, parser,
   semantic, dictionary, CLI, autocomplete, extension protocol, ine-agent.
-  Mission 111 added `UsageTests` (6) and CLI usage-warn tests (2) and
+  The batch 56-70 added `ControlPlaneHealthTests` (2: STATE header session ==
+  latest HISTORY session heading; every BLOCKED PLAN item cross-referenced in
+  BLOCKERS.md), `NotesPlanCrossReferenceTests` (2: every finding mission
+  promised in NOTES has its section; every NOTES section maps to a numbered
+  PLAN item — including item 111 outside the Active section), and
+  `ReadmeQuickStartTests` (2: the README quick-start builds `hello.ine` to
+  HTML with the documented summary; the documented `ine --dict` forms exit
+  0). Mission 111 added `UsageTests` (6) and CLI usage-warn tests (2) and
   pinned stale Session 41 notifier tuple/arg assertions; the notification
   polish added chime/icon-template, `default_chime_path`, tile-preference
   and task-stuck tests (NotifierTests, 101 in test_ine_agent.py); Missions
@@ -55,9 +78,14 @@ evidence (still no `choice` value or WORKBOOK decision).
   `ExitCodeContractTests` (9), `NotifierTests` (8),
   `Session41RecordingTests` (6), `Session41SupervisorTests` (4),
   `ResolveCliTests` (2), `PlanHygieneTests` (4), and the Mission 42-47
-  additions. Mission 48 is research-only, no tests.
+  additions. Mission 48 is research-only, no tests. Missions 54-55 are
+  evidence experiments only (no new tests; both programs are auto-guarded
+  by the existing `ExperimentsRenderTests` + `VocabularyCoverageTests`).
 - Goldens (hello, topbar, hero, cards) **byte-identical**; `dictionary-demo.ine`
-  renders.
+  renders. Dictionary JSON now ships at `src/ine/dictionary/*.json`
+  (resolved via `importlib.resources` with a `__file__` fallback;
+  `[tool.setuptools.package-data] ine = ["dictionary/*.json"]`); the root
+  `dictionary/README.md` stays as the schema guide.
 - Environment: Windows / PowerShell 5.1, Python 3.13.14, node v24.17.0.
   Repo-root `ine.py` is a tracked shim that inserts `src/` into `sys.path`
   (it shadows the `ine` package — engine run as a script self-prepends `src/`).
@@ -342,6 +370,147 @@ evidence (still no `choice` value or WORKBOOK decision).
     (2). Seven stale `SupervisorTests` updated to the new deferred/recorded
     contract. Full suite: **347 passing** (was 328), goldens byte-identical.
 
+## Session 41 continuation: pricing + settings evidence (Missions 54-55)
+
+1. **Mission 54 closed a duplicate record gap.** `pricing.ine` and its
+   NOTES finding were complete (a prior worker in an earlier session built
+   the three-tier experiment and recorded the finding) but the plan item
+   still read `EXECUTABLE` — the same gap as item 47. Verified the program
+   still lexes/parses/analyzes/renders and tagged 54 `DONE`. The recorded
+   evidence feeds the BLOCKED `link` mission (61): a *navigation* with
+   clickable targets needs (a) a member statement under `navigation` and
+   (b) a destination value on each item; the smallest shape to weigh is a
+   `link`-style member with text + destination, not a property on arbitrary
+   kinds (syntax/backend stay commander/WORKBOOK-scoped).
+2. **Mission 55 (settings panel) executed.** New
+   `.agent/experiments/settings.ine`: a settings panel using ONLY declared
+   vocabulary — two labeled card-groups (four rows via one `make 4 card` +
+   `group` splits), a page-level action section with a save button, and a
+   status section. Renders with all four rows, the button, and the status
+   line. Finding (NOTES ## Mission 55): a setting row reduces to one
+   undifferentiated title+`text` card (no booleans/state/toggle kinds);
+   `make N kind` numbering **restarts per statement** (a second `make 2 card`
+   collides at card-1/card-2 — one `make 4 card` + `group` splits work —
+   a real core naming gap); status can't carry a machine value; no risk
+   emphasis; the CTA is forced to page level; no disabled/destructive
+   button state.
+3. **Recommendation recorded.** Items 3/4/6 above are the "HOW" concerns
+   from the commander's review — they belong in a theme/template import
+   layer, not syntax. Item 2 (stable scoped instance names) is the one true
+   core gap and sits at the same seam as the typed-value gates.
+4. **No code changes, no new tests.** Both experiments are auto-guarded by
+   the existing `ExperimentsRenderTests` + `VocabularyCoverageTests`. Full
+   suite after the pass: **383 passing, 10 subtests**, goldens byte-identical.
+
+## Session 41 continuation: batch 56-70 (styling research, packaging, nets, capstone)
+
+Commander asked to run the remaining missions as a batch rather than one
+per invocation. Ten items (56, 57, 60, 62, 63, 66, 67, 68, 69, 70) ran in one
+arc: four research/investigation findings, one packaging fix, one doc
+refresh, three reliability tests, one capstone.
+
+1. **Missions 56/57/60/62 (research; findings in NOTES, no code changes).**
+   - **56 stylable-surface audit.** `element` reaches only the HTML backend;
+     `layout: row` reaches both (flex + gap:20px / side-by-side); `position:
+     bottom` reaches only the visual backend. `backend_html.py` hard-codes
+     flex/flex:1/gap/h1-h3/classes and emits no stylesheet or viewport meta;
+     the visual backend hard-codes KIND_COLORS, fonts, 800×600. Declared but
+     unread hints: card `padding`/`border`/`corner-radius`, banner `padding`/
+     `text-alignment`/`separation`, navigation `orientation`/`link-*`/`order`,
+     card-group `narrow-*`. Smallest honest change: a per-kind style column
+     in `backend_html.py` for card/banner (~5 lines), feeding item 58.
+   - **57 CSS-intent→HTML mapping probe.** Mapped card `padding`→20px,
+     `border`→`1px solid #e0e0e0`, `corner-radius`→8px; banner `padding`→3rem,
+     `text-alignment`→center. Rendered every golden through a TEMPORARY
+     patched copy under `.tmp/` (in-tree backend untouched): goldens
+     byte-identical, hello/topbar no diff, hero/cards/settings/pricing gain
+     only the expected styles. Quirk recorded: the patch emitted a duplicate
+     `flex:1` (parent-row rule + style column) → item 58 must merge/dedupe
+     the `style` attribute. This diff is the reviewable contract for 58.
+   - **60 link semantics.** Recommendation: a `link` KIND contained by
+     `navigation`, carrying universal `text` (label) plus a declared
+     destination property (`href`, text-shaped), rendered
+     `<a class="<id>" href="<value>">label</a>`. The parser already accepts
+     arbitrary property names with string values, so zero language/parser/
+     semantic change is needed — only `dictionary/link.json` + a small
+     backend `<a>` branch. Alternatives (destination property on arbitrary
+     kinds; button-only property) rejected. Feeds BLOCKED item 61.
+   - **62 dead vocabulary.** `link`/`heading` were never dictionary files —
+     they are bucket names (`navigation.json` kind `link-collection`;
+     `title.json` kind `heading`). Only `title` is a real declared term
+     (never `make`d in any program). Recommendation: keep `title` declared
+     (optionally sharpen its meaning); treat `link`/`heading` as non-kinds
+     unless item 61 lands. BLOCKERS "dead vocabulary" bullet corrected with
+     an appended remark (original preserved).
+2. **Mission 63 packaging.** Moved the 15 dictionary JSONs from repo-root
+   `dictionary/` to `src/ine/dictionary/`; `dictionary.py` now resolves
+   `DICTIONARY_DIR` through `importlib.resources.files("ine").joinpath(
+   "dictionary")` with a `__file__` fallback; `pyproject.toml` gained
+   `[tool.setuptools.package-data] ine = ["dictionary/*.json"]`; the root
+   `dictionary/README.md` (schema guide) updated to point at the new home.
+   Verified from a source checkout (13 kinds; cards golden byte-identical)
+   and installed: the built wheel carries `ine/dictionary/*.json`, and in a
+   throwaway venv `.tmp/venv63` `python -m ine --dict` reports "13 kinds
+   declared in the dictionary". This closes the Mission 25 installed-wheel
+   "empty dictionary" bug. Reader API unchanged.
+3. **Mission 66 editor README.** Refreshed `editor/vscode-ine/README.md`:
+   documents the engine `validate` query (lex+parse diagnostics,
+   0-based, id echoed, never semantic), states the corrected complete-`make`
+   context (item 43 — `make header ` / `make hero banner ` start NO
+   context), and rewrites Status (value completion works; `choice` is
+   engine-ready but unused; remaining gaps). The extension still only
+   registers a completion provider — the README now says the validate
+   query is the engine-side surface, not a claim the extension consumes it.
+4. **Mission 67 control-plane health test.** `ControlPlaneHealthTests`
+   (tests/test_ine_agent.py, 2): STATE.md's header session (first 4 lines)
+   equals the latest `### Session N` heading in HISTORY.md, and every
+   BLOCKED PLAN item appears in BLOCKERS.md.
+5. **Mission 68 NOTES↔PLAN cross-reference test.**
+   `NotesPlanCrossReferenceTests` (2): forward — every PLAN item whose body
+   says `NOTES "## Mission N"` has a `## Mission N` section in NOTES.md;
+   backward — every `## Mission N` section maps to a numbered PLAN item
+   anywhere in the file (item 111 sits outside the Active section, so the
+   check parses PLAN globally).
+6. **Mission 70 README-commands test.** `ReadmeQuickStartTests`
+   (tests/test_ine.py, 2): writes the documented `hello.ine` and runs
+   `python -m ine hello.ine -o hello.html` in a temp dir, asserting the
+   documented summary shape and that the HTML carries the page title; then
+   runs the documented `--dict` forms (bare, kind, and `.ine` file) and
+   asserts each exits 0.
+7. **Mission 69 capstone.** Full suite green at **389 passing** (was 383;
+   +6 new tests) and `python -m src.ine_agent.cli run --dry-run` printed
+   item 56 as the first EXECUTABLE and exited 0 (no worker launched) —
+   item 56 was the first executable at capstone time, before this recording
+   pass tagged 56-70 DONE. After tagging, the next EXECUTABLE is item 71.
+8. **Recording.** PLAN items 56, 57, 60, 62, 63, 66, 67, 68, 69, 70 tagged
+   `DONE`; this STATE section and the HISTORY entry added. Items 58/59/61
+   stay BLOCKED (evidence recorded, preconditions unchanged). No frozen
+   backend or golden was modified; `.tmp/` holds only excluded probe/wheel
+   artifacts.
+
+## Session 41 continuation: field kinds evidence (Mission 71)
+
+1. **Mission 71 executed.** New `.agent/experiments/contact-form.ine`
+   (container of three card-groups = 6 field cards, plus a page-level submit
+   section and a footer) written with ONLY declared vocabulary — a realistic
+   contact form. It builds and renders; guarded by the existing
+   `ExperimentsRenderTests` + `VocabularyCoverageTests`. Finding in NOTES
+   (`## Mission 71`): no field kinds exist (0 of input/textarea/select/
+   checkbox/radio/label/field/form); the message body is a single string (no
+   multi-line control); a select/radio cannot list options (the missing first
+   `choice`, item 7); consent checkboxes are display text (missing boolean,
+   same as `button.interactive`); no label-for association; no submit/
+   validation/disabled semantics; and the dictionary suggests `button label`
+   while renderers surface `text` (a concrete property/renderer mismatch).
+2. **Field-set assessment recorded.** Two tiers: (a) input/textarea + a
+   `label` property need no new value type and are implementable on the
+   current text-only model once a field vocabulary is approved; (b) select/
+   radio (choice) and checkbox (boolean) require the typed-value decision
+   (item 7) first. No syntax, semantics, or dictionary change made — evidence
+   only, feeding the field-kind vocabulary decision.
+3. **No new tests, no code change.** PLAN item 71 tagged `DONE`; next
+   EXECUTABLE = item 72 (typed-values experiment).
+
 ## Session 41 continuation: exit-code contract (Mission 50)
 
 1. **Mission 50: exit-code contract across stop classes.** Added
@@ -369,6 +538,105 @@ evidence (still no `choice` value or WORKBOOK decision).
    suite **356 passing** (was 347), goldens byte-identical, `.tmp/` clean
    after the run. PLAN item 50 tagged `DONE`; `first_executable()` == item
    51 (crash-then-continue resilience).
+
+## Session 41 continuation: typed-value evidence (Mission 72)
+
+1. **Mission 72 executed.** New `.agent/experiments/metrics-dashboard.ine`
+   (an operations dashboard: revenue/uptime/workload/queue KPIs, a status
+   panel, a deploy-timestamp panel, a footer sync time) written with ONLY
+   declared vocabulary. Key finding (NOTES `## Mission 72`): the pipeline
+   already lexes/parses numeric literals as NUMBER tokens and stores real
+   `int`/`float` values in the semantic model, and the HTML backend prints
+   them through `str()` — no thousands separator, no currency prefix, no
+   percent sign, no decimal-count control. `value_shape("card","text")` is
+   still `"text"`, so the editor offers a quoted-string snippet for numeric
+   intent. `0 of 12` is a string-concatenated ratio (structure lost);
+   status rows are display strings (`"enabled"`/`"disabled"`) not booleans;
+   timestamps are atoms (`"2026-09-17 12:40 UTC"`) with no relative render,
+   sort, or timezone math; "Last synced 2 minutes ago" is baked at
+   authoring time. Multiplicity collision reproduced a second time
+   (Missions 19/55) for the second card batch — explicit names used.
+2. **Type-system tiering recommended for the commander.** *number* is
+   lowest cost (values already flow end-to-end; needs a dictionary value
+   shape + backend formatting read only); *boolean* needs a literal or a
+   two-term `choice` and finally makes `interactive` settable (choice-first
+   path, item 7); *date* is highest cost and is display-worth-only until a
+   program needs date math — class it with the styling/display tier, not the
+   core type tier.
+3. **No new tests, no code change.** PLAN item 72 tagged `DONE`; the
+   experiment is auto-guarded by `ExperimentsRenderTests` +
+   `VocabularyCoverageTests`. Next EXECUTABLE = item 73 (data-table
+   experiment).
+
+## Session 41 continuation: data-table evidence (Mission 73)
+
+1. **Mission 73 executed.** New `.agent/experiments/data-table.ine` (a
+   deployments table: header-shaped rows, cell values, a sort affordance)
+   written with ONLY declared vocabulary. Key finding (NOTES `## Mission
+   73`): there are no `table`/`row`/`cell`/`column` kinds — a row is a card
+   with headers flattened into `title` and cells flattened into one
+   pipe-delimited `text` string, so the "table" renders as stacked
+   `<article>`s, never a grid; cells are unreachable (no column identity);
+   no header/data distinction; the sort button connects to nothing (same
+   interaction gap as item 74); `make N` numbering restarts per statement so
+   growing N rows needs explicit names.
+2. **Assessment.** A structural `table`/`row` (rows of cards with per-cell
+   properties) needs NO new value type and could land on the text-value
+   model; column sorting/formatting is gated on typed values (Mission 72's
+   number tier) + interaction semantics (Mission 74). Splits across the same
+   two tiers as fields.
+3. **No new tests, no code change.** PLAN item 73 tagged `DONE`; the
+   experiment is auto-guarded by `ExperimentsRenderTests` +
+   `VocabularyCoverageTests`. Next EXECUTABLE = item 74 (interactive
+   controls investigation).
+
+## Session 41 continuation: interaction semantics research (Mission 74)
+
+1. **Mission 74 executed (research-only).** No code changed; finding in
+   NOTES (`## Mission 74`). The one universally demonstrated interaction
+   need across all six experiments (19/20/54/55/71/72/73) is a *trigger*: a
+   button that, when activated, does something. Everything else — change,
+   focus, validation, error state — is gated on constructs that do not exist
+   (fields, booleans, typed values) and should not be designed ahead of
+   evidence.
+2. **Recommended minimal model.** Declare a button-level `action` — but even
+   that is gated: `button.interactive` literally records "Ine has no boolean
+   values", so trigger *presence* is inexpressible until the boolean/first-
+   choice decision (item 7 / BLOCKERS) lands. Defer event kinds entirely;
+   status emphasis is a *value* problem (typed-value + styling tracks), not
+   an interaction problem. Pricing CTA + data-table sort are the same
+   symptom: a trigger with no target (gated `link`, item 61).
+3. **Verification.** Every statement traces to button.json/defaults, the
+   shipped members graph, or a recorded experiment `vocab gap:`. PLAN item
+   74 tagged `DONE`; next EXECUTABLE = item 75 (dynamic-ui state
+   experiment).
+
+## Session 41 continuation: state/conditions evidence (Mission 75)
+
+1. **Mission 75 executed.** New `.agent/experiments/dynamic-ui.ine` (a
+   deploy console that *tries* to express state change: expand/collapse
+   panels, conditional layout, a toggle button, collapsible groups) written
+   with ONLY declared vocabulary. Key finding (NOTES `## Mission 75`):
+   static intent works; every dynamic intent reduces to text. No visible/
+   expanded bit (a "collapsed" panel renders fully, permanently); no
+   conditions (both containers always render — the only conditional any
+   backend could honor is the BLOCKED Mission 59 narrow media rule);
+   buttons cannot change (no boolean, no action trigger — Mission 74);
+   `group` is compile-time static (a fixed set of named entities, never
+   expand/reorder/animate); nothing recomputes (no runtime state, clock,
+   input, or events).
+2. **Assessment for the conditions/state decision (BLOCKERS).** Three
+   distinct needs: (a) display-state that should render differently without
+   input (enabled/disabled/expanded) — a *value* + style read, served by
+   the boolean/typed-value and styling tracks, NOT a new construct; (b)
+   collection dynamics (show/hide/reorder) — needs a runtime binding nothing
+   in the pipeline has; (c) live data — needs an execution/runtime story.
+   Only (a) is reachable today; (b)/(c) are full fifth constructs and stay
+   UNDECIDED.
+3. **No new tests, no code change.** PLAN item 75 tagged `DONE`; the
+   experiment is auto-guarded by `ExperimentsRenderTests` +
+   `VocabularyCoverageTests`. Next EXECUTABLE = item 76 (native target
+   expansion research).
 
 ## Session 40 changes
 

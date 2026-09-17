@@ -1,0 +1,95 @@
+# contact-form.ine — a realistic contact form written with ONLY the current
+# dictionary vocabulary (page, header, logo, container, card-group, card,
+# section, button, footer, title/text).
+#
+# Evidence-collection experiment (PLAN mission 71): feed the field-kind
+# vocabulary decision with real-program data. A contact form needs name,
+# email, a message textarea, checkboxes/consent, and a submit control; this
+# program shows what that intent reduces to under the declared schema.
+# Every line the vocabulary could not guide is flagged with `vocab gap:`
+# and listed in .agent/NOTES.md ("## Mission 71").
+
+make page
+page title "Contact us"
+
+make header
+header inside page
+make logo
+logo text "Ine"
+logo inside header
+
+# A form is labeled fields plus a submit row. The dictionary's only grouping
+# inside a container is a card-group of cards, so every field becomes a card
+# and each field row one card-group.
+make fields container
+fields inside page
+
+# A form has several field rows; each row is a card-group, and the rows sit
+# inside the container (the dictionary's only grouping inside a container is a
+# card-group of cards).
+make identity card-group
+identity inside fields
+make message_row card-group
+message_row inside fields
+make consent card-group
+consent inside fields
+
+make 6 card
+
+# Row 1: the three short text-like fields (name, email, topic).
+group identity_fields = card-1 card-2 card-3
+identity_fields inside identity
+card-1 title "Full name"
+card-1 text "Your name"
+# vocab gap: no input kind. A card's `text` is display content, not an
+# editable value — there is no field, no value/placeholder distinction, no
+# required/optional marker, and no way to attach the field to a submit.
+
+card-2 title "Email address"
+card-2 text "you@example.com"
+# vocab gap: no field type, so no email/format validation; the address is
+# literal text the renderer prints, not a value a person can enter.
+
+card-3 title "Topic"
+card-3 text "General enquiry"
+# vocab gap: no select/option-set kind and no `choice` value in use, so the
+# alternative topics (Support, Sales) cannot be listed as options; only one
+# literal string fits.
+
+# Row 2: the message body, which needs a multi-line control.
+group message_field = card-4
+message_field inside message_row
+card-4 title "Message"
+card-4 text "How can we help?"
+# vocab gap: no textarea kind — there is no multi-line field, no character
+# count, and no resize/rows property. A single string is the whole surface.
+
+# Row 3: consent checkboxes.
+group consent_fields = card-5 card-6
+consent_fields inside consent
+card-5 title "Newsletter"
+card-5 text "Unchecked"
+card-6 title "I accept the terms"
+card-6 text "Unchecked"
+# vocab gap: no checkbox kind, no boolean value, no checked/unchecked state,
+# and no label-for association — "Unchecked" is display text, not a value
+# the runtime can toggle.
+
+# The submit control: buttons belong inside sections, so the action row is a
+# section-level strip rather than a row inside the field container.
+make actions section
+actions title "Send"
+actions inside page
+make send button
+send text "Send message"
+send inside actions
+# vocab gap: no submit semantics, no disabled/enabled state, no validation or
+# error surface, and no navigation target. The dictionary suggests
+# `button label`, but renderers surface `text` — writing this form exposes
+# that the suggested property and the rendered one disagree.
+
+make footer
+footer text "Ine — contact-form experiment"
+footer inside page
+
+say page title

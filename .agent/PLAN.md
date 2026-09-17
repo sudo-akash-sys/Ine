@@ -642,7 +642,7 @@ evidence-based fix would be.
 
 ### What Ine can express — evidence experiments
 
-54. `EXECUTABLE` — **experiment: pricing page (link/navigation evidence).**
+54. `DONE` — **experiment: pricing page (link/navigation evidence).**
     Create `.agent/experiments/pricing.ine` using ONLY the declared
     vocabulary (page, header, logo, navigation, banner, section, card-group,
     card, button, footer, title/text) plus a NOTES "## Mission 54" finding: a
@@ -654,7 +654,7 @@ evidence-based fix would be.
     Verify: the program builds and renders; the finding names every line the
     vocabulary could not guide.
 
-55. `EXECUTABLE` — **experiment: settings panel (styling evidence).**
+55. `DONE` — **experiment: settings panel (styling evidence).**
     Create `.agent/experiments/settings.ine` using ONLY declared vocabulary
     plus a NOTES "## Mission 55" finding: a settings-style panel (labeled
     groups, status rows, an action row). Record exactly which styling and
@@ -666,7 +666,7 @@ evidence-based fix would be.
 
 ### CSS/styling — investigation first, implementation gated
 
-56. `EXECUTABLE` — **research: stylable-surface audit.**
+56. `DONE` — **research: stylable-surface audit.**
     NOTES "## Mission 56". Exhaustive inventory of what a `.ine` user can and
     cannot set today: every property that reaches a renderer (element,
     `layout` row/stack, `position` bottom), every declared-but-unread
@@ -677,7 +677,7 @@ evidence-based fix would be.
     Verify: the finding's inventory matches the dictionary and backends
     line-by-line.
 
-57. `EXECUTABLE` — **research: CSS-intent-to-HTML mapping proposal.**
+57. `DONE` — **research: CSS-intent-to-HTML mapping proposal.**
     NOTES "## Mission 57". Produce the concrete mapping from the already-
     declared physical hints (`padding`, `corner-radius`, `border`) to HTML
     inline CSS, and render a probe program through a TEMPORARY patched copy
@@ -706,7 +706,7 @@ evidence-based fix would be.
 
 ### Linking/navigation — investigation first, implementation gated
 
-60. `EXECUTABLE` — **research: link semantics investigation.**
+60. `DONE` — **research: link semantics investigation.**
     NOTES "## Mission 60". What is a link in Ine: a kind (a `link` entity
     inside navigation) or a property (`<name> link "url"`)? Scan WORKBOOK
     for declared link/navigation intent, reconcile with the unused `link`
@@ -724,7 +724,7 @@ evidence-based fix would be.
     (property vs kind); the Session 25 freeze lifted for the touched backend;
     evidence from Missions 54/60 accepted before any code.
 
-62. `EXECUTABLE` — **research: dead-vocabulary kinds (`link`, `title`,
+62. `DONE` — **research: dead-vocabulary kinds (`link`, `title`,
     `heading`).**
     NOTES "## Mission 62". Reconcile why `link`, standalone `title`, and
     standalone `heading` are makeable kinds that appear in zero real programs
@@ -736,7 +736,7 @@ evidence-based fix would be.
 
 ### Packaging — the installed-copy fix
 
-63. `EXECUTABLE` — **packaging: dictionary data ships with the wheel.**
+63. `DONE` — **packaging: dictionary data ships with the wheel.**
     Mission 25 fix: `dictionary/*.json` is resolved via `__file__` to a
     source-checkout path, so an installed wheel runs with an EMPTY dictionary
     and a broken `ine --dict` / autocomplete. Change: move the JSON data to a
@@ -776,7 +776,7 @@ evidence-based fix would be.
     still byte-identical. Verified: green across the whole batch — full
     suite **383 passed, 9 subtests**; goldens byte-identical.
 
-66. `EXECUTABLE` — **documentation: editor README refresh.**
+66. `DONE` — **documentation: editor README refresh.**
     Update `editor/vscode-ine/README.md` for the current protocol: document
     the `validate` query (mission 44), the corrected `make`-statement context
     (mission 43), and refresh the status line (value completion, choice
@@ -784,7 +784,7 @@ evidence-based fix would be.
     integration test still passes.
     Verify: the README matches the engine's actual protocol surface.
 
-67. `EXECUTABLE` — **test: control-plane cross-file health.**
+67. `DONE` — **test: control-plane cross-file health.**
     Add a test asserting the persistence contract the loop relies on: the
     latest session number in `.agent/STATE.md` (header line) matches the
     latest `**N:**` entry in `.agent/HISTORY.md`, and every `BLOCKED` PLAN
@@ -794,7 +794,7 @@ evidence-based fix would be.
     Verify: the test is green now; it catches a future session that forgets
     to record.
 
-68. `EXECUTABLE` — **test: NOTES-to-PLAN cross-reference.**
+68. `DONE` — **test: NOTES-to-PLAN cross-reference.**
     Add a test asserting that every DONE finding-producing mission in PLAN.md
     (today: 11-30 and the new finding missions 37, 48, 54, 55, 56, 57, 60,
     62) has a `## Mission N` section in `.agent/NOTES.md`, and that every
@@ -805,7 +805,7 @@ evidence-based fix would be.
 
 ### Self-test of the autonomous system
 
-69. `EXECUTABLE` — **capstone: full suite + dry-run contract.**
+69. `DONE` — **capstone: full suite + dry-run contract.**
     The "test the auto system" mission. Run `python -m pytest tests` on the
     repo root (expect pass; record the count), then run
     `python -m src.ine_agent.cli run --dry-run` and assert it prints the
@@ -815,7 +815,7 @@ evidence-based fix would be.
     Verify: suite green with a recorded count; dry-run prints a real
     EXECUTABLE headline and exits 0.
 
-70. `EXECUTABLE` — **test: README commands actually run.**
+70. `DONE` — **test: README commands actually run.**
     Add an end-to-end test that executes the README quick-start flow exactly
     as documented (write `hello.ine` in a temp dir, run
     `python -m ine hello.ine -o hello.html`, assert the output html contains
@@ -826,7 +826,7 @@ evidence-based fix would be.
 
 ### Vocabulary expansion — evidence-gathering missions
 
-71. `EXECUTABLE` — **Field kinds evidence experiment.** Create
+71. `DONE` — **Field kinds evidence experiment.** Create
     `.agent/experiments/contact-form.ine` with realistic form needs
     (name, email, message textarea, checkboxes, submit). Document exactly
     where current vocabulary fails. Investigate minimal field set: input,
@@ -834,7 +834,7 @@ evidence-based fix would be.
     evidence feeding field-kind vocabulary decisions.
     Verify: program builds; finding documents each inexpressible point.
 
-72. `EXECUTABLE` — **Typed values experiment.** Create
+72. `DONE` — **Typed values experiment.** Create
     `.agent/experiments/metrics-dashboard.ine` requiring typed values
     beyond string literals. Test: numeric formatting (currency,
     percentages), boolean states (enabled/disabled), date display
@@ -842,20 +842,20 @@ evidence-based fix would be.
     Evidence for numeric/boolean/date type system decisions.
     Verify: program builds; finding shows where strings fall short.
 
-73. `EXECUTABLE` — **Data table experiment.** Create
+73. `DONE` — **Data table experiment.** Create
     `.agent/experiments/data-table.ine` with tabular data display needs
     (rows, columns, headers, sortable data). Investigate table/row/cell
     concepts vs. card-group workarounds. Document structural and
     formatting limitations.
     Verify: program builds; finding documents table-specific needs.
 
-74. `EXECUTABLE` — **Interactive controls investigation.** Research
+74. `DONE` — **Interactive controls investigation.** Research
     interaction semantics: submit, change, focus, validation, error
     states. Map to existing concepts (button) vs. new constructs.
     Document minimal interaction model for forms/dashboards.
     Output: NOTES finding on interaction needs.
 
-75. `EXECUTABLE` — **State/conditions evidence gathering.** Create
+75. `DONE` — **State/conditions evidence gathering.** Create
     `.agent/experiments/dynamic-ui.ine` showing UI that changes state
     (expand/collapse sections, show/hide elements, conditional layout).
     Document where `group` + multiplicity falls short. Evidence for
