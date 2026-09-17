@@ -41,9 +41,10 @@ Each file declares one kind in JSON:
                    hint string (`"compact"`) shown in completions, except
                    `contains`, which lists structural child kinds.
 - `properties`   — typed property declarations: property -> `"text"` (a
-                   quoted string) or `"length"` (a measurement), or a list
-                   of allowed choices (a `"choice"` value). Drives
-                   `value_shape()` / `value_hint()`.
+                   quoted string), `"length"` (a measurement), or `"number"`
+                   (a bare numeric value), or a list of allowed choices (a
+                   `"choice"` value). Drives `value_shape()` /
+                   `value_hint()`.
 - `provided-by`  — present on ambient entries (viewport): the kind is
                    supplied by the host, so it is excluded from `makeable()`.
 - `universal`    — marks the universal-properties pseudo-entry: its
@@ -98,7 +99,7 @@ class ValueShape:
 
     `type` is the machine-readable value kind: "text" for quoted string
     content (title/text), "choice" for a known set of bare-word options,
-    other declared kinds (e.g. "length"), or "unknown" when the
+    other declared kinds (e.g. "length", "number"), or "unknown" when the
     dictionary does not say. `choices` carries the allowed options for a
     "choice" shape.
     """
@@ -224,13 +225,13 @@ def value_hint(kind: str, property: str) -> str | None:
 def _shape_from(raw) -> ValueShape:
     """Normalize one raw `properties`-block value into a ValueShape.
 
-    A plain string names a value kind ("text", "length", ...); a list of
+    A plain string names a value kind ("text", "length", "number", ...); a list of
     strings declares the allowed bare-word options of a "choice". Anything
     else yields the "unknown" shape.
     """
     if isinstance(raw, str) and raw.strip():
         # Only recognize standard value kinds, not arbitrary strings
-        if raw in ("text", "length"):
+        if raw in ("text", "length", "number"):
             return ValueShape(raw)
         return ValueShape()
     if isinstance(raw, list) and raw and all(isinstance(v, str) for v in raw):

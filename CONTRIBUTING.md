@@ -13,7 +13,7 @@ By participating in this project, you agree to abide by our [Code of Conduct](CO
 src/ine/               pipeline: lexer.py → parser.py → semantic.py → backend_*.py
 src/ine/autocomplete.py   JSON-lines editor engine (standalone)
 src/ine_agent/            autonomous development supervisor (loop, workers, CLI)
-dictionary/*.json         the single vocabulary source (15 files)
+src/ine/dictionary/*.json   the single vocabulary source (15 files)
 editor/vscode-ine/        thin VS Code extension (pure proxy to the Python dictionary)
 tests/                    pytest suite: lexer, parser, semantic, dictionary, CLI,
                           autocomplete, extension protocol, ine-agent
@@ -24,7 +24,7 @@ tests/                    pytest suite: lexer, parser, semantic, dictionary, CLI
 
 `.ine` → `lexer.py` → `parser.py` → `semantic.py` → `backend_html.py` /
 `backend_visual.py` / `backend_c.py`. Each stage is documented in
-`LANGUAGE.md`. `src/ine/dictionary.py` reads `dictionary/*.json` and
+`LANGUAGE.md`. `src/ine/dictionary.py` reads `src/ine/dictionary/*.json` and
 answers discovery questions; it is the only vocabulary source.
 
 ## The dictionary
@@ -34,7 +34,7 @@ and renderer hints but never rejects a program. A kind with no dictionary
 entry has no suggestions (this is intentional — see
 `examples/alice/alice.ine`).
 
-New vocabulary is added as a `.json` file under `dictionary/` and verified
+New vocabulary is added as a `.json` file under `src/ine/dictionary/` and verified
 with `ine --dict <kind>` and `python -m pytest tests/test_ine.py -k integrity`.
 See `dictionary/README.md` for the JSON schema.
 
@@ -69,15 +69,12 @@ flake).
 
 ## Session 25 freeze
 
-`parser.py`, `semantic.py`, `backend_html.py`, and `backend_visual.py` are
-**frozen for casual changes**. This is a decided architectural constraint (see
-`.agent/DECISIONS.md`): the four-construct spine and golden-output discipline
-must not regress without a deliberate design decision.
-
-If you need to change a frozen file, first open a discussion explaining why and
-reference the exact DECISIONS entry that covers the change. Dictionary and
-editor work (autocomplete, VS Code extension, `dictionary/*.json`) is not
-frozen.
+There is no code freeze. The four-construct spine and golden-output
+discipline are architectural commitments (see `.agent/DECISIONS.md`), but
+backend and main changes are welcome provided they do not break existing
+behavior and stay aligned with the project's larger goals — deviations from
+original intent are acceptable when the implementation requires it
+(commander clarification, Session 41).
 
 ## How to contribute
 

@@ -13,7 +13,7 @@ system to produce the right thing.
 
 ## What we are building toward
 
-1. The **dictionary** (`dictionary/*.json`) is the single discoverable
+1. The **dictionary** (`src/ine/dictionary/*.json`) is the single discoverable
    knowledge base: kinds, properties, value shapes, and containment.
 2. The **editor** consumes that dictionary (and only that dictionary) so
    Ine stops being a language with just a CLI and becomes a usable

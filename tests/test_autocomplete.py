@@ -393,6 +393,16 @@ class ValueCompletionTests(unittest.TestCase):
         self.assertTrue(all(i["insert"] == i["label"] for i in items))
         self.assertTrue(all(i["type"] == "value" for i in items))
 
+    def test_number_shape_offers_numeric_placeholder(self):
+        with mock.patch(
+            "ine.autocomplete.dictionary.value_shape",
+            return_value=ValueShape("number"),
+        ):
+            items = self.items("card ratio ", 11)
+        self.assertEqual([i["label"] for i in items], ["123"])
+        self.assertEqual(items[0]["insert"], "123")
+        self.assertEqual(items[0]["type"], "value")
+
     def test_value_response_carries_a_value_context(self):
         result = complete({"buffer": "page title ", "line": 0, "column": 11})
         self.assertEqual(result["context"], {

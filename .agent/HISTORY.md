@@ -4,6 +4,62 @@ Running log of what happened and why. Sessions 21+ are precise (project
 work); a compact digest is retained instead of full detail for the earlier
 design arc — see RESEARCH_LOG.md / WORKBOOK.md for that era.
 
+- **41 (continuation):** Doc sweep — post-review drift repairs. Closed the
+  remaining mechanical items from the external review, all documentation-only.
+  Dictionary-path drift corrected across live docs: CONTRIBUTING.md (layout
+  line, reader description, add-vocabulary walkthrough, and removed the
+  stale "Session 25 freeze" section — the commander confirmed there is no
+  freeze), LANGUAGE.md (two `dictionary/*.json` → `src/ine/dictionary/*.json`
+  mentions), README.md (vocabulary links now point at `dictionary/README.md`
+  and the shipped data dir; the "Not Implemented Yet" heading no longer
+  contradicts itself — multiplicity is implemented, only `every` is missing),
+  examples/homepage/BUILD-NOTES.md (path reference), dictionary/README.md
+  (four half-migrated `dictionary/<term>.json` paths), and .agent/MISSION.md
+  (live operating doc path). STATE.md's "Dictionaries" section corrected: the
+  base-kind list was hero/card-1/copy/link/thumbnail/wizard (none of which is
+  a kind); the real 13 makeable kinds are page, header, navigation, logo,
+  container, card-group, card, button, banner, image, section, footer, title.
+  Historical docs (WORKBOOK, SESSION_STATE, RESEARCH_LOG, HISTORY) left as
+  dated records. No code change; suite green (visual-backend tkinter tests
+  flake under display contention with a concurrently running worker, all pass
+  in isolation — unrelated).
+
+- **41 (continuation):** `number` value kind + commander clarifications.
+  Commander decisions (Session 41): (1) there is NO backend freeze — a
+  misreading of the archive; parser/semantic/backend changes are welcome
+  provided they do not break existing behavior and stay aligned with the
+  project's larger goals; deviations from original intent are acceptable
+  when implementation requires it. (2) `number` is approved as a standard
+  value kind (the lowest-cost tier of Mission 72's typed-value recommend-
+  ation); `boolean`/`date` have no vote and stay UNDECIDED. (3) item 80's
+  direction approved — semantic diagnostics stay advisory, validate keeps
+  its lex+parse-only contract. Implemented the approved tier: `_shape_from`
+  now recognizes `"number"` alongside `text`/`length` (dictionary.py), the
+  value-completion context offers a numeric placeholder for a `"number"`
+  property (autocomplete.py), docstrings updated, and tests added
+  (`_shape_from("number")`, autocomplete numeric snippet). Numeric literals
+  already parsed to int/float end-to-end, so this is representation + editor
+  surface only — no backend, parser, or semantic change, no golden touched.
+  Full suite **390 passing, 18 subtests** (was 389; +1 net). PLAN/BLOCKERS
+  updated: freeze references corrected, items 58/59/61 now note the backend
+  gate is lifted (remaining gates are commander syntax/scope calls).
+
+- **41 (continuation):** Post-review repairs (duplicate close + doc fix).
+  Following an external review of the record, closed item 84 as a DUPLICATE
+  of item 63 (packaging) — its body repeats Missions 63's done work verbatim;
+  the candidate predates that session (carry-over) and drifted stale in the
+  selection queue, so a worker would eventually have re-run landed work
+  (review finding "item 84 re-does DONE item 63"). Corrected STATE.md's
+  "Pipeline & entry points" to the real CLI: `ine <file>.ine [-o out.html]`,
+  `--native`, `--visual`, `ine --dict [kind|file]` (STATE previously
+  documented `ine run/render/visual <subcommand>` forms that the CLI never
+  had — `ine run hello.ine` errors "unrecognized arguments"; README.md and
+  LANGUAGE.md always documented the real form). No engine/code changes; doc
+  + record only. Suite status unchanged. Review also surfaced items 84/80
+  (80: unflagged reversal of validate's "lex+parse, never semantic",
+  EXECUTABLE for commander decision) and the dangling WORKBOOK §25 gate;
+  those are commander-scoped (see BLOCKERS).
+
 - **41 (continuation):** Mission 75, state/conditions evidence experiment.
   New `.agent/experiments/dynamic-ui.ine` (expand/collapse panels,
   conditional layout, toggle buttons, collapsible groups) written with only

@@ -22,7 +22,7 @@ uses kinds the dictionary does not declare, on purpose).
 ## The JSON schema
 
 Each `.json` file in this directory declares one entry. A typical entry looks
-like this (abridged from `dictionary/header.json`):
+like this (abridged from `src/ine/dictionary/header.json`):
 
 ```json
 {
@@ -90,7 +90,7 @@ decision.
 ### Ambient entries (`provided-by`)
 
 Ambient kinds are supplied by the host environment, not declared by the
-program. `dictionary/viewport.json` is the example:
+program. `src/ine/dictionary/viewport.json` is the example:
 
 ```json
 {
@@ -106,7 +106,7 @@ viewport`), but their declared properties are still suggested and typed.
 
 ### The universal entry
 
-`dictionary/universal.json` is a pseudo-entry (`"universal": true`) that owns
+`src/ine/dictionary/universal.json` is a pseudo-entry (`"universal": true`) that owns
 the universal content properties available on **every declared kind**:
 
 ```json
@@ -128,7 +128,7 @@ properties today, by the Session 25 evidence rule.
 
 This is the shortest path from a real need to a discoverable kind.
 
-1. **Write the file** `dictionary/<term>.json`. Every kind needs `term`,
+1. **Write the file** `src/ine/dictionary/<term>.json`. Every kind needs `term`,
    `meaning`, and a declared `element`. Add a `contains` list only if a real
    program puts children inside it — containment is structural children only,
    never inferred.

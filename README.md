@@ -254,7 +254,8 @@ This separation means:
 - Different backends can interpret concepts differently
 - The language stays small; the vocabulary grows
 
-See [dictionary/](dictionary/) for the full vocabulary.
+See [dictionary/](dictionary/README.md) for the vocabulary schema; the
+JSON lives in [src/ine/dictionary/](src/ine/dictionary/) as package data.
 
 ---
 
@@ -318,18 +319,17 @@ Everything below is implemented and covered by the test suite
 - Dictionary-driven element mapping, row layout, and bottom-position hints
 - Deterministic dictionary discovery (`ine --dict [kind | file.ine]`): which
   kinds follow `make`, a kind's properties and members, and what to write
-  next in a real program — from `dictionary/*.json` alone, no AI
+  next in a real program — from `src/ine/dictionary/*.json` alone, no AI
 - Real working programs in [examples/](examples/)
 
 ## Not Implemented Yet
 
 Designed and on the roadmap, but does not work today:
 
-- Multiplicity is **implemented**: `make 3 card` creates `card-1/2/3`, and
-  `group cards = card-1 card-2 card-3` names the collection so
-  `cards inside card-group` and `cards text "..."` expand per member. The
-  gap is only the `every` keyword — there is no way to say "all members of
-  every group"
+- The `every` keyword for multiplicity — `make 3 card` works and creates
+  `card-1/2/3`, and `group cards = card-1 card-2 card-3` names the collection
+  so `cards inside card-group` and `cards text "..."` expand per member, but
+  there is no way to say "all members of every group"
 - More relationship types (`beside`, `contains`, `opens`)
 - State, conditions, events, and actions
 - Booleans, lists, expressions, runtime variables (today: strings and numbers only)
@@ -349,7 +349,7 @@ See [WORKBOOK.md](WORKBOOK.md) §15 for the roadmap and [LANGUAGE.md](LANGUAGE.m
 | [LANGUAGE.md](LANGUAGE.md) | What is actually implemented (exact spec, grows with the code) |
 | [WORKBOOK.md](WORKBOOK.md) | Design notebook: philosophy, proposals, open questions, roadmap |
 | [examples/](examples/) | Small working programs for each feature |
-| [dictionary/](dictionary/) | Concept vocabulary (kind → element, layout, meaning) |
+| [dictionary/](dictionary/README.md) | Vocabulary schema; JSON ships as package data in `src/ine/dictionary/` |
 
 ---
 

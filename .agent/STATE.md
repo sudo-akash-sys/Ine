@@ -25,6 +25,20 @@ below); Mission 74 is DONE (interactive-controls investigation — see
 below); Mission 75 is DONE (dynamic-ui evidence experiment — see "Session 41
 continuation: state/conditions evidence (Mission 75)" below));
 the next EXECUTABLE is item 76, the native-target expansion research).
+Item 84 (packaging fix) is closed DONE as a duplicate of item 63 (see
+HISTORY "41 continuation: post-review repairs"); STATE's entry-point block
+below documents the real CLI (`ine <file>.ine [-o out.html]`, `--native`,
+`--visual`, `ine --dict`), correcting the previously documented
+`ine run/render/visual` subcommands that never existed. Commander
+clarifications (Session 41): there is NO backend freeze (a misreading —
+backend/main changes are welcome if they do not break behavior and align
+with the larger goals); `number` is an approved standard value kind
+(recognized by `_shape_from`, numeric editor placeholder); `boolean`/`date`
+stay UNDECIDED; item 80's semantic diagnostics remain advisory (validate
+keeps its lex+parse-only contract). Live docs corrected for the dictionary
+path move (`dictionary/*.json` → `src/ine/dictionary/*.json` in
+CONTRIBUTING/LANGUAGE/README/BUILD-NOTES/dictionary-README/MISSION) and the
+Dictionaries kind list below now names the real 13 makeable kinds.
 
 ## Current focus
 
@@ -96,8 +110,8 @@ evidence (still no `choice` value or WORKBOOK decision).
 ## Pipeline & entry points
 
 - `src/ine/lexer.py` → `parser.py` → `semantic.py` → `backend_*.py`.
-- `src/ine/cli.py`: `ine run <file>`, `ine render <file> -o out.html`,
-  `ine visual <file>`, `ine --dict [kind|file]`.
+- `src/ine/cli.py`: `ine <file>.ine [-o out.html]`, `ine <file>.ine
+  --native`, `ine <file>.ine --visual`, `ine --dict [kind|file]`.
 - `src/ine/autocomplete.py`: stdin JSON-lines `{buffer, line, column, id?}`
   → stdout `{id?, line, column, context, items[]}` per line; 4 contexts
   (`make`→makeable, kind→members/properties, `value`→shape options,
@@ -106,11 +120,11 @@ evidence (still no `choice` value or WORKBOOK decision).
 
 ## Dictionaries (15 files)
 
-- Base kinds: page, header, section, hero, container, card-group, card,
-  card-1, copy, footer.
+- Base kinds (makeable): page, header, navigation, logo, container,
+  card-group, card, button, banner, image, section, footer, title.
 - Concepts: universal (content properties `title`/`text`, both shaped
   `"text"` in a `properties` block), ambient (viewport `width`/`height` →
-  `"length"`), entity (the run), misc (logo, link, thumbnail), wizard.
+  `"length"`).
 - Reader API: `makeable`, `find`, `properties_for`, `value_hint`,
   `suggest` (`Suggestion(text, source, note)`), `for_model`, `members`
   (structural children), `parents` (reverse containment),

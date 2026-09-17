@@ -141,7 +141,7 @@ NOT decided yet (workbook §26).
 
 The HTML backend renders one entity of kind `page`, then nests every
 entity that is `inside` it (recursively) as child elements. Supported
-kinds come from `dictionary/*.json`: each dictionary entry that declares
+kinds come from `src/ine/dictionary/*.json`: each dictionary entry that declares
 an `element` can be rendered; a declared kind with no dictionary entry is
 rejected with "the html backend does not support this kind yet". The
 page's `title` property becomes the document `<title>` and the page
@@ -251,7 +251,7 @@ features, described in their own sections — they are not limits.
 
 - Only strings and numbers as values. No booleans, lists, or other
   types yet.
-- HTML renders only kinds declared in `dictionary/*.json` with an
+- HTML renders only kinds declared in `src/ine/dictionary/*.json` with an
   `element`; only `page` is a guaranteed root. `text`/`title` feed
   content; `layout: "row"` and `position: "bottom"` hints produce inline
   flex styles (a `title` renders as an `<h3>`). The `defaults`/`guess`

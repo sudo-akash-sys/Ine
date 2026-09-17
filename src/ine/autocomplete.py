@@ -196,6 +196,16 @@ def _items(ctx, buffer) -> list[dict]:
                     "type": "value",
                 }
             ]
+        if shape.type == "number":
+            hint = dictionary.value_hint(kind, ctx["prop"]) or "a number"
+            return [
+                {
+                    "label": "123",
+                    "insert": "123",
+                    "detail": hint,
+                    "type": "value",
+                }
+            ]
         if shape.type == "choice":
             hint = dictionary.value_hint(kind, ctx["prop"]) or "one of the listed values"
             return [

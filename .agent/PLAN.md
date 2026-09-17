@@ -923,13 +923,21 @@ evidence-based fix would be.
 
 ### Packaging & distribution
 
-84. `EXECUTABLE` — **Packaging fix implementation.** Move dictionary
+84. `DONE` — **Packaging fix implementation.** Move dictionary
     JSON to `src/ine/dictionary/`. Use `importlib.resources` for
     package-relative access. Update `pyproject.toml` with package-data.
     Test wheel installation in throwaway venv under `.tmp/`. This fixes
     Mission 25's empty-dictionary bug for installed copies.
     Verify: wheel builds; `ine --dict` in fresh venv lists all kinds;
     source-tree suite green.
+    > Closed as a DUPLICATE of item 63 (Session 41 batch), which landed this
+    > exact change: the 15 JSONs live at `src/ine/dictionary/`, resolved via
+    > `importlib.resources` with a `__file__` fallback, package-data in
+    > pyproject.toml, and the wheel verified in a throwaway venv
+    > (`.tmp/venv63`) reporting "13 kinds declared". The item predates the
+    > duplicate (candidate-mission carry-over) and was re-selected by the
+    > stale-tag drift the review flagged; no further work needed. See HISTORY
+    > Session 41 continuation "packaging" entry.
 
 85. `EXECUTABLE` — **Extension packaging investigation.** Research
     `.vsix` creation with engine dependency. Design installation story:

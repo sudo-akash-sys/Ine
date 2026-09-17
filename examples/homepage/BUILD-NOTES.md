@@ -9,7 +9,7 @@ It is NOT an experiment. It is the language being built by using it.
 |-------|---------------|------------|
 | Intent (human) | `homepage.semantic.json` → `"source"` | The L2 minimum utterance |
 | **MyLanguage program** | `homepage.semantic.json` | The meaning, expressed with Entity / Property / Relationship / State / Condition / Multiplicity |
-| Defaults & vocabulary | `dictionary/*.json` | What kinds mean and their reusable defaults |
+| Defaults & vocabulary | `src/ine/dictionary/*.json` | What kinds mean and their reusable defaults |
 | Implementation (target) | `homepage.html` | One generated-by-AI output; NOT the language |
 
 The program contains only intent. Every look/measure/mechanism (colors,

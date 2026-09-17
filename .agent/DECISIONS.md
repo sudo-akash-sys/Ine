@@ -33,6 +33,17 @@ decision — nothing is copied here until it is real.
   block maps property → value kind (`"text"`, `"length"`) or → a list of
   allowed options (`"choice"`). Readers `value_shape(kind, prop)`. Shape
   derivation in autocomplete.py removed — no second source of truth.
+- **`number` is a standard value kind** (Session 41, commander): recognized
+  by `_shape_from()` alongside `text`/`length`; a property declared
+  `"number"` accepts a bare numeric literal (already parsed to int/float).
+  Editor value-completion for a `"number"` property offers a numeric
+  placeholder. Commander approved the number tier of Mission 72's typed-value
+  recommendation; `boolean` and `date` remain UNDECIDED (no vote).
+- **No baseline freeze** (Session 41, commander): there was no actual
+  freeze on parser/semantic/backend code — implementing a change is welcome
+  so long as it does not break existing behavior and stays aligned with the
+  project's larger goals; deviations from the original intent are acceptable
+  when required by the implementation.
 - **Evidence rule**: no value kind or containment entry is declared without
   support in existing dictionary data or real programs.
 - **Temporary files** live in `.tmp/` (gitignored), never committed.

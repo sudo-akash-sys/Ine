@@ -45,7 +45,11 @@ not no.
 ## Constraints that are easy to forget
 
 - No edits to `parser.py`, `semantic.py`, `backend_html.py`,
-  `backend_visual.py` for dictionary/editor work (Session 25 freeze).
+  `backend_visual.py` for dictionary/editor work — the Session 25 freeze was
+  a WRONG reading of the archive; the commander confirmed (Session 41) there
+  is no freeze. Backend/main changes are welcome provided they do not break
+  existing behavior and align with the project's larger goals; deviations
+  from original intent are acceptable when the implementation requires it.
 - Extension.js must stay a pure proxy — it may consume `value_shape`/
   `context` from the engine but must never hold its own Ine knowledge.
 - Parser/semantic/backends restrict `title`/`text` to quoted strings;
@@ -94,33 +98,36 @@ programs. They may become relevant if link navigation is built.
 > unused (`make title` in zero programs) but the universal `title`
 > property is in constant use.## Evidence-gated implementations in PLAN (items 58, 59, 61)
 
-These are the CSS/styling and link implementation missions. They are BLOCKED
-in PLAN.md on a lifted Session 25 backend freeze and commander scope, not on
-engineering. The evidence missions that feed each one are EXECUTABLE in
-PLAN.md and must land first; do not unblock any of these by guessing.
+These are the CSS/styling and link implementation missions. They were BLOCKED
+in PLAN.md on a Session 25 backend freeze and commander scope — but the
+commander confirmed (Session 41) there is NO freeze, so the backend constraint
+is lifted. The remaining gates are commander judgment calls (syntax/scope), not
+engineering. The evidence missions that feed each one are EXECUTABLE and
+landed (58/59 fed by 22/23/55/56/57; 61 fed by 54/60).
 
 - **58 — HTML backend: wire declared physical hints into inline styles.**
   Today the backends emit only hard-coded styles; the physical hints already
   declared on card/banner (`padding`, `corner-radius`, `border`) are read by
-  no backend (NOTES Missions 23 / 56 / 57). Preconditions: Session 25 freeze
-  lifted for `backend_html.py` for this change; the commander accepts the
+  no backend (NOTES Missions 23 / 56 / 57). Gates: commander accepts the
   Mission 57 mapping scope; goldens updated deliberately (byte-identical
-  discipline preserved).
+  discipline preserved). Backend freeze: none.
 - **59 — HTML backend: one narrow responsive rule.** `narrow-class` /
   `narrow-layout` are declared on card-group but read by no backend
-  (NOTES Missions 22 / 56). Preconditions: freeze lifted for
-  `backend_html.py`; commander accepts one `@media (max-width: 768px)`
-  `row -> stack` rule; evidence from Missions 55/56 accepted. No fifth
-  construct — conditions/state stay UNDECIDED.
+  (NOTES Missions 22 / 56). Gates: commander accepts one
+  `@media (max-width: 768px)` `row -> stack` rule; evidence from Missions
+  55/56 accepted. No fifth construct — conditions/state stay UNDECIDED.
+  Backend freeze: none.
 - **61 — `link` navigation (kind or property).** `link` is declared but used
   by zero programs (below: dead vocabulary); there is no link syntax and no
   backend emits a clickable target. What a link is and how to express it is
   investigated in NOTES Mission 60 with real-program evidence from Mission 54
-  (pricing page). Preconditions: a WORKBOOK or commander syntax decision
-  (property vs kind); freeze lifted for the touched backend; Missions 54/60
-  evidence accepted before any code.
+  (pricing page). Gates: a WORKBOOK or commander SYNTAX decision (property
+  vs kind); Missions 54/60 evidence accepted before any code. Backend
+  freeze: none.
 
 Still evidence-gated, unchanged: PLAN item 7 (first `choice` value), field
-kinds, numeric/boolean/date types, chart/table kinds, `search`,
-`subtitle`/`description`, `button inside header`, conditions/state, HTML
-fidelity pass, and the installed-copy packaging caveat (fixed by PLAN 63).
+kinds, `boolean`/`date` type extensions (commander approved `number`
+(Session 41); boolean/date have no vote and stay UNDECIDED), chart/table
+kinds, `search`, `subtitle`/`description`, `button inside header`,
+conditions/state, HTML fidelity pass, and the installed-copy packaging
+caveat (fixed by PLAN 63).
