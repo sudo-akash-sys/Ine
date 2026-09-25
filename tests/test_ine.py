@@ -15,7 +15,8 @@ from ine.backend_html import BackendError, render
 from ine.cli import build
 from ine.dictionary import (
     Suggestion, ValueShape, _shape_from, find, for_model, makeable, members, parents,
-    properties_for, suggest, value_hint, value_shape,
+    properties_for, style_declarations, style_overrides, suggest, value_hint,
+    value_shape,
 )
 from ine.interpreter import execute
 from ine.lexer import LexError, TokenKind, lex
@@ -23,7 +24,7 @@ from ine.native import compile_c, find_c_compiler, run_native
 from ine.parser import (
     GroupStatement, InsideStatement, MakeStatement, PropertyRef, PropertyStatement, SayStatement, SyntaxError, parse,
 )
-from ine.semantic import SemanticError, analyze, resolve
+from ine.semantic import SemanticError, advisory_warnings, analyze, resolve
 
 
 def _has_display():
@@ -529,9 +530,10 @@ class DictionaryTests(unittest.TestCase):
         with redirect_stdout(out):
             code = main(["--dict", "card"])
         self.assertEqual(code, 0)
+        self.assertIn("card (surface)", out.getvalue())
+        self.assertIn("element: article", out.getvalue())
         self.assertIn("padding", out.getvalue())
-        self.assertIn("title", out.getvalue())
-        self.assertNotIn("a member of card", out.getvalue())
+        self.assertIn("corner-radius", out.getvalue())
         self.assertNotIn("title inside card", out.getvalue())
 
     def test_dict_cli_shows_structural_members_as_inside(self):
@@ -542,7 +544,7 @@ class DictionaryTests(unittest.TestCase):
         with redirect_stdout(out):
             code = main(["--dict", "header"])
         self.assertEqual(code, 0)
-        self.assertIn("logo inside header", out.getvalue())
+        self.assertIn("contains: logo, navigation", out.getvalue())
 
     def test_dict_cli_reports_where_a_kind_belongs(self):
         from io import StringIO
@@ -552,17 +554,61 @@ class DictionaryTests(unittest.TestCase):
         with redirect_stdout(out):
             code = main(["--dict", "section"])
         self.assertEqual(code, 0)
-        self.assertIn("belongs inside", out.getvalue())
-        self.assertIn("section inside page", out.getvalue())
+        self.assertIn("belongs inside: page", out.getvalue())
         out = StringIO()
         with redirect_stdout(out):
             code = main(["--dict", "card-group"])
         self.assertEqual(code, 0)
-        self.assertIn("card-group inside container", out.getvalue())
+        self.assertIn("belongs inside: container", out.getvalue())
 
     def test_dict_cli_unknown_kind_fails(self):
         from ine.cli import main
         self.assertEqual(main(["--dict", "wizard"]), 1)
+
+    def test_dict_cli_prints_structured_entry_for_a_kind(self):
+        from io import StringIO
+        from contextlib import redirect_stdout
+        from ine.cli import main
+        out = StringIO()
+        with redirect_stdout(out):
+            code = main(["--dict", "footer"])
+        self.assertEqual(code, 0)
+        text = out.getvalue()
+        self.assertIn("footer (bar):", text)
+        self.assertIn("element: footer", text)
+        self.assertIn("meaning:", text)
+        self.assertIn("defaults:", text)
+        self.assertIn("content-position   center", text)
+        self.assertIn("implementation.html: footer element", text)
+        self.assertIn("belongs inside: page", text)
+
+    def test_dict_cli_exposes_responsiveness_defaults(self):
+        from io import StringIO
+        from contextlib import redirect_stdout
+        from ine.cli import main
+        out = StringIO()
+        with redirect_stdout(out):
+            code = main(["--dict", "card-group"])
+        self.assertEqual(code, 0)
+        text = out.getvalue()
+        self.assertIn("narrow-layout", text)
+        self.assertIn("narrow-class", text)
+        self.assertIn("stack members", text)
+        self.assertIn("viewport.width == narrow", text)
+
+    def test_dict_cli_shows_the_first_choice_declaration(self):
+        # PLAN item 7: card-group `layout` is declared as a "choice"
+        # (row/column); `--dict` surfaces the options.
+        from io import StringIO
+        from contextlib import redirect_stdout
+        from ine.cli import main
+        out = StringIO()
+        with redirect_stdout(out):
+            code = main(["--dict", "card-group"])
+        self.assertEqual(code, 0)
+        text = out.getvalue()
+        self.assertIn("properties:", text)
+        self.assertIn("layout             choice: row, column", text)
 
 
 class DictionaryIntegrityTests(unittest.TestCase):
@@ -661,14 +707,190 @@ class DictionaryIntegrityTests(unittest.TestCase):
                 )
 
 
+class DictionaryStyleTests(unittest.TestCase):
+    """The dictionary's `style` block is the only source of physical
+    declarations: a kind paints exactly what its entry declares, a value
+    the program writes replaces the kind's default, and a kind with no
+    `style` block paints nothing at all."""
+
+    def test_declared_defaults_become_declarations(self):
+        # card declares padding/border/corner-radius, so its three hint
+        # words must resolve to real CSS — this is the whole point of the
+        # style block existing rather than a hardcoded table.
+        declarations = style_declarations("card")
+        self.assertIn("padding: 1.25rem", declarations)          # comfortable
+        self.assertIn("border: 1px solid #e2e8f0", declarations)  # subtle
+        self.assertIn("border-radius: 10px", declarations)        # slight
+
+    def test_kind_without_a_style_block_declares_nothing(self):
+        self.assertEqual(style_declarations("section"), [])
+        self.assertEqual(style_declarations("card-group"), [])
+        self.assertEqual(style_declarations("container"), [])
+
+    def test_undeclared_kind_declares_nothing(self):
+        self.assertEqual(style_declarations("person"), [])
+        self.assertEqual(style_declarations("no-such-kind"), [])
+
+    def test_written_value_replaces_the_kind_default(self):
+        declarations = style_declarations("card", {"padding": 32})
+        self.assertIn("padding: 32px", declarations)
+        self.assertNotIn("padding: 1.25rem", declarations)
+
+    def test_written_hint_word_resolves_through_the_map(self):
+        declarations = style_declarations("card", {"corner-radius": "round"})
+        self.assertIn("border-radius: 999px", declarations)
+
+    def test_written_string_the_map_does_not_know_passes_through(self):
+        # The escape hatch: the dictionary advises and never validates, so
+        # an author who wants raw CSS can write it.
+        declarations = style_declarations("card", {"border": "3px dotted red"})
+        self.assertIn("border: 3px dotted red", declarations)
+
+    def test_zero_is_not_a_zero_pixel_length(self):
+        self.assertIn("border-radius: 0", style_declarations("card", {"corner-radius": 0}))
+
+    def test_a_declaration_is_emitted_once(self):
+        # hero's base already centres; the `text-alignment` default says the
+        # same thing, and the rule must not carry `text-align` twice.
+        declarations = style_declarations("banner")
+        self.assertEqual(
+            len([d for d in declarations if d.startswith("text-align:")]), 1)
+
+    def test_overrides_are_empty_when_nothing_differs(self):
+        self.assertEqual(style_overrides("card", {"padding": "comfortable"}), [])
+        self.assertEqual(style_overrides("card", {}), [])
+
+    def test_overrides_carry_only_what_the_program_changed(self):
+        overrides = style_overrides("card", {"padding": 32})
+        self.assertEqual(overrides, ["padding: 32px"])
+
+    def test_layout_hint_is_not_a_style_property(self):
+        # `layout` on card-group is consumed by the backend's row/stack
+        # logic; it must not also leak into the stylesheet.
+        self.assertEqual(style_declarations("card-group", {"layout": "row"}), [])
+
+
+class HtmlStyleTests(unittest.TestCase):
+    """The HTML backend paints what the dictionary declares, and a written
+    value wins over the kind's rule."""
+
+    def _render(self, source):
+        model = analyze(parse(lex(source)))
+        return render(model)
+
+    def test_stylesheet_holds_one_rule_per_kind_used(self):
+        output = self._render('make page\nmake card\ncard inside page\n')
+        self.assertIn(".card { border: 1px solid #e2e8f0;", output)
+        self.assertIn(".page { min-height: 100vh; }", output)
+
+    def test_stylesheet_omits_kinds_the_program_does_not_use(self):
+        output = self._render('make page\n')
+        self.assertNotIn(".card {", output)
+        self.assertNotIn(".footer {", output)
+
+    def test_document_carries_a_viewport_and_a_body_baseline(self):
+        output = self._render('make page\n')
+        self.assertIn(
+            '<meta name="viewport" content="width=device-width, initial-scale=1">',
+            output,
+        )
+        self.assertIn("body { margin: 0;", output)
+
+    def test_elements_carry_their_kind_so_rules_can_reach_them(self):
+        output = self._render(
+            'make page\nmake hero banner\nhero inside page\n'
+            'make main container\nmain inside page\n')
+        self.assertIn('<div class="banner hero">', output)
+        self.assertIn('<div class="container main">', output)
+
+    def test_an_entity_named_like_its_kind_carries_one_class(self):
+        output = self._render('make page\nmake card\ncard inside page\n')
+        self.assertIn('<article class="card">', output)
+        self.assertNotIn('class="card card"', output)
+
+    def test_a_written_value_lands_on_the_element_and_wins(self):
+        output = self._render(
+            'make page\nmake card\ncard inside page\ncard padding 32\n')
+        # The kind's default is still in the stylesheet...
+        self.assertIn(".card { border: 1px solid #e2e8f0;", output)
+        # ...and the entity overrides it inline, which beats any rule.
+        self.assertIn('class="card" style="padding: 32px"', output)
+
+    def test_overrides_survive_an_entity_named_like_its_kind(self):
+        # `make card` names the entity `card`, so a per-entity stylesheet
+        # rule could not address it without touching the kind's rule.
+        output = self._render(
+            'make page\nmake card\ncard inside page\ncard padding 32\n')
+        self.assertIn('style="padding: 32px"', output)
+
+    def test_row_layout_still_marks_children_as_growing(self):
+        output = self._render(
+            'make page\nmake card-group\ncard-group inside page\n'
+            'make card\ncard inside card-group\n')
+        self.assertIn('<article class="card" style="flex:1">', output)
+
+
+class NarrowResponsiveRuleTests(unittest.TestCase):
+    """Mission 83 (unblocks item 59): the HTML backend emits ONE
+    `@media (max-width: 768px)` rule for row-layout kinds whose dictionary
+    entry declares `narrow-class` + `narrow-layout` (card-group). Gated on
+    the declared data, never on the kind's name — a program without such a
+    kind gains no @media output."""
+
+    @staticmethod
+    def _render(source):
+        from contextlib import redirect_stdout
+        from io import StringIO
+        import tempfile
+        from ine.cli import build
+        with tempfile.TemporaryDirectory() as tmp:
+            source_path = os.path.join(tmp, "narrow.ine")
+            out_path = os.path.join(tmp, "narrow.html")
+            with open(source_path, "w", encoding="utf-8") as handle:
+                handle.write(source)
+            with redirect_stdout(StringIO()):
+                build(source_path, out_path)
+            with open(out_path, "r", encoding="utf-8") as handle:
+                return handle.read()
+
+    NARROW_RULE = "@media (max-width: 768px) { .card-group { flex-direction: column; } }"
+
+    def test_card_group_emits_the_one_narrow_rule(self):
+        output = self._render(
+            'make page\nmake card-group\ncard-group inside page\n'
+            'make card\ncard inside card-group\n')
+        self.assertIn(self.NARROW_RULE, output)
+
+    def test_kind_without_narrow_declarations_emits_no_media(self):
+        output = self._render('make page\nmake banner\nbanner inside page\n')
+        self.assertNotIn("@media", output)
+
+    def test_desktop_row_output_is_unchanged(self):
+        output = self._render(
+            'make page\nmake card-group\ncard-group inside page\n'
+            'make card\ncard inside card-group\n')
+        self.assertIn('<div class="card-group" style="display:flex; gap:20px">',
+                      output)
+        self.assertIn('<article class="card" style="flex:1">', output)
+
+    def test_changing_declared_narrow_layout_value_keeps_one_rule(self):
+        # Editing the declared value must not change the number of rules or
+        # any unrelated kind's output; the rule is still derived from the
+        # declared narrow defaults on card-group.
+        output = self._render(
+            'make page\nmake card-group\ncard-group inside page\n'
+            'make card\ncard inside card-group\n')
+        self.assertEqual(output.count(self.NARROW_RULE), 1)
+
+
 class BackendMetadataContractTests(unittest.TestCase):
     """The backends must honor the dictionary's declared metadata, not their
     own fallback defaults (Mission 65).
 
     Guards the Session 25 freeze at the test level: when the dictionary
     declares `element` / `layout` / `position` for a makeable kind, the HTML
-    and visual backends return exactly that value, and the four shipped
-    goldens still render byte-identical to their examples.
+    and visual backends return exactly that value, and the shipped goldens
+    still render byte-identical to their examples.
     """
 
     def test_html_backend_returns_declared_element_and_layout(self):
@@ -717,6 +939,27 @@ class BackendMetadataContractTests(unittest.TestCase):
                 f"visual position for {kind} must come from the dictionary",
             )
 
+    def test_visual_backend_padding_comes_from_the_dictionary(self):
+        """Spacing hints resolve to pixels; a kind without one keeps the old
+        literals. No window is opened -- only the resolver is asked."""
+        from ine.backend_visual import _padding_of
+        source = (
+            'make page\n'
+            'make banner\nbanner inside page\n'
+            'make card\ncard inside page\n'
+            'make header\nheader inside page\n'
+            'make logo\nlogo inside header\n'
+        )
+        model = analyze(parse(lex(source)))
+        # `card` declares `"padding": "comfortable"` -> 1.25rem -> 20px on
+        # every side, not the renderer's own 16/8 literals.
+        self.assertEqual(_padding_of(model, "card"), (20, 20))
+        self.assertNotEqual(_padding_of(model, "card"), (8, 16))
+        # `banner` declares `"padding": "generous"` -> "3.5rem 1.5rem".
+        self.assertEqual(_padding_of(model, "banner"), (56, 24))
+        # `logo` declares no padding hint, so the old literals stand.
+        self.assertEqual(_padding_of(model, "logo"), (8, 16))
+
     def test_shipped_goldens_render_byte_identical(self):
         examples = {
             "hello": os.path.join(
@@ -730,6 +973,8 @@ class BackendMetadataContractTests(unittest.TestCase):
             "cards": os.path.join(
                 os.path.dirname(__file__), "..", "examples",
                 "homepage-cards", "cards.ine"),
+            "site": os.path.join(
+                os.path.dirname(__file__), "..", "examples", "site", "site.ine"),
         }
         golden_dir = os.path.join(os.path.dirname(__file__), "expected")
         for name, source in examples.items():
@@ -922,13 +1167,13 @@ class EvidenceGateTests(unittest.TestCase):
             "button inside header added to containment without evidence",
         )
 
-    def test_card_group_layout_stays_unknown(self):
-        # Session 33 revert: `card-group layout` takes bare words and is not
-        # a text/choice shape; only "row" is documented, so the shape must
-        # remain unknown until the first `choice` value (PLAN item 7) lands.
+    def test_card_group_layout_is_the_first_choice(self):
+        # PLAN item 7 landed: card-group `layout` is the first enumerated
+        # `choice` value ("row"/"column"), declared with the commander's
+        # decision. It supersedes the Session 33 unknown-shape revert.
         shape = value_shape("card-group", "layout")
-        self.assertEqual(shape.type, "unknown")
-        self.assertEqual(shape.choices, ())
+        self.assertEqual(shape.type, "choice")
+        self.assertEqual(shape.choices, ("row", "column"))
 
 
 class AliceCustomDomainTests(unittest.TestCase):
@@ -1274,8 +1519,8 @@ class GroupSemanticsTests(unittest.TestCase):
         model = analyze(statements)
         output = render(model)
         for card in ("card-1", "card-2", "card-3"):
-            self.assertIn(f'<article class="{card}"', output)
-        self.assertIn('<div class="card-group" style="display:flex;gap:20px">',
+            self.assertIn(f'class="card {card}"', output)
+        self.assertIn('<div class="card-group" style="display:flex; gap:20px">',
                       output)
 
     def test_per_member_and_group_property_overrides(self):
@@ -1287,6 +1532,116 @@ class GroupSemanticsTests(unittest.TestCase):
             self.assertEqual(model.properties[(card, "text")], "default")
         self.assertEqual(model.properties[("card-1", "title")], "Member One")
         self.assertEqual(model.properties[("card-1", "text")], "default")
+
+
+class AdvisoryValidationTests(unittest.TestCase):
+    """Mission 82: dictionary-backed semantic validation is advisory.
+
+    The model always builds and renders; each violation becomes a returned
+    warning string instead of a raised error. `title`/`text` (universal)
+    and custom-domain kinds (Alice's `person`) are never flagged."""
+
+    def _warnings(self, source):
+        return advisory_warnings(analyze(parse(lex(source))))
+
+    def test_undeclared_property_name_is_flagged(self):
+        warnings = self._warnings('make banner\nbanner colour "red"\n')
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("colour", warnings[0])
+        self.assertIn("banner", warnings[0])
+
+    def test_undeclared_property_still_builds_a_model(self):
+        statements = parse(lex(
+            'make page\nmake header\nheader inside page\nheader colour "red"\n'))
+        model = analyze(statements)
+        self.assertIn(("header", "colour"), model.properties)
+        html = render(model)
+        self.assertIn('class="header"', html)
+
+    def test_declared_property_is_not_flagged(self):
+        warnings = self._warnings('make banner\nbanner padding "generous"\n')
+        self.assertEqual(warnings, [])
+
+    def test_value_outside_vocabulary_is_flagged(self):
+        warnings = self._warnings('make banner\nbanner padding "banana"\n')
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("banana", warnings[0])
+
+    def test_value_in_vocabulary_is_not_flagged(self):
+        for word in ("compact", "comfortable", "generous"):
+            with self.subTest(word=word):
+                warnings = self._warnings(f'make banner\nbanner padding "{word}"\n')
+                self.assertEqual(warnings, [])
+
+    def test_universal_title_and_text_are_never_flagged(self):
+        warnings = self._warnings(
+            'make banner\nbanner title "Anything"\nbanner text "Any text"\n')
+        self.assertEqual(warnings, [])
+
+    def test_choice_value_within_options_is_not_flagged(self):
+        # PLAN item 7: card-group `layout` is a declared choice (row/column).
+        for word in ("row", "column"):
+            with self.subTest(word=word):
+                warnings = self._warnings(f'make card-group\ncard-group layout "{word}"\n')
+                self.assertEqual(warnings, [])
+
+    def test_choice_value_outside_options_is_flagged(self):
+        warnings = self._warnings(
+            'make card-group\ncard-group layout "diagonal"\n')
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("diagonal", warnings[0])
+
+    def test_undeclared_containment_is_flagged(self):
+        warnings = self._warnings('make header\nmake footer\nfooter inside header\n')
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("footer", warnings[0])
+        self.assertIn("header", warnings[0])
+
+    def test_undeclared_containment_still_builds_a_model(self):
+        statements = parse(lex('make header\nmake footer\nfooter inside header\n'))
+        model = analyze(statements)
+        self.assertEqual(model.relationships["footer"], "header")
+
+    def test_declared_containment_is_not_flagged(self):
+        warnings = self._warnings(
+            'make page\nmake header\nheader inside page\n')
+        self.assertEqual(warnings, [])
+
+    def test_legitimate_false_positive_reported_but_non_fatal(self):
+        warnings = self._warnings(
+            'make alice person\nalice name "Alice"\nalice age 25\n')
+        self.assertEqual(warnings, [])
+
+    def test_cli_reports_warning_to_stderr_without_changing_exit(self):
+        from io import StringIO
+        from contextlib import redirect_stderr
+        from ine.cli import main
+        with tempfile.TemporaryDirectory() as tmp:
+            source_path = os.path.join(tmp, "bad.ine")
+            out_path = os.path.join(tmp, "bad.html")
+            with open(source_path, "w", encoding="utf-8") as f:
+                f.write('make page\nmake header\nheader inside page\n'
+                        'header colour "red"\n')
+            err = StringIO()
+            with redirect_stderr(err):
+                code = main([source_path, "-o", out_path])
+            self.assertEqual(code, 0)
+            self.assertIn("warning:", err.getvalue())
+            self.assertIn("colour", err.getvalue())
+
+    def test_all_examples_produce_no_advisory_warnings(self):
+        examples = os.path.join(
+            os.path.dirname(__file__), "..", "examples")
+        for dirpath, _, _files in os.walk(examples):
+            for name in sorted(os.listdir(dirpath)):
+                if not name.endswith(".ine"):
+                    continue
+                with open(os.path.join(dirpath, name), "r",
+                          encoding="utf-8") as handle:
+                    source = handle.read()
+                with self.subTest(program=name):
+                    warnings = self._warnings(source)
+                    self.assertEqual(warnings, [])
 
 
 class EndToEndTests(unittest.TestCase):
@@ -1397,12 +1752,12 @@ class EndToEndTests(unittest.TestCase):
             with open(out_path, "r", encoding="utf-8") as handle:
                 output = handle.read()
             self.assertIn(
-                '<div class="card-group" style="display:flex;gap:20px">',
+                '<div class="card-group" style="display:flex; gap:20px">',
                 output,
             )
-            self.assertIn('<article class="card-1" style="flex:1">', output)
-            self.assertIn('<article class="card-2" style="flex:1">', output)
-            self.assertIn('<article class="card-3" style="flex:1">', output)
+            self.assertIn('<article class="card card-1" style="flex:1">', output)
+            self.assertIn('<article class="card card-2" style="flex:1">', output)
+            self.assertIn('<article class="card card-3" style="flex:1">', output)
 
     def test_cards_html_renders_card_titles_as_headings(self):
         source_path = os.path.join(
@@ -1416,6 +1771,43 @@ class EndToEndTests(unittest.TestCase):
             self.assertIn("<h3>Fast</h3>", output)
             self.assertIn("<h3>Simple</h3>", output)
             self.assertIn("<h3>Reliable</h3>", output)
+
+
+class SiteExampleTests(unittest.TestCase):
+    """The whole-page example: examples/site/site.ine is the language used
+    for what it is for, with nothing in it that the dictionary does not
+    already declare."""
+
+    SOURCE = os.path.join(
+        os.path.dirname(__file__), "..", "examples", "site", "site.ine"
+    )
+
+    def _output(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out_path = os.path.join(tmp, "site.html")
+            build(self.SOURCE, out_path)
+            with open(out_path, "r", encoding="utf-8") as handle:
+                return handle.read()
+
+    def test_group_statement_styles_every_member(self):
+        output = self._output()
+        for card in ("a1", "a2", "a3"):
+            self.assertIn(
+                f'class="card {card}" style="flex:1; border: none; border-radius: 0; padding: 0.75rem"',
+                output,
+                f"{card} did not receive the group's written values",
+            )
+
+    def test_the_other_row_keeps_the_declared_defaults(self):
+        output = self._output()
+        for card in ("f1", "f2", "f3"):
+            self.assertIn(f'class="card {card}" style="flex:1"', output)
+
+    def test_kinds_are_drawn_from_the_dictionary_alone(self):
+        output = self._output()
+        for rule in (".header {", ".logo {", ".navigation {", ".banner {",
+                     ".card {", ".footer {", ".page {"):
+            self.assertIn(rule, output)
 
 
 class CliErrorTests(unittest.TestCase):
@@ -1562,16 +1954,29 @@ class VisualBackendTests(unittest.TestCase):
         model.entities["h"] = Entity("h", "banner")
         self.assertFalse(_has_text(model, "h"))
 
+    def _render_window(self, model, title_override=None):
+        """Render into a real tk root, skipping when tkinter fails at run time.
+
+        _has_display() is evaluated once at import (the skip decorator);
+        a mid-run Tcl failure (e.g. Windows Store Python intermittently
+        failing to read init.tcl under load) must skip, not fail the suite.
+        """
+        import tkinter as tk
+        from ine.backend_visual import render
+        try:
+            return render(model, title_override=title_override)
+        except tk.TclError as exc:
+            self.skipTest(f"tkinter became unavailable at run time: {exc}")
+
     @_skip_without_display
     def test_visual_render_returns_a_tk_root(self):
         import tkinter as tk
-        from ine.backend_visual import render
         statements = parse(lex(
             'make page\npage title "Test"\n'
             'make header\nheader inside page\n'
         ))
         model = analyze(statements)
-        root = render(model)
+        root = self._render_window(model)
         self.assertIsInstance(root, tk.Tk)
         self.assertEqual(root.title(), "Test")
         root.destroy()
@@ -1579,10 +1984,9 @@ class VisualBackendTests(unittest.TestCase):
     @_skip_without_display
     def test_visual_render_uses_title_override(self):
         import tkinter as tk
-        from ine.backend_visual import render
         statements = parse(lex('make page\npage title "Original"\n'))
         model = analyze(statements)
-        root = render(model, title_override="Override Title")
+        root = self._render_window(model, title_override="Override Title")
         self.assertEqual(root.title(), "Override Title")
         root.destroy()
 
@@ -1622,7 +2026,6 @@ class VisualBackendTests(unittest.TestCase):
     @_skip_without_display
     def test_hero_int_visual_render_creates_window(self):
         import tkinter as tk
-        from ine.backend_visual import render
         source_path = os.path.join(
             os.path.dirname(__file__), "..", "examples", "homepage-hero", "hero.ine"
         )
@@ -1630,7 +2033,7 @@ class VisualBackendTests(unittest.TestCase):
             source = f.read()
         statements = parse(lex(source))
         model = analyze(statements)
-        root = render(model)
+        root = self._render_window(model)
         self.assertIsInstance(root, tk.Tk)
         self.assertEqual(root.title(), "Company Name")
         root.destroy()
@@ -1638,10 +2041,9 @@ class VisualBackendTests(unittest.TestCase):
     @_skip_without_display
     def test_visual_render_default_title_when_no_title_property(self):
         import tkinter as tk
-        from ine.backend_visual import render
         statements = parse(lex("make page\n"))
         model = analyze(statements)
-        root = render(model)
+        root = self._render_window(model)
         self.assertEqual(root.title(), "Ine")
         root.destroy()
 
@@ -1667,7 +2069,6 @@ class VisualBackendTests(unittest.TestCase):
     @_skip_without_display
     def test_cards_visual_render_creates_window(self):
         import tkinter as tk
-        from ine.backend_visual import render
         source_path = os.path.join(
             os.path.dirname(__file__), "..", "examples", "homepage-cards", "cards.ine"
         )
@@ -1675,7 +2076,7 @@ class VisualBackendTests(unittest.TestCase):
             source = f.read()
         statements = parse(lex(source))
         model = analyze(statements)
-        root = render(model)
+        root = self._render_window(model)
         self.assertIsInstance(root, tk.Tk)
         self.assertEqual(root.title(), "Company Name")
         root.destroy()
@@ -1711,14 +2112,13 @@ class VisualBackendTests(unittest.TestCase):
     @_skip_without_display
     def test_cards_visual_packs_cards_side_by_side(self):
         import tkinter as tk
-        from ine.backend_visual import render
         source_path = os.path.join(
             os.path.dirname(__file__), "..", "examples", "homepage-cards", "cards.ine"
         )
         with open(source_path, "r", encoding="utf-8") as f:
             source = f.read()
         model = analyze(parse(lex(source)))
-        root = render(model)
+        root = self._render_window(model)
         cards = self._card_frames(root)
         self.assertEqual(len(cards), 3)
         for frame in cards:
@@ -1728,14 +2128,13 @@ class VisualBackendTests(unittest.TestCase):
     @_skip_without_display
     def test_cards_visual_pins_footer_to_bottom(self):
         import tkinter as tk
-        from ine.backend_visual import render
         source_path = os.path.join(
             os.path.dirname(__file__), "..", "examples", "homepage-cards", "cards.ine"
         )
         with open(source_path, "r", encoding="utf-8") as f:
             source = f.read()
         model = analyze(parse(lex(source)))
-        root = render(model)
+        root = self._render_window(model)
         footer = self._bottom_frame(root)
         self.assertIsNotNone(footer)
         self.assertEqual(footer.pack_info()["side"], "bottom")
@@ -1810,6 +2209,20 @@ class DisplayGuardTests(unittest.TestCase):
                 getattr(fn, "_requires_display", False),
                 f"{name} is missing the display-server skip guard",
             )
+
+    def test_render_window_skips_on_runtime_tcl_error(self):
+        import tkinter as tk
+        view = VisualBackendTests("test_visual_render_returns_a_tk_root")
+        with mock.patch(
+            "ine.backend_visual.render",
+            side_effect=tk.TclError("couldn't read file init.tcl"),
+        ):
+            try:
+                view._render_window(None)
+            except unittest.SkipTest as exc:
+                self.assertIn("tkinter became unavailable at run time", str(exc))
+                return
+        self.fail("expected the runtime TclError to skip, not fail the suite")
 
 
 class ExperimentsRenderTests(unittest.TestCase):

@@ -9,6 +9,22 @@
     "content-position": "center",
     "position": "bottom of page, always"
   },
+  "style": {
+    "base": [
+      "display: flex",
+      "padding: 1.25rem 1.5rem"
+    ],
+    "properties": {
+      "content-position": {
+        "css": "justify-content",
+        "values": {
+          "center": "center",
+          "left": "flex-start",
+          "right": "flex-end"
+        }
+      }
+    }
+  },
   "implementation": {
     "html": "footer element",
     "guess": ["display: flex", "justify-content: center", "parent page flex column + growing middle child keeps it pinned"]

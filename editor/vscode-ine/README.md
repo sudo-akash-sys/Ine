@@ -81,6 +81,24 @@ Selecting a text property (`title`, `text`) inserts a snippet that places
 the cursor between the quotes — `page title "|"` — so the expected value
 shape is visible immediately and the user can start typing.
 
+Selecting a kind after `make ` inserts an **editable starting-point body**
+built from that kind's dictionary entry (Mission 81). For example,
+accepting `footer` yields:
+
+```
+make footer
+footer content-position "center"|    <- cursor in the first default
+```
+
+The body is shaped by the dictionary alone: each declared member becomes a
+`make <member>` + `<member> inside <kind>` pair, and each style/default
+property becomes a `<kind> <property> "<default>"` statement, with the
+cursor in the first default value. It is **starting material, not a rule**:
+every line is an ordinary editable statement, deleting any or all of it
+regresses nothing — no grammar, parser, or dictionary behavior depends on a
+template. A kind whose entry contributes nothing (no declared members, no
+style/default properties, e.g. `title`) is offered with no body at all.
+
 ## Run it
 
 Requires: VS Code, and `python` on `PATH` that can import the `ine`

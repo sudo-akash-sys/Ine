@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass, field
 
+from . import dictionary
 from .parser import GroupStatement, InsideStatement, MakeStatement, PropertyRef, PropertyStatement, SayStatement
 
 
@@ -170,3 +171,83 @@ def resolve(statements, model):
         else:
             resolved.append(statement)
     return resolved
+
+
+def advisory_warnings(model) -> list[str]:
+    """Dictionary-backed, advisory-only warnings about a built model.
+
+    The dictionary is the semantics authority (DECISIONS 49), but these
+    checks never raise and never stop the build — each finding is a string
+    the CLI prints to stderr, and the model still renders as-is. Checks:
+
+    - a property whose name the kind does not declare (`properties_for`),
+      with `title`/`text` covered by the universal entry;
+    - a property value outside the kind's declared vocabulary, i.e. not a
+      key in the property's `style` values map (e.g. `padding "banana"`),
+      skipping free-form strings on undeclared or unvocabularized kinds;
+    - containment where the child's kind is not in the parent kind's
+      `members`, using the dictionary's `parents`/`contains` data.
+
+    Kinds the dictionary does not declare (custom domains such as Alice's
+    `person`) are skipped entirely: the dictionary has nothing to say.
+    """
+
+    found = []
+    for (entity_id, name), value in model.properties.items():
+        kind = model.entities[entity_id].kind
+        declared = dictionary.properties_for(kind)
+        if not declared:
+            continue
+        if name not in declared:
+            found.append(
+                f"'{entity_id}' has property '{name}', which kind '{kind}' does not declare"
+            )
+            continue
+        words = _value_words(kind, name)
+        if words and isinstance(value, str) and value not in words:
+            found.append(
+                f"'{entity_id}' property '{name}' value '{value}' is not a declared "
+                f"{name} for kind '{kind}'"
+            )
+    for child, parent in model.relationships.items():
+        child_kind = model.entities[child].kind
+        parent_kind = model.entities[parent].kind
+        members = dictionary.members(parent_kind)
+        if members and child_kind not in members:
+            found.append(
+                f"'{child}' ({child_kind}) inside '{parent}' ({parent_kind}) "
+                f"is not declared containment for kind '{parent_kind}'"
+            )
+    return found
+
+
+def _value_words(kind, name) -> set[str]:
+    """The words a kind's property accepts.
+
+    The union of two declared vocabularies: the exact CSS-value words of the
+    property's `style.values` map, and the `properties`-block `"choice"`
+    options (e.g. card-group `layout` row/column). A property with neither
+    (including the universal `title`/`text`, which map to no style) returns
+    an empty set, so free text is never flagged.
+    """
+    words: set[str] = set()
+    shape = dictionary.value_shape(kind, name)
+    if shape.type == "choice":
+        words.update(shape.choices)
+    entry = dictionary.find(kind)
+    if entry is None:
+        return words
+    style = entry.get("style")
+    if not isinstance(style, dict):
+        return words
+    properties = style.get("properties")
+    if not isinstance(properties, dict):
+        return words
+    spec = properties.get(name)
+    if not isinstance(spec, dict):
+        return words
+    values = spec.get("values")
+    if not isinstance(values, dict):
+        return words
+    words.update(values)
+    return words

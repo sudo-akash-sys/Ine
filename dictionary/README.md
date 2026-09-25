@@ -13,6 +13,7 @@ alone:
 - what properties does a kind accept?                   (`properties_for`)
 - what value does a property expect?                    (`value_shape` / `value_hint`)
 - which children belong inside a kind?                  (`members` / `parents`)
+- how is a kind painted?                                (`style_declarations`)
 
 The dictionary is **advisory, never a validator**. It guides completion and
 rendering hints; it does not reject programs. A kind with no dictionary entry
@@ -52,9 +53,10 @@ naming the file — a broken file never raises or stops the editor.
 | `kind`          | Informational category (`container`, `bar`, `surface`, `ambient`, ...). Not used for inference.      |
 | `element`       | The HTML element tag the backend renders this kind with (`header`, `article`, `div`, ...).           |
 | `meaning`       | Human-readable description; shown as the completion detail for a suggested kind.                     |
-| `defaults`      | Property hints for completion. Each value is a short hint string; supported by `properties` for the actual value shape. |
+| `defaults`      | Property hints. Each value is a short hint word, shown in completion and — when the `style` block declares the property — used as the value to paint with when a program writes nothing. Supported by `properties` for the actual value shape. |
 | `defaults.contains` | Structural children that belong inside this kind (`contains: ["logo", "navigation"]`). Drives `members` and `parents`. |
 | `properties`    | Typed property declarations (see "Value shapes" below). Drives `value_shape()` / `value_hint()`.     |
+| `style`         | Physical declarations: how a kind is painted (see "Physical declarations" below). Drives `style_declarations()` / `style_overrides()`. |
 | `implementation`| Renderer notes and guessed CSS; informational only, no backend reads it today.                       |
 | `provided-by`   | Marker for ambient entries: the concept is supplied by the host environment, so it is excluded from `makeable()`. |
 | `universal`     | `true` on the special universal-properties pseudo-entry (see below).                                 |
@@ -86,6 +88,61 @@ them (`value_shape(kind, prop)` returns `ValueShape("choice", (...))`), the
 representation is decided, but no property carries evidence for more than its
 documented value. Do not invent one without a real program or a WORKBOOK
 decision.
+
+### Physical declarations (`style`)
+
+A `style` block says how a kind is painted. It is the only place a colour,
+a length, or any other CSS value is written down — the backends contain no
+styling table of their own. Abridged from `src/ine/dictionary/card.json`:
+
+```json
+"style": {
+  "base": ["font-size: 1.15rem"],
+  "properties": {
+    "padding": {
+      "css": "padding",
+      "values": { "compact": "0.75rem", "comfortable": "1.25rem" }
+    }
+  }
+}
+```
+
+| Key          | Meaning                                                                     |
+| ------------ | --------------------------------------------------------------------------- |
+| `base`       | Declarations that always apply to the kind. Write each as one `property: value` string. |
+| `properties` | An Ine property mapped to `{"css": <css property>, "values": {<word>: <css value>}}`. |
+
+The value a declaration takes, in order:
+
+1. what the program wrote for that entity (`card-1 padding 32`);
+2. otherwise the entry's own `defaults` hint word (`card` declares
+   `"padding": "comfortable"`, which the `values` map turns into `1.25rem`);
+3. otherwise nothing — the property is not painted.
+
+A written **number** becomes a px length (`32` → `32px`). A written
+**string** the `values` map knows resolves through it; a string it does not
+know passes through verbatim, so an author who wants raw CSS can write it
+(the dictionary advises, and never validates). A kind with no `style` block
+paints nothing at all.
+
+**Provenance of the values above (Session 42).** Property *names* and hint
+*words* were already declared before the `style` blocks existed; the
+concrete CSS values — `1.25rem`, `10px`, `#e2e8f0`, and the rest — were
+authored when the blocks were added, grounded where the entry's
+`implementation.guess` gave a number (`padding: 20px` → `1.25rem`,
+`border-radius: 6-10px` → `10px`) and chosen where it did not (`light` →
+`#e2e8f0`). They are therefore new data, not only a reading of old data, and
+the colour palette is listed as UNDECIDED in `.agent/DECISIONS.md`. The
+mapping is awaiting a commander decision; see `.agent/BLOCKERS.md`
+(Session 42).
+
+CSS property names are declared per property because they do not always
+match the Ine word — `corner-radius` declares `"css": "border-radius"`.
+The same CSS property declared twice (once in `base`, once by a hint word)
+is emitted once: the later declaration replaces the earlier.
+
+`layout` is *not* a style property. It is read by the backends' own
+row/stack logic, and must not also appear in a `style` block.
 
 ### Ambient entries (`provided-by`)
 

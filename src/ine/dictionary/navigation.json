@@ -9,6 +9,19 @@
     "link-style": "plain and readable",
     "order": "as declared"
   },
+  "style": {
+    "base": ["display: flex", "align-items: center"],
+    "properties": {
+      "link-spacing": {
+        "css": "gap",
+        "values": {
+          "tight": "0.75rem",
+          "even": "1.5rem",
+          "wide": "2.5rem"
+        }
+      }
+    }
+  },
   "implementation": {
     "html": "nav with anchor elements",
     "guess": ["display: flex", "gap: 1-1.5rem", "link color inherits bar", "no underline by default"]

@@ -45,6 +45,13 @@ Each file declares one kind in JSON:
                    (a bare numeric value), or a list of allowed choices (a
                    `"choice"` value). Drives `value_shape()` /
                    `value_hint()`.
+- `style`        — the kind's *physical* declarations, for backends that
+                   paint: `base` is a list of CSS declarations that always
+                   apply to the kind, and `properties` maps an Ine property
+                   to `{"css": <css property>, "values": {<written word>:
+                   <css value>}}`. A property's CSS value comes from what
+                   the program wrote, or from the entry's own `defaults`
+                   hint word. Drives `style_declarations()`.
 - `provided-by`  — present on ambient entries (viewport): the kind is
                    supplied by the host, so it is excluded from `makeable()`.
 - `universal`    — marks the universal-properties pseudo-entry: its
@@ -262,6 +269,103 @@ def value_shape(kind: str, prop: str) -> ValueShape:
             if shape.type != "unknown":
                 return shape
     return ValueShape()
+
+
+def _css_value(spec: dict, raw) -> str | None:
+    """Turn one written (or defaulted) property value into a CSS value.
+
+    A word the property's `values` map declares wins. A written string the
+    map does not know passes through verbatim — the author's escape hatch,
+    in keeping with a dictionary that advises and never validates. A
+    number becomes a px length. Anything else contributes nothing.
+    """
+    values = spec.get("values")
+    if isinstance(values, dict) and isinstance(raw, str) and raw in values:
+        return str(values[raw])
+    if isinstance(raw, str):
+        return raw
+    if isinstance(raw, bool):
+        return None
+    if isinstance(raw, (int, float)):
+        return "0" if raw == 0 else f"{raw:g}px"
+    return None
+
+
+def _add(declarations: dict, declaration: str) -> None:
+    """Record one declaration, keyed by its CSS property.
+
+    A later declaration for the same property replaces the earlier one and
+    keeps its place in the order, so a `base` declaration and a property
+    that resolve to the same CSS property are emitted once, not twice.
+    """
+    prop = declaration.split(":", 1)[0].strip()
+    declarations[prop] = declaration
+
+
+def style_declarations(kind: str, explicit: dict | None = None) -> list[str]:
+    """The CSS declarations a kind contributes, in a deterministic order.
+
+    Reads the entry's `style` block. `base` declarations apply always; each
+    declared `properties` entry takes its value from `explicit` (what this
+    program wrote for the entity) or, failing that, from the entry's own
+    `defaults` hint word. An undeclared kind, or one whose entry has no
+    `style` block, contributes nothing — the dictionary paints only what it
+    has evidence for.
+    """
+    entry = find(kind)
+    if entry is None:
+        return []
+    style = entry.get("style")
+    if not isinstance(style, dict):
+        return []
+
+    declarations: dict[str, str] = {}
+    base = style.get("base")
+    if isinstance(base, list):
+        for item in base:
+            if isinstance(item, str):
+                _add(declarations, item)
+
+    declared = style.get("properties")
+    if not isinstance(declared, dict):
+        return list(declarations.values())
+    defaults = entry.get("defaults")
+    if not isinstance(defaults, dict):
+        defaults = {}
+    written = explicit if isinstance(explicit, dict) else {}
+
+    for prop in sorted(declared):
+        spec = declared[prop]
+        if not isinstance(spec, dict):
+            continue
+        css = spec.get("css")
+        if not isinstance(css, str) or not css.strip():
+            continue
+        raw = written.get(prop)
+        if raw is None:
+            raw = defaults.get(prop)
+        if raw is None:
+            continue
+        value = _css_value(spec, raw)
+        if value is None:
+            continue
+        _add(declarations, f"{css}: {value}")
+    return list(declarations.values())
+
+
+def style_overrides(kind: str, explicit: dict) -> list[str]:
+    """Only the declarations an entity's own written values add or change.
+
+    The difference between what the kind declares on its own and what it
+    declares once `explicit` is taken into account — so a program that
+    writes a value the kind already defaults to contributes no redundant
+    declaration.
+    """
+    declared = style_declarations(kind)
+    return [
+        item for item in style_declarations(kind, explicit)
+        if item not in declared
+    ]
 
 
 def members(kind: str) -> list[str]:

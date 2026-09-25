@@ -45,6 +45,10 @@ Traditional programming forces you to write implementation code directly. Ine mo
 | `position: fixed; bottom: 0` | `footer position "bottom"` |
 | `padding: 20px` | `card padding "comfortable"` |
 
+None of the right-hand column's values are required. A `card` is painted —
+padding, border, corner radius — because the dictionary already says a card
+has them; the program only speaks up to disagree.
+
 The language is kept deliberately small — a handful of statements — so a
 first program takes minutes, and the dictionary grows the vocabulary
 without changing the core.
@@ -234,6 +238,14 @@ The **dictionary** is central to Ine. It maps human-friendly concepts to semanti
     "border": "subtle",
     "corner-radius": "slight"
   },
+  "style": {
+    "properties": {
+      "padding": {
+        "css": "padding",
+        "values": { "comfortable": "1.25rem", "compact": "0.75rem" }
+      }
+    }
+  },
   "implementation": {
     "html": "article or div",
     "guess": ["border: 1px solid light", "border-radius: 6-10px", "padding: 20px"]
@@ -245,6 +257,7 @@ Each file is one kind. The dictionary contains:
 
 - **Semantic meaning** — what a concept *means*
 - **Default values** — sensible starting points
+- **Physical declarations** — how the kind is painted (the `style` block)
 - **Implementation hints** — element mapping, layout rules
 - **Structural containment** — which children belong inside
 
@@ -333,9 +346,11 @@ Designed and on the roadmap, but does not work today:
 - More relationship types (`beside`, `contains`, `opens`)
 - State, conditions, events, and actions
 - Booleans, lists, expressions, runtime variables (today: strings and numbers only)
-- Additional backends (React, Flutter) and a separate CSS stylesheet
+- Additional backends (React, Flutter) and a hand-written CSS stylesheet — the
+  HTML backend generates one from the dictionary's `style` blocks
 - Engine-applied templates (`guess` is declared in the dictionary but not yet
-  read; `defaults` now drive the discovery suggestions)
+  read; `style` blocks are read and painted, and `defaults` drive the
+  discovery suggestions)
 - Image/multimodal input and AI interpretation layers
 
 See [WORKBOOK.md](WORKBOOK.md) §15 for the roadmap and [LANGUAGE.md](LANGUAGE.md) §7 for known limits.

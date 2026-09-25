@@ -24,8 +24,16 @@ JSON object per line on stdout. One request
 produces one response:
 
     {"id": ..., "line": ..., "column": ..., "context": ...,
-     "items": [{"label", "insert", "detail", "type"}, ...]}   type in
-    "kind" | "property" | "concept" | "parent" | "value"
+     "items": [{"label", "insert", "detail", "type", "snippet"?}, ...]}
+
+    type in "kind" | "property" | "concept" | "parent" | "value"
+
+A kind item carries an optional `snippet`: the starting-point body built
+from the dictionary entry (declared members as `make`/`inside` lines,
+style/default properties as `<kind> <property> "<default>"` statements)
+that the editor inserts with cursor position in the first default. It is
+editable starting material, never a rule — the editor substitutes
+`insert` when `snippet` is absent.
 
 A validation query is distinguished by the `validate` key instead:
 
@@ -137,19 +145,72 @@ def _known_shape(shape) -> str | None:
     return shape.type if shape.type != "unknown" else None
 
 
+def kind_snippet(kind: str) -> str | None:
+    """A starting-point snippet for accepting `make <kind>`, or None.
+
+    Built from the dictionary entry alone, never from the grammar: each
+    declared member becomes `make <member>` + `<member> inside <kind>`, and
+    each property the entry defaults or styles becomes
+    `<kind> <property> "<default>"`. A property's value resolves from the
+    entry's `defaults` block, then a style spec's own `value` (none declare
+    one today), else the property contributes nothing — defaults are shown,
+    nothing is invented. The snippet returns None for a kind whose entry
+    contributes nothing (e.g. `title`), so the bare `make <kind>` stands.
+    """
+    entry = dictionary.find(kind)
+    if entry is None:
+        return None
+    defaults = entry.get("defaults")
+    defaults = defaults if isinstance(defaults, dict) else {}
+    style = entry.get("style")
+    style = style if isinstance(style, dict) else {}
+    style_props = style.get("properties")
+    style_props = style_props if isinstance(style_props, dict) else {}
+
+    tab = 1
+    lines = []
+    for name in sorted(set(defaults) | set(style_props)):
+        if name == "contains":
+            continue
+        value = defaults.get(name)
+        if value is None:
+            spec = style_props.get(name)
+            if isinstance(spec, dict):
+                value = spec.get("value")
+        if not isinstance(value, str):
+            continue
+        shape = dictionary.value_shape(kind, name)
+        if shape.type == "choice" and shape.choices:
+            options = ",".join(shape.choices)
+            lines.append(f'{kind} {name} "${{{tab}|{options}|}}"')
+        else:
+            lines.append(f'{kind} {name} "${{{tab}:{value}}}"')
+        tab += 1
+    for member in dictionary.members(kind):
+        lines.append(f"make {member}")
+        lines.append(f"{member} inside {kind}")
+    if not lines:
+        return None
+    return f"{kind}\n" + "\n".join(lines) + "\n$0"
+
+
 def _items(ctx, buffer) -> list[dict]:
     if ctx is None:
         return []
     if ctx["type"] == "kind":
-        return [
-            {
+        items = []
+        for kind in dictionary.makeable():
+            item = {
                 "label": kind,
                 "insert": kind,
                 "detail": (dictionary.find(kind) or {}).get("meaning", ""),
                 "type": "kind",
             }
-            for kind in dictionary.makeable()
-        ]
+            snippet = kind_snippet(kind)
+            if snippet is not None:
+                item["snippet"] = snippet
+            items.append(item)
+        return items
     if ctx["type"] == "properties":
         kind = resolve_kind(buffer, ctx["kind_word"])
         if kind is None:

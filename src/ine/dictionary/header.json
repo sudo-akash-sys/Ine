@@ -10,6 +10,24 @@
     "children-distribution": "space-between, in declared order",
     "contains": ["logo", "navigation"]
   },
+  "style": {
+    "base": [
+      "display: flex",
+      "align-items: center",
+      "justify-content: space-between",
+      "padding: 0.75rem 1.5rem"
+    ],
+    "properties": {
+      "children-alignment": {
+        "css": "align-items",
+        "values": {
+          "vertical center": "center",
+          "top": "flex-start",
+          "bottom": "flex-end"
+        }
+      }
+    }
+  },
   "implementation": {
     "html": "header element",
     "guess": ["display: flex", "align-items: center", "justify-content: space-between"]

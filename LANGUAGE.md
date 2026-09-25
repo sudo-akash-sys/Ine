@@ -148,27 +148,37 @@ page's `title` property becomes the document `<title>` and the page
 heading; a child's `text` property becomes its element content, and a
 non-leaf/leaf child's `title` property renders as an `<h3>`.
 
+The document carries a charset, a viewport meta and a minimal `body`
+baseline. Those three, like the doctype itself, are document facts the
+backend owns — they are not vocabulary and no dictionary entry declares
+them.
+
 Kinds currently declared in the dictionary: page, header, logo,
 navigation, banner, container, card, card-group, footer, title, button,
 image, section, viewport.
 
-The dictionary is consulted by the engine for the element mapping and
-for two machine-readable layout hints (same class of backend detail as
-`element`): a top-level `layout: "row"` marks a kind whose children
-render side by side (`card-group`), and a top-level `position: "bottom"`
-marks a kind that is pinned to the bottom edge (`footer`). The `defaults`
-and `guess` fields are not yet applied (no CSS stylesheet generation);
-nodes and children in a row get inline flex styles instead.
+The dictionary is consulted by the engine for the element mapping, for two
+machine-readable layout hints (same class of backend detail as `element`),
+and for the physical declarations a kind paints with. A top-level
+`layout: "row"` marks a kind whose children render side by side
+(`card-group`), and a top-level `position: "bottom"` marks a kind that is
+pinned to the bottom edge (`footer`). A `style` block turns the kind's
+declared vocabulary into CSS: the backend emits one stylesheet rule per
+kind the program uses, and a value an entity writes for itself rides on
+the element as an inline style, which beats the rule. Elements carry the
+kind as a class (plus their own name), so those rules can reach them.
+Layout children in a row still get an inline `flex:1`.
 
 A single reader — `src/ine/dictionary.py` — loads every entry and answers
 deterministic discovery questions from the data alone (no AI, no
 hardcoded lists): which kinds can follow `make`, which properties a kind
-accepts, which structural children belong inside a kind, and (by
-reversing `contains`) which kinds a child can live inside. Query it
-with `ine --dict [kind | file.ine]`, or in code via
+accepts, which structural children belong inside a kind, (by reversing
+`contains`) which kinds a child can live inside, and how a kind is
+painted. Query it with `ine --dict [kind | file.ine]`, or in code via
 `ine.dictionary.{suggest, properties_for, value_hint, members, parents,
-for_model}`. The dictionary is advisory: it never rejects a kind or
-property (see the `person` kind in examples/alice).
+for_model, style_declarations, style_overrides}`. The dictionary is
+advisory: it never rejects a kind or property (see the `person` kind in
+examples/alice).
 
 The dictionary keeps three categories separate:
 
@@ -254,9 +264,12 @@ features, described in their own sections — they are not limits.
 - HTML renders only kinds declared in `src/ine/dictionary/*.json` with an
   `element`; only `page` is a guaranteed root. `text`/`title` feed
   content; `layout: "row"` and `position: "bottom"` hints produce inline
-  flex styles (a `title` renders as an `<h3>`). The `defaults`/`guess`
-  fields, fully external CSS, and the `page title` ↔ `<h1>` heading are
-  still basic.
+  flex styles (a `title` renders as an `<h3>`). A kind's `style` block is
+  painted as a generated stylesheet, but only for the kinds that declare
+  one today (page, header, logo, navigation, banner, card, footer) and
+  only from declarations those entries state; the `guess` field is still
+  unread, there is no colour palette, and nothing reflows on a narrow
+  screen. `page title` still renders both as `<title>` and as an `<h1>`.
 - Only `say` lowers to native; `make`/property/`inside` are not yet
   lowered.
 - `say name property` resolves at COMPILE time only — the value is

@@ -7,7 +7,7 @@ from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from ine.autocomplete import _respond, complete, context, resolve_kind
+from ine.autocomplete import _respond, complete, context, kind_snippet, resolve_kind
 from ine.dictionary import ValueShape, makeable, parents, suggest, value_hint
 
 
@@ -298,6 +298,57 @@ class CompletionTests(unittest.TestCase):
         labels = [i["label"] for i in items]
         self.assertEqual(labels, [i.text for i in suggest("card")])
         self.assertIn("border", labels)
+
+
+class KindSnippetTests(unittest.TestCase):
+    """`make <kind>` completion offers an editable shaped body built from
+    the dictionary entry: declared members as make/inside lines, and
+    style/default properties as `<kind> <property> "<default>"` statements
+    (mission 81). The body is starting material, never a rule — a kind
+    with nothing to show yields no snippet and plain `insert` is used."""
+
+    @staticmethod
+    def items(buffer, column, line=0):
+        return complete({"buffer": buffer, "line": line, "column": column})["items"]
+
+    def test_footer_snippet_has_defaulted_property(self):
+        snippet = kind_snippet("footer")
+        self.assertIsNotNone(snippet)
+        self.assertIn('footer content-position "${1:center}"', snippet)
+
+    def test_footer_snippet_has_height_default(self):
+        snippet = kind_snippet("footer")
+        self.assertIn('footer height "${2:compact}"', snippet)
+
+    def test_card_group_snippet_has_member_lines(self):
+        snippet = kind_snippet("card-group")
+        self.assertIsNotNone(snippet)
+        self.assertIn("make card", snippet)
+        self.assertIn("card inside card-group", snippet)
+
+    def test_card_group_snippet_has_defaulted_member_properties(self):
+        snippet = kind_snippet("card-group")
+        self.assertIn('card-group member-width "${3:equal}"', snippet)
+        self.assertIn('card-group member-spacing "${2:even}"', snippet)
+
+    def test_card_group_snippet_offers_choice_options(self):
+        # PLAN item 7: card-group `layout` is the first "choice" value
+        # (row/column); the snippet offers the options, not a fixed default.
+        snippet = kind_snippet("card-group")
+        self.assertIn('card-group layout "${1|row,column|}"', snippet)
+
+    def test_kind_with_no_defaults_or_members_yields_no_snippet(self):
+        self.assertIsNone(kind_snippet("title"))
+
+    def test_undeclared_kind_yields_no_snippet(self):
+        self.assertIsNone(kind_snippet("zzz"))
+
+    def test_make_completion_carries_snippet_only_when_present(self):
+        by_label = {i["label"]: i for i in self.items("make ", 5)}
+        self.assertIn("snippet", by_label["footer"])
+        self.assertNotIn("snippet", by_label["title"])
+        self.assertIn("insert", by_label["footer"])
+        self.assertEqual(by_label["footer"]["insert"], "footer")
 
 
 class ValueShapeTests(unittest.TestCase):

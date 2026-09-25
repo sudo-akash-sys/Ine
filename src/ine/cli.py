@@ -11,7 +11,14 @@ from .interpreter import execute
 from .lexer import LexError, lex
 from .native import NativeError, compile_c, run_native
 from .parser import SyntaxError, parse
-from .semantic import SemanticError, analyze, resolve
+from .semantic import SemanticError, advisory_warnings, analyze, resolve
+
+
+def _report_advisories(model):
+    """Print dictionary-backed advisory warnings to stderr. Never fatal:
+    the build proceeds and the exit status is unchanged."""
+    for warning in advisory_warnings(model):
+        print(f"warning: {warning}", file=sys.stderr)
 
 
 def build(source_path, out_path):
@@ -20,6 +27,7 @@ def build(source_path, out_path):
     tokens = lex(source)
     raw_statements = parse(tokens)
     model = analyze(raw_statements)
+    _report_advisories(model)
     statements = resolve(raw_statements, model)
     outputs = execute(statements)
     html = None
@@ -113,6 +121,7 @@ def _native(source_path):
     tokens = lex(source)
     raw_statements = parse(tokens)
     model = analyze(raw_statements)
+    _report_advisories(model)
     statements = resolve(raw_statements, model)
     outputs = execute(statements)
     name = os.path.splitext(os.path.basename(source_path))[0]
@@ -136,6 +145,7 @@ def _visual(source_path):
     tokens = lex(source)
     raw_statements = parse(tokens)
     model = analyze(raw_statements)
+    _report_advisories(model)
     statements = resolve(raw_statements, model)
     outputs = execute(statements)
 
@@ -147,6 +157,73 @@ def _visual(source_path):
     print("opening visual window...")
     visual_show(model)
     return 0
+
+
+def _print_kind_entry(source, entry):
+    """Print one dictionary entry as its full structured body.
+
+    The shaped body is what `make <kind>` should surface — the dictionary
+    "knows its format". Whole-entry output only; the flat suggestion list
+    stays behind plain `--dict`.
+    """
+    print(f"{source} ({entry.get('kind', '?')}):")
+    for field in ("element", "meaning"):
+        value = entry.get(field)
+        if isinstance(value, str):
+            print(f"  {field}: {value}")
+
+    defaults = entry.get("defaults")
+    if isinstance(defaults, dict):
+        print("  defaults:")
+        for name, value in sorted(defaults.items()):
+            if isinstance(value, list):
+                print(f"    {name:<18} {', '.join(str(v) for v in value)}")
+            else:
+                print(f"    {name:<18} {value}")
+
+    declared = entry.get("properties")
+    if isinstance(declared, dict):
+        print("  properties:")
+        for name in sorted(declared):
+            shape = dictionary.value_shape(source, name)
+            if shape.type == "choice" and shape.choices:
+                print(f"    {name:<18} choice: " + ", ".join(shape.choices))
+            else:
+                print(f"    {name:<18} {shape.type}")
+
+    style = entry.get("style")
+    if isinstance(style, dict):
+        base = style.get("base")
+        if isinstance(base, list) and base:
+            print("  style:")
+            for declaration in base:
+                print(f"    {declaration}")
+        properties = style.get("properties")
+        if isinstance(properties, dict):
+            if not isinstance(base, list) or not base:
+                print("  style:")
+            for name, spec in sorted(properties.items()):
+                if not isinstance(spec, dict):
+                    continue
+                css = spec.get("css")
+                values = spec.get("values")
+                suffix = f" (css: {css}, values: {', '.join(str(v) for v in values)})" \
+                    if isinstance(css, str) and isinstance(values, dict) else ""
+                print(f"    {name}{suffix}")
+
+    child_kinds = dictionary.members(source)
+    if child_kinds:
+        print(f"  contains: {', '.join(child_kinds)}")
+
+    parent_kinds = dictionary.parents(source)
+    if parent_kinds:
+        print(f"  belongs inside: {', '.join(parent_kinds)}")
+
+    implementation = entry.get("implementation")
+    if isinstance(implementation, dict):
+        html = implementation.get("html")
+        if isinstance(html, str):
+            print(f"  implementation.html: {html}")
 
 
 def _dict(source):
@@ -179,15 +256,7 @@ def _dict(source):
 
     entry = dictionary.find(source)
     if entry is not None:
-        items = dictionary.suggest(source)
-        print(f"{source} ({entry.get('kind', '?')}):")
-        for item in items:
-            print(f"  {item.text:30s} {item.note}")
-        parent_kinds = dictionary.parents(source)
-        if parent_kinds:
-            print("\nbelongs inside:")
-            for parent in parent_kinds:
-                print(f"  {parent:30s} {source} inside {parent}")
+        _print_kind_entry(source, entry)
         return 0
 
     if os.path.splitext(source)[1] or os.sep in source:

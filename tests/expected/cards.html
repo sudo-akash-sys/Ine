@@ -2,7 +2,19 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Company Name</title>
+<style>
+body { margin: 0; font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; line-height: 1.5; color: #1a202c; }
+.banner { padding: 3.5rem 1.5rem; text-align: center; }
+.card { border: 1px solid #e2e8f0; border-radius: 10px; padding: 1.25rem; }
+.footer { display: flex; padding: 1.25rem 1.5rem; justify-content: center; }
+.header { display: flex; align-items: center; justify-content: space-between; padding: 0.75rem 1.5rem; }
+.logo { font-size: 1.15rem; font-weight: 700; }
+.navigation { display: flex; align-items: center; gap: 1.5rem; }
+.page { min-height: 100vh; }
+@media (max-width: 768px) { .card-group { flex-direction: column; } }
+</style>
 </head>
 <body>
 <div class="page">
@@ -11,18 +23,18 @@
     <div class="logo">Company Name</div>
     <nav class="navigation"></nav>
   </header>
-  <div class="main">
-    <div class="hero">Welcome to Our Site</div>
-    <div class="card-group" style="display:flex;gap:20px">
-      <article class="card-1" style="flex:1">
+  <div class="container main">
+    <div class="banner hero">Welcome to Our Site</div>
+    <div class="card-group" style="display:flex; gap:20px">
+      <article class="card card-1" style="flex:1">
           <h3>Fast</h3>
           Lightning-quick rendering with no wasted motion.
       </article>
-      <article class="card-2" style="flex:1">
+      <article class="card card-2" style="flex:1">
           <h3>Simple</h3>
           Describe what you want; the machine handles the rest.
       </article>
-      <article class="card-3" style="flex:1">
+      <article class="card card-3" style="flex:1">
           <h3>Reliable</h3>
           One semantic model, three proven targets.
       </article>

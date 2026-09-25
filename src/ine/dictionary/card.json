@@ -8,6 +8,33 @@
     "border": "subtle",
     "corner-radius": "slight"
   },
+  "style": {
+    "properties": {
+      "padding": {
+        "css": "padding",
+        "values": {
+          "compact": "0.75rem",
+          "comfortable": "1.25rem",
+          "generous": "2rem"
+        }
+      },
+      "border": {
+        "css": "border",
+        "values": {
+          "subtle": "1px solid #e2e8f0",
+          "none": "none"
+        }
+      },
+      "corner-radius": {
+        "css": "border-radius",
+        "values": {
+          "none": "0",
+          "slight": "10px",
+          "round": "999px"
+        }
+      }
+    }
+  },
   "implementation": {
     "html": "article or div",
     "guess": ["border: 1px solid light", "border-radius: 6-10px", "padding: 20px"]

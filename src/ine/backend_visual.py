@@ -7,6 +7,7 @@ layout, where a bar sits) come from the dictionary's machine-readable
 hints -- the same class of backend detail as the `element` field.
 """
 
+import re
 import tkinter as tk
 
 from . import dictionary
@@ -54,6 +55,86 @@ def _children_of(model, parent_id):
 
 def _kind_of(model, entity_id):
     return model.entities[entity_id].kind
+
+
+# tkinter wants pixels; the dictionary writes CSS. 1rem reads as 16px.
+_REM_PX = 16
+
+# (pady, padx) for a kind that declares no `padding` hint -- the literals the
+# logo branch packed with before the hints were read (padx=16, pady=8).
+_FALLBACK_PADDING = (8, 16)
+
+
+def _hint_lengths(kind, name):
+    """Every pixel length the kind's named hint word carries, in order.
+
+    Reads `style.properties.<name>.values[<defaults hint word>]` and pulls
+    the lengths out of the CSS value: `1.25rem` is one, `3.5rem 1.5rem` is
+    two, `none` is none. An unknown kind, a kind that declares no such hint,
+    or a hint word the `values` table does not know gives an empty list --
+    the dictionary advises, and we only read what it has evidence for.
+
+    Where a hint mixes a length with something else (`border` is
+    `1px solid #e2e8f0`), only the length is kept.
+    """
+    entry = _dictionary_entry(kind)
+    if not isinstance(entry, dict):
+        return []
+    defaults = entry.get("defaults")
+    style = entry.get("style")
+    if not isinstance(defaults, dict) or not isinstance(style, dict):
+        return []
+    word = defaults.get(name)
+    properties = style.get("properties")
+    if not isinstance(word, str) or not isinstance(properties, dict):
+        return []
+    spec = properties.get(name)
+    if not isinstance(spec, dict):
+        return []
+    values = spec.get("values")
+    if not isinstance(values, dict):
+        return []
+    raw = values.get(word)
+    if not isinstance(raw, str):
+        return []
+
+    lengths = []
+    for token in raw.split():
+        match = re.fullmatch(r"(\d+(?:\.\d+)?)(rem|px)?", token)
+        if match is None:
+            continue
+        number = float(match.group(1))
+        if match.group(2) == "rem":
+            number *= _REM_PX
+        lengths.append(int(round(number)))
+    return lengths
+
+
+def _hint_px(kind, name):
+    """The kind's named hint as one integer pixel value, or None.
+
+    The leading length of the hint word's CSS value: `comfortable` ->
+    `1.25rem` -> 20. None when the kind or the hint is absent.
+    """
+    lengths = _hint_lengths(kind, name)
+    return lengths[0] if lengths else None
+
+
+def _padding_of(model, entity_id):
+    """The (pady, padx) an entity's kind asks for, in pixels.
+
+    Comes from the kind's `padding` hint when the dictionary declares one
+    (`banner` declares `generous` -> `3.5rem 1.5rem` -> vertical 56,
+    horizontal 24). A CSS shorthand with a single length pads all four
+    sides, so that one length serves both axes. A kind with no `padding`
+    hint (`logo`, `navigation`) keeps the renderer's earlier literals.
+    """
+    lengths = _hint_lengths(_kind_of(model, entity_id), "padding")
+    if not lengths:
+        return _FALLBACK_PADDING
+    pady = lengths[0]
+    padx = lengths[1] if len(lengths) > 1 else pady
+    return (pady, padx)
 
 
 def _layout_of(model, entity_id):
@@ -134,6 +215,7 @@ def _render_entity(parent_widget, model, entity_id, side="top"):
     text = model.properties.get((entity_id, "text"))
     title = model.properties.get((entity_id, "title"))
     kind = _kind_of(model, entity_id)
+    pady, padx = _padding_of(model, entity_id)
 
     if kind == "page":
         frame = tk.Frame(parent_widget, bg=bg)
@@ -158,12 +240,12 @@ def _render_entity(parent_widget, model, entity_id, side="top"):
     if kind == "logo":
         tk.Label(parent_widget, text=str(text or ""), bg=bg, fg=fg,
                  font=("Arial", 14, "bold")).pack(
-            side=tk.LEFT, padx=16, pady=8)
+            side=tk.LEFT, padx=padx, pady=pady)
         return None
 
     if kind == "navigation":
         frame = tk.Frame(parent_widget, bg=bg)
-        frame.pack(side=tk.RIGHT, padx=16)
+        frame.pack(side=tk.RIGHT, padx=padx)
         if text:
             tk.Label(frame, text=str(text), bg=bg, fg=fg,
                      font=("Arial", 11)).pack(side=tk.LEFT, padx=8)
@@ -179,7 +261,7 @@ def _render_entity(parent_widget, model, entity_id, side="top"):
             frame.pack(side=tk.TOP, fill=tk.X)
         if text:
             tk.Label(frame, text=str(text), bg=bg, fg=fg,
-                     font=("Arial", 22, "bold")).pack(pady=48, padx=24)
+                     font=("Arial", 22, "bold")).pack(pady=pady, padx=padx)
         for child_id in children_ids:
             _render_entity(frame, model, child_id)
         return frame

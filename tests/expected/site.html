@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Northwind Studio</title>
+<style>
+body { margin: 0; font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; line-height: 1.5; color: #1a202c; }
+.banner { padding: 3.5rem 1.5rem; text-align: center; }
+.card { border: 1px solid #e2e8f0; border-radius: 10px; padding: 1.25rem; }
+.footer { display: flex; padding: 1.25rem 1.5rem; justify-content: center; }
+.header { display: flex; align-items: center; justify-content: space-between; padding: 0.75rem 1.5rem; }
+.logo { font-size: 1.15rem; font-weight: 700; }
+.navigation { display: flex; align-items: center; gap: 1.5rem; }
+.page { min-height: 100vh; }
+@media (max-width: 768px) { .card-group { flex-direction: column; } }
+</style>
+</head>
+<body>
+<div class="page">
+<h1>Northwind Studio</h1>
+  <header class="header">
+    <div class="logo brand">Northwind</div>
+    <nav class="navigation nav" style="gap: 2.5rem">Work, Studio, Notes</nav>
+  </header>
+  <div class="container main">
+    <div class="banner intro">
+        <h3>We build calm software.</h3>
+        Small tools that do one thing properly, then get out of the way.
+    </div>
+    <div class="card-group features" style="display:flex; gap:20px">
+      <article class="card f1" style="flex:1">
+          <h3>Fewer moving parts</h3>
+          Every feature we ship removes work rather than adding it.
+      </article>
+      <article class="card f2" style="flex:1">
+          <h3>Quiet by default</h3>
+          No notifications, no dashboards, no numbers nobody reads.
+      </article>
+      <article class="card f3" style="flex:1">
+          <h3>Yours to leave</h3>
+          Plain files and open formats. Your work outlives the tool.
+      </article>
+    </div>
+  </div>
+  <div class="container work">
+    <div class="banner ethos" style="padding: 2rem 1.5rem">
+        <h3>How we work</h3>
+    </div>
+    <div class="card-group approach" style="display:flex; gap:20px">
+      <article class="card a1" style="flex:1; border: none; border-radius: 0; padding: 0.75rem">
+          <h3>We start small</h3>
+          A week of work, and then we look at it together.
+      </article>
+      <article class="card a2" style="flex:1; border: none; border-radius: 0; padding: 0.75rem">
+          <h3>We stay in the open</h3>
+          Every decision is written down where you can read it.
+      </article>
+      <article class="card a3" style="flex:1; border: none; border-radius: 0; padding: 0.75rem">
+          <h3>We finish</h3>
+          Shipping beats polishing, so we ship.
+      </article>
+    </div>
+  </div>
+  <section class="section cta">
+    <button class="button action">Start a project</button>
+  </section>
+  <footer class="footer">Northwind Studio</footer>
+</div>
+</body>
+</html>

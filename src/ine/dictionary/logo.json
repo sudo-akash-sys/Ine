@@ -7,6 +7,18 @@
     "style": "strong",
     "interactive": "false by default - whether the logo is itself a link (not settable yet: Ine has no boolean values)"
   },
+  "style": {
+    "base": ["font-size: 1.15rem"],
+    "properties": {
+      "style": {
+        "css": "font-weight",
+        "values": {
+          "strong": "700",
+          "normal": "400"
+        }
+      }
+    }
+  },
   "implementation": {
     "html": "text in a span or div, or an image if an asset exists",
     "guess": ["bold", "slightly larger than body text"]

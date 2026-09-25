@@ -8,6 +8,26 @@
     "padding": "generous",
     "separation": "stands apart from content below"
   },
+  "style": {
+    "properties": {
+      "text-alignment": {
+        "css": "text-align",
+        "values": {
+          "center": "center",
+          "left": "left",
+          "right": "right"
+        }
+      },
+      "padding": {
+        "css": "padding",
+        "values": {
+          "compact": "1rem 1.5rem",
+          "comfortable": "2rem 1.5rem",
+          "generous": "3.5rem 1.5rem"
+        }
+      }
+    }
+  },
   "implementation": {
     "html": "section or div",
     "guess": ["text-align: center", "large heading", "padding: 2-4rem"]

@@ -11,6 +11,17 @@
     "growing-child": "a container child between bars",
     "contains": ["container", "footer", "header", "section"]
   },
+  "style": {
+    "properties": {
+      "size": {
+        "css": "min-height",
+        "values": {
+          "fill viewport": "100vh",
+          "fit children": "auto"
+        }
+      }
+    }
+  },
   "implementation": {
     "html": "the document's root block",
     "guess": ["min-height: 100vh", "display: flex", "flex-direction: column", "the growing child gets flex: 1"]

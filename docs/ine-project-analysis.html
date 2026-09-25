@@ -1,0 +1,948 @@
+<title>Ine: Project Analysis & Industry Positioning</title>
+
+<style>
+:root {
+  --bg: #fafaf8;
+  --surface: #ffffff;
+  --text: #1a1a18;
+  --text-secondary: #5a5a54;
+  --accent: #2563eb;
+  --accent-light: #dbeafe;
+  --border: #e5e5e0;
+  --good: #059669;
+  --warning: #d97706;
+  --critical: #dc2626;
+  --neutral: #78716f;
+  --serif: "Merriweather", Georgia, serif;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --mono: "Fira Code", "Courier New", monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #15140f;
+    --surface: #1f1e1a;
+    --text: #e8e6e1;
+    --text-secondary: #a5a39f;
+    --accent: #60a5fa;
+    --accent-light: #1e3a8a;
+    --border: #3a3933;
+    --good: #10b981;
+    --warning: #f59e0b;
+    --critical: #ef4444;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #15140f;
+  --surface: #1f1e1a;
+  --text: #e8e6e1;
+  --text-secondary: #a5a39f;
+  --accent: #60a5fa;
+  --accent-light: #1e3a8a;
+  --border: #3a3933;
+  --good: #10b981;
+  --warning: #f59e0b;
+  --critical: #ef4444;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: var(--sans);
+  line-height: 1.6;
+  color: var(--text);
+  background: var(--bg);
+  padding: 0 1.5rem 2rem;
+  font-size: 15px;
+}
+
+h1, h2, h3, h4 {
+  font-family: var(--serif);
+  font-weight: 700;
+  margin-top: 2rem;
+  margin-bottom: 0.75rem;
+  line-height: 1.2;
+  text-wrap: balance;
+}
+
+h1 {
+  font-size: 2.25rem;
+  color: var(--accent);
+  margin-top: 0;
+}
+
+h2 {
+  font-size: 1.5rem;
+  border-bottom: 2px solid var(--accent-light);
+  padding-bottom: 0.5rem;
+}
+
+h3 {
+  font-size: 1.125rem;
+  color: var(--text);
+}
+
+h4 {
+  font-size: 1rem;
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+p, li { margin-bottom: 1rem; }
+
+section {
+  max-width: 900px;
+  margin: 0 auto;
+  background: var(--surface);
+  border-radius: 8px;
+  padding: 2rem;
+  margin-top: 2rem;
+  border: 1px solid var(--border);
+}
+
+section:first-of-type { margin-top: 1.5rem; }
+
+.grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+  margin: 1rem 0;
+}
+
+@media (max-width: 700px) {
+  .grid-2 { grid-template-columns: 1fr; }
+}
+
+.stat-box {
+  background: var(--accent-light);
+  color: var(--accent);
+  padding: 1.5rem;
+  border-radius: 6px;
+  border-left: 4px solid var(--accent);
+}
+
+.stat-box h4 {
+  color: var(--accent);
+  margin-bottom: 0.25rem;
+}
+
+.stat-box .value {
+  font-size: 1.75rem;
+  font-weight: 700;
+  font-family: var(--mono);
+}
+
+.badge {
+  display: inline-block;
+  padding: 0.35rem 0.75rem;
+  border-radius: 4px;
+  font-size: 0.875rem;
+  font-weight: 600;
+  margin-right: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.badge.strength { background: rgba(16, 185, 129, 0.15); color: var(--good); }
+.badge.weakness { background: rgba(220, 38, 38, 0.15); color: var(--critical); }
+.badge.opportunity { background: rgba(217, 119, 6, 0.15); color: var(--warning); }
+.badge.neutral { background: rgba(120, 113, 111, 0.15); color: var(--neutral); }
+
+ul, ol { margin-left: 1.5rem; }
+li { margin-bottom: 0.75rem; }
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1.5rem 0;
+  font-size: 0.95rem;
+}
+
+th, td {
+  text-align: left;
+  padding: 0.875rem;
+  border-bottom: 1px solid var(--border);
+}
+
+th {
+  background: var(--accent-light);
+  color: var(--accent);
+  font-weight: 700;
+}
+
+tr:hover { background: rgba(37, 99, 235, 0.03); }
+
+code {
+  font-family: var(--mono);
+  font-size: 0.9em;
+  background: rgba(37, 99, 235, 0.08);
+  padding: 0.2em 0.4em;
+  border-radius: 3px;
+  color: var(--accent);
+}
+
+.comparison-table {
+  margin: 2rem 0;
+}
+
+.comparison-row {
+  display: grid;
+  grid-template-columns: 150px 1fr 1fr 1fr;
+  gap: 1rem;
+  padding: 1rem;
+  border: 1px solid var(--border);
+  margin-bottom: 0.5rem;
+  border-radius: 4px;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .comparison-row {
+    grid-template-columns: 1fr;
+    padding: 1rem;
+  }
+}
+
+.comparison-row > div:first-child {
+  font-weight: 700;
+  color: var(--text-secondary);
+  min-width: 140px;
+}
+
+.score-bar {
+  display: flex;
+  gap: 0.25rem;
+  margin: 0.5rem 0;
+}
+
+.score-segment {
+  height: 8px;
+  flex: 1;
+  border-radius: 2px;
+  background: var(--border);
+}
+
+.score-segment.filled {
+  background: var(--accent);
+}
+
+.rating {
+  display: inline-block;
+  padding: 0.25rem 0.75rem;
+  border-radius: 3px;
+  font-weight: 600;
+  font-size: 0.875rem;
+}
+
+.rating.high { background: rgba(16, 185, 129, 0.15); color: var(--good); }
+.rating.medium { background: rgba(217, 119, 6, 0.15); color: var(--warning); }
+.rating.low { background: rgba(220, 38, 38, 0.15); color: var(--critical); }
+
+.highlight {
+  background: var(--accent-light);
+  padding: 1.5rem;
+  border-radius: 6px;
+  border-left: 4px solid var(--accent);
+  margin: 1.5rem 0;
+}
+
+.highlight strong {
+  display: block;
+  margin-bottom: 0.5rem;
+  color: var(--accent);
+}
+
+.metric-group {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 1rem;
+  margin: 1.5rem 0;
+}
+
+.metric-card {
+  background: var(--accent-light);
+  padding: 1rem;
+  border-radius: 6px;
+  border: 1px solid var(--accent);
+}
+
+.metric-card h4 {
+  color: var(--accent);
+  margin-bottom: 0.5rem;
+  font-size: 0.95rem;
+}
+
+.metric-card .metric-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  font-family: var(--mono);
+  color: var(--accent);
+}
+
+.footer-note {
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  margin-top: 3rem;
+  padding-top: 2rem;
+  border-top: 1px solid var(--border);
+}
+
+</style>
+
+<section>
+  <h1>Ine: Comprehensive Project Analysis</h1>
+  <p style="color: var(--text-secondary); font-size: 1.05rem; margin-bottom: 2rem;">
+    A deep technical, architectural, and market analysis of the Ine intent-expression language, including positioning against contemporary tooling.
+  </p>
+</section>
+
+<section>
+  <h2>Executive Summary</h2>
+  <p>
+    Ine is a deliberately scoped, early-stage declarative language for expressing user interface intent across multiple targets (HTML, native, visual). It demonstrates strong foundational engineering, clear architectural discipline, and a grounded philosophy that prioritizes evidence over speculation.
+  </p>
+
+  <div class="highlight">
+    <strong>Maturity Level: Pre-Beta (Alpha)</strong>
+    Ine is production-ready in narrow use cases and demonstrates professional quality in core implementation. It is not ready for general release but is suitable for experimental adoption by teams with flexibility around language design and willing to engage in shaping the vocabulary.
+  </div>
+
+  <div class="metric-group">
+    <div class="metric-card">
+      <h4>Code Maturity</h4>
+      <div class="metric-value">7.5/10</div>
+      <p style="font-size: 0.9rem; margin-top: 0.5rem;">Solid core, good test coverage, frozen parser layer.</p>
+    </div>
+    <div class="metric-card">
+      <h4>Architecture</h4>
+      <div class="metric-value">8.5/10</div>
+      <p style="font-size: 0.9rem; margin-top: 0.5rem;">Clean layering, single source of truth, disciplined constraints.</p>
+    </div>
+    <div class="metric-card">
+      <h4>Product Readiness</h4>
+      <div class="metric-value">4/10</div>
+      <p style="font-size: 0.9rem; margin-top: 0.5rem;">CLI works; editor prototype incomplete; documentation adequate but sparse.</p>
+    </div>
+    <div class="metric-card">
+      <h4>Market Timing</h4>
+      <div class="metric-value">6/10</div>
+      <p style="font-size: 0.9rem; margin-top: 0.5rem;">Good idea, early landscape, low adoption barriers, but unclear differentiation vs. component-based UI.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>What Ine Is</h2>
+  <p>
+    Ine is a <strong>single-source, multi-target declarative language</strong> for describing user interface <em>intent</em> — not implementation. A developer writes what they want (entities, properties, containment relationships), and implementations render it to different targets.
+  </p>
+
+  <div class="grid-2">
+    <div>
+      <h4>The Intent</h4>
+      <code style="display: block; padding: 1rem; margin: 0.5rem 0; background: var(--bg); border-radius: 4px;">make page
+page title "App"
+make header
+header inside page
+make logo
+logo text "Brand"
+logo inside header</code>
+    </div>
+    <div>
+      <h4>The Outputs</h4>
+      <ul style="margin-left: 1rem;">
+        <li><strong>HTML:</strong> Renders to DOM (byte-identical goldens)</li>
+        <li><strong>Visual:</strong> Tkinter preview window</li>
+        <li><strong>Native:</strong> C code (research phase)</li>
+        <li><strong>Dictionary:</strong> Discoverable vocabulary</li>
+      </ul>
+    </div>
+  </div>
+
+  <p>
+    The language is <strong>not</strong> Turing-complete, nor intended to be. It deliberately excludes conditionals, loops, imports, and styling — boundaries that clarify scope and keep the vocabulary grounded in evidence.
+  </p>
+</section>
+
+<section>
+  <h2>Strengths</h2>
+
+  <div style="margin-top: 1.5rem;">
+    <h3 style="margin-top: 0;">1. Architectural Discipline</h3>
+    <span class="badge strength">Clean Separation</span>
+    <span class="badge strength">Single Source of Truth</span>
+    <span class="badge strength">Evidence-Based Vocabulary</span>
+    <p>
+      The dictionary is the only discoverable knowledge base. No second vocabulary lives in the editor, the CLI, or anywhere else. This eliminates a whole class of synchronization bugs and keeps maintenance cost linear instead of combinatorial. The lexer → parser → semantic → backend pipeline is frozen at the parser layer, making feature additions deliberate rather than emergent.
+    </p>
+
+    <h3>2. Real Runnable Code</h3>
+    <span class="badge strength">Lexer/Parser Complete</span>
+    <span class="badge strength">235 Passing Tests</span>
+    <span class="badge strength">Golden Files Byte-Identical</span>
+    <p>
+      Ine ships working implementations. The HTML backend produces pixel-identical output for every golden example. The visual backend renders live Tkinter windows. The native backend compiles to executable C. This is not a specification or a proposal — it runs, and its behavior is verifiable.
+    </p>
+
+    <h3>3. Evidence-Grounded Vocabulary</h3>
+    <span class="badge strength">Conservative Scoping</span>
+    <span class="badge strength">Real Programs Ground Design</span>
+    <span class="badge strength">Intentional Gaps</span>
+    <p>
+      Features are added only after existing programs demonstrate need. The dictionary reconciliation (Session 31) verified that every statement in real programs (hello, topbar, hero, cards) is dictionary-covered. Proposed features without evidence — <code>search</code>, <code>subtitle</code>, <code>button inside header</code> — are explicitly blocked rather than ignored, with reasoning documented in BLOCKERS.md.
+    </p>
+
+    <h3>4. Editor Foundation Ready</h3>
+    <span class="badge strength">JSON-Lines Protocol</span>
+    <span class="badge strength">Persistent Worker</span>
+    <span class="badge strength">Context-Aware Completion</span>
+    <p>
+      The autocomplete engine speaks a clean JSON protocol over stdin/stdout. The VS Code extension is a pure proxy (zero Ine vocabulary). The persistent worker persists across keystrokes; completion latency is 0.3ms warm vs. 140ms cold, making interactive editing feasible. Value completion (shapes, hints) is dictionary-driven and works without extension changes.
+    </p>
+
+    <h3>5. Clear Operating Rules</h3>
+    <span class="badge strength">Documented Philosophy</span>
+    <span class="badge strength">WORKBOOK § Decision Records</span>
+    <span class="badge strength">Autonomous Development</span>
+    <p>
+      AGENTS.md defines how autonomous work proceeds. .agent/ control-plane (MISSION.md, PLAN.md, DECISIONS.md, BLOCKERS.md, STATE.md, HISTORY.md) serves as a permanent record of why decisions were made. ine-agent supervisor tool enables deterministic, staged work without human bottlenecks.
+    </p>
+
+    <h3>6. Apache 2.0 & Launch Ready</h3>
+    <span class="badge strength">Clear Licensing</span>
+    <span class="badge strength">Freshly Named</span>
+    <span class="badge strength">Repository Hygiene</span>
+    <p>
+      The project underwent a rename from MyLanguage to Ine (Intent Expression) and prepared Apache 2.0 licensing. Entry point and dependencies are clean. pyproject.toml is present. The project is ready to open-source.
+    </p>
+  </div>
+
+</section>
+
+<section>
+  <h2>Weaknesses & Gaps</h2>
+
+  <div style="margin-top: 1.5rem;">
+    <h3 style="margin-top: 0;">1. Incomplete Editor Ecosystem</h3>
+    <span class="badge weakness">VSCode Extension Only</span>
+    <span class="badge weakness">No Diagnostics</span>
+    <span class="badge weakness">No Formatting</span>
+    <p>
+      The VS Code extension is a working prototype but lacks language server integration, diagnostics (underlines for errors), formatting, and hover. There is no extension for other editors. The extension is not packaged or discoverable on the VS Code Marketplace.
+    </p>
+    <p style="color: var(--warning); font-weight: 600;">
+      Impact: Developer experience degrades outside VS Code. Error messages appear only after compilation, not inline during editing.
+    </p>
+
+    <h3>2. Native Backend Immature</h3>
+    <span class="badge weakness">Research Phase Only</span>
+    <span class="badge weakness">C Emission Only</span>
+    <span class="badge weakness">No Runtime</span>
+    <p>
+      The C backend emits code but targets only <code>say</code> statements and simple console output. There is no runtime that understands UI semantics — no layout engine, no rendering, no native components. The claim "native target" is misleading; it is a transpiler for output programs, not a full target.
+    </p>
+
+    <h3>3. Vocabulary Footprint Too Small</h3>
+    <span class="badge weakness">15 Kinds Only</span>
+    <span class="badge weakness">No Custom Domains</span>
+    <span class="badge weakness">Real Programs Limited</span>
+    <p>
+      The dictionary covers only web UI components (page, header, card, section, etc.). There is no vocabulary for:
+    </p>
+    <ul>
+      <li>Tables, lists, forms, inputs, dropdowns</li>
+      <li>Modals, popovers, tooltips, dropdowns</li>
+      <li>Custom domain languages (dashboards, data editors, real business tools)</li>
+      <li>Responsive behavior, media queries, breakpoints</li>
+    </ul>
+    <p style="color: var(--warning); font-weight: 600;">
+      Impact: The language is demo-scale. Real applications require vocabulary that does not exist.
+    </p>
+
+    <h3>4. No Styling or Theming</h3>
+    <span class="badge weakness">Hard-Coded Defaults</span>
+    <span class="badge weakness">No CSS/Variables</span>
+    <span class="badge weakness">No Customization</span>
+    <p>
+      The HTML backend outputs hard-coded styles (flexbox rows, gaps, colors). There is no way to theme or customize appearance. The visual backend hard-codes Tkinter colors and fonts. Swapping a color palette or font family requires editing dictionary.py or backend code, not declaring it in Ine.
+    </p>
+
+    <h3>5. Weak Documentation</h3>
+    <span class="badge weakness">No Tutorial</span>
+    <span class="badge weakness">Minimal API Docs</span>
+    <span class="badge weakness">LANGUAGE.md Sparse</span>
+    <p>
+      README.md covers basic syntax and examples. LANGUAGE.md specifies the grammar but does not explain the design philosophy or guide users through common patterns. There is no tutorial beyond examples. The dictionary readme explains the architecture but not how to use it as a programmer.
+    </p>
+
+    <h3>6. No Tooling or Infrastructure</h3>
+    <span class="badge weakness">No Package Manager</span>
+    <span class="badge weakness">No Registry</span>
+    <span class="badge weakness">No CI/CD Integration</span>
+    <p>
+      Ine has no standard library mechanism, no way to share components, no central registry of vocabularies. Every vocabulary is built into the dictionary.json files. There is no plugin system, no way to extend the language without forking it.
+    </p>
+
+    <h3>7. Limited Real-World Examples</h3>
+    <span class="badge weakness">Mostly Landing Pages</span>
+    <span class="badge weakness">No Dashboard Examples</span>
+    <span class="badge weakness">No Complex Forms</span>
+    <p>
+      All four golden examples (hello, topbar, hero, cards) are static landing page slices. There are no examples of data tables, form submission, interactive controls, or stateful applications. This limits confidence in the language's real-world viability.
+    </p>
+
+    <h3>8. No Type Safety Beyond Declarations</h3>
+    <span class="badge weakness">Advisory Dictionary</span>
+    <span class="badge weakness">No Validation</span>
+    <span class="badge weakness">Runtime Errors Later</span>
+    <p>
+      The dictionary is advisory — it never validates. A program that uses undefined kinds or properties is syntactically valid and semantically legal in Ine, but fails at render time with an opaque BackendError. This delays feedback and makes debugging harder.
+    </p>
+
+  </div>
+
+</section>
+
+<section>
+  <h2>Technical Positioning vs. Alternatives</h2>
+
+  <table class="comparison-table">
+    <thead>
+      <tr>
+        <th>Dimension</th>
+        <th>Ine</th>
+        <th>React JSX</th>
+        <th>SwiftUI</th>
+        <th>Flutter</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td style="font-weight: 700;">Syntax</td>
+        <td>Declarative, intent-based</td>
+        <td>Imperative, composition-based</td>
+        <td>Declarative, property-based</td>
+        <td>Declarative, widget-based</td>
+      </tr>
+      <tr>
+        <td style="font-weight: 700;">Targets</td>
+        <td>HTML, native (research), visual</td>
+        <td>DOM only (others via adapters)</td>
+        <td>iOS/macOS only</td>
+        <td>iOS, Android, web</td>
+      </tr>
+      <tr>
+        <td style="font-weight: 700;">Learning Curve</td>
+        <td>Very low (domain-specific)</td>
+        <td>Medium (JavaScript + React)</td>
+        <td>Medium (Swift basics required)</td>
+        <td>Medium (Dart)</td>
+      </tr>
+      <tr>
+        <td style="font-weight: 700;">Power/Expressiveness</td>
+        <td>Low (intentional)</td>
+        <td>Very high (Turing-complete)</td>
+        <td>Very high</td>
+        <td>Very high</td>
+      </tr>
+      <tr>
+        <td style="font-weight: 700;">State Management</td>
+        <td>Declared only; no behavior</td>
+        <td>Hooks, Redux, MobX, etc.</td>
+        <td>@State, @ObservedObject</td>
+        <td>Provider, Riverpod, GetX</td>
+      </tr>
+      <tr>
+        <td style="font-weight: 700;">Maturity</td>
+        <td>Alpha</td>
+        <td>Stable (10+ years)</td>
+        <td>Stable (5+ years)</td>
+        <td>Stable (5+ years)</td>
+      </tr>
+      <tr>
+        <td style="font-weight: 700;">Community Size</td>
+        <td>~1 person</td>
+        <td>Millions</td>
+        <td>100,000s</td>
+        <td>100,000s</td>
+      </tr>
+      <tr>
+        <td style="font-weight: 700;">Job Market</td>
+        <td>0 (prerelease)</td>
+        <td>Tens of thousands</td>
+        <td>Thousands</td>
+        <td>Thousands</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="highlight" style="margin-top: 2rem;">
+    <strong>Where Ine Fits</strong>
+    <p style="margin-top: 0.75rem;">
+      Ine occupies a narrow niche: <strong>teams building UI-heavy applications who want to declare intent once and render to multiple targets without writing target-specific code</strong>. This is not most teams (most prefer deep expertise in one platform). It is the intersection of cross-platform ambition and intent-driven design — valid but small.
+    </p>
+  </div>
+
+</section>
+
+<section>
+  <h2>Competitive Landscape</h2>
+
+  <div class="comparison-row">
+    <div>Web-Focused</div>
+    <div>
+      <strong>React, Vue, Svelte, Angular</strong><br/>
+      Mature, massive ecosystems, deep DOM knowledge. Win on stability, plugins, jobs. Ine does not compete here.
+    </div>
+  </div>
+
+  <div class="comparison-row">
+    <div>Cross-Platform</div>
+    <div>
+      <strong>Flutter, React Native, Ionic, Capacitor</strong><br/>
+      Multi-target at scale. Flutter compiles to native; React Native shares JS runtime. Ine's ambition is similar but execution and maturity differ vastly.
+    </div>
+  </div>
+
+  <div class="comparison-row">
+    <div>Design Systems</div>
+    <div>
+      <strong>Figma, Storybook, Chromatic</strong><br/>
+      Intent → component libraries. Ine's philosophy aligns (single source of truth) but delivery is via visual tools, not code.
+    </div>
+  </div>
+
+  <div class="comparison-row">
+    <div>Domain-Specific</div>
+    <div>
+      <strong>Temporal, Supabase, Airtable automations</strong><br/>
+      Low-code UI builders. Ine is code-first; these are GUI-first. Different audiences.
+    </div>
+  </div>
+
+  <p style="margin-top: 1.5rem; color: var(--text-secondary);">
+    <strong>Conclusion:</strong> Ine does not have direct competitors because its niche (declarative intent language compiling to multiple platforms) is currently underserved. The risk is that it remains underserved because demand is too small to justify the effort.
+  </p>
+
+</section>
+
+<section>
+  <h2>Quality Assessment by Layer</h2>
+
+  <div class="metric-group">
+    <div class="metric-card">
+      <h4>Lexer (lexer.py)</h4>
+      <div class="score-bar">
+        <div class="score-segment filled"></div>
+        <div class="score-segment filled"></div>
+        <div class="score-segment filled"></div>
+        <div class="score-segment filled"></div>
+        <div class="score-segment filled"></div>
+        <div class="score-segment"></div>
+        <div class="score-segment"></div>
+        <div class="score-segment"></div>
+        <div class="score-segment"></div>
+        <div class="score-segment"></div>
+      </div>
+      <p style="font-size: 0.9rem; margin-top: 0.5rem;">Solid. Handles strings, numbers, keywords, identifiers, comments. No ambiguity.</p>
+    </div>
+
+    <div class="metric-card">
+      <h4>Parser (parser.py)</h4>
+      <div class="score-bar">
+        <div class="score-segment filled"></div>
+        <div class="score-segment filled"></div>
+        <div class="score-segment filled"></div>
+        <div class="score-segment filled"></div>
+        <div class="score-segment filled"></div>
+        <div class="score-segment"></div>
+        <div class="score-segment"></div>
+        <div class="score-segment"></div>
+        <div class="score-segment"></div>
+        <div class="score-segment"></div>
+      </div>
+      <p style="font-size: 0.9rem; margin-top: 0.5rem;">Robust. Explicit error handling, edge cases covered. Grammar is stable (frozen).</p>
+    </div>
+
+    <div class="metric-card">
+      <h4>Semantic (semantic.py)</h4>
+      <div class="score-bar">
+        <div class="score-segment filled"></div>
+        <div class="score-segment filled"></div>
+        <div class="score-segment filled"></div>
+        <div class="score-segment filled"></div>
+        <div class="score-segment filled"></div>
+        <div class="score-segment"></div>
+        <div class="score-segment"></div>
+        <div class="score-segment"></div>
+        <div class="score-segment"></div>
+        <div class="score-segment"></div>
+      </div>
+      <p style="font-size: 0.9rem; margin-top: 0.5rem;">Good. Validates relationships, detects cycles and duplicates. Advisory only (does not enforce dictionary).</p>
+    </div>
+
+    <div class="metric-card">
+      <h4>HTML Backend (backend_html.py)</h4>
+      <div class="score-bar">
+        <div class="score-segment filled"></div>
+        <div class="score-segment filled"></div>
+        <div class="score-segment filled"></div>
+        <div class="score-segment filled"></div>
+        <div class="score-segment filled"></div>
+        <div class="score-segment"></div>
+        <div class="score-segment"></div>
+        <div class="score-segment"></div>
+        <div class="score-segment"></div>
+        <div class="score-segment"></div>
+      </div>
+      <p style="font-size: 0.9rem; margin-top: 0.5rem;">Very good. Byte-identical goldens, handles nesting, correct rendering order.</p>
+    </div>
+
+    <div class="metric-card">
+      <h4>Dictionary (dictionary.py)</h4>
+      <div class="score-bar">
+        <div class="score-segment filled"></div>
+        <div class="score-segment filled"></div>
+        <div class="score-segment filled"></div>
+        <div class="score-segment filled"></div>
+        <div class="score-segment filled"></div>
+        <div class="score-segment filled"></div>
+        <div class="score-segment"></div>
+        <div class="score-segment"></div>
+        <div class="score-segment"></div>
+        <div class="score-segment"></div>
+      </div>
+      <p style="font-size: 0.9rem; margin-top: 0.5rem;">Strong design (single source of truth), good API, but lacks type hints and error handling tests.</p>
+    </div>
+
+    <div class="metric-card">
+      <h4>Autocomplete (autocomplete.py)</h4>
+      <div class="score-bar">
+        <div class="score-segment filled"></div>
+        <div class="score-segment filled"></div>
+        <div class="score-segment filled"></div>
+        <div class="score-segment filled"></div>
+        <div class="score-segment filled"></div>
+        <div class="score-segment filled"></div>
+        <div class="score-segment"></div>
+        <div class="score-segment"></div>
+        <div class="score-segment"></div>
+        <div class="score-segment"></div>
+      </div>
+      <p style="font-size: 0.9rem; margin-top: 0.5rem;">Good protocol design, context detection works, but misses `group`/`say` keywords; needs edge case fixes.</p>
+    </div>
+  </div>
+
+</section>
+
+<section>
+  <h2>Development Quality</h2>
+
+  <div class="grid-2">
+    <div>
+      <h3>Positive Signals</h3>
+      <ul>
+        <li>✅ <strong>235 passing tests</strong> with good coverage (lexer, parser, semantic, backend, dictionary, autocomplete, CLI, agent)</li>
+        <li>✅ <strong>Byte-identical goldens</strong> (4 examples produce exact-match HTML)</li>
+        <li>✅ <strong>Explicit error types</strong> (LexError, SyntaxError, SemanticError, BackendError, VisualError)</li>
+        <li>✅ <strong>Frozen parser</strong> (intentional stability)</li>
+        <li>✅ <strong>No external dependencies</strong> beyond Python stdlib (lean)</li>
+        <li>✅ <strong>Decision records</strong> (WORKBOOK, AGENTS.md, .agent/ control-plane)</li>
+        <li>✅ <strong>Autonomous tooling</strong> (ine-agent supervisor)</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Improvement Opportunities</h3>
+      <ul>
+        <li>⚠️ <strong>No type hints</strong> (dictionary.py, autocomplete.py)</li>
+        <li>⚠️ <strong>Sparse error messages</strong> (BackendError shows class name, not guidance)</li>
+        <li>⚠️ <strong>Limited edge case coverage</strong> (context detection misses keywords, no malformed JSON tests)</li>
+        <li>⚠️ <strong>No deprecation strategy</strong> (frozen layer, but no upgrade path if changes needed)</li>
+        <li>⚠️ <strong>Weak CI/CD</strong> (no GitHub Actions, relies on local test runs)</li>
+        <li>⚠️ <strong>Minimal logging</strong> (debug-unfriendly in production)</li>
+        <li>⚠️ <strong>No performance profiling</strong> (latency targets met, but unknown ceiling)</li>
+      </ul>
+    </div>
+  </div>
+
+</section>
+
+<section>
+  <h2>Go/No-Go Assessment for Adoption</h2>
+
+  <h3>✅ Good Fit For</h3>
+  <ul>
+    <li><strong>Research teams</strong> exploring intent-driven UI generation</li>
+    <li><strong>Cross-platform startups</strong> with MVP-scale ambitions and flexibility on vocabulary</li>
+    <li><strong>Design system teams</strong> wanting to encode UI intent at the specification layer</li>
+    <li><strong>Educational projects</strong> teaching multi-target compilation or language design</li>
+    <li><strong>Proof-of-concept work</strong> where single-source-of-truth architecture is the question</li>
+  </ul>
+
+  <h3>❌ Poor Fit For</h3>
+  <ul>
+    <li><strong>Production SaaS</strong> (incomplete tooling, no LSP, no monitoring)</li>
+    <li><strong>Large teams</strong> (no onboarding; language philosophy must be shared)</li>
+    <li><strong>Complex UIs</strong> (vocabulary too narrow; no tables, modals, inputs, custom domains)</li>
+    <li><strong>Time-sensitive projects</strong> (alpha stage; breaking changes possible)</li>
+    <li><strong>Feature-driven development</strong> (language scoped by evidence rule, not roadmap)</li>
+    <li><strong>Job-market-conscious engineers</strong> (0 job openings; Ine expertise has no market value)</li>
+  </ul>
+
+</section>
+
+<section>
+  <h2>Recommendations for Growth</h2>
+
+  <h3>Phase 1: Stabilization (Immediate)</h3>
+  <ul>
+    <li><strong>Language Server Protocol (LSP):</strong> Enable IDE diagnostics, hover, formatting. This unblocks professional developer experience outside just VS Code.</li>
+    <li><strong>Type Hints:</strong> Add to dictionary.py and autocomplete.py. Improves maintainability and IDE support.</li>
+    <li><strong>Error Messages:</strong> Surface guidance ("page not found; did you mean…?"). Reduces debugging time.</li>
+    <li><strong>Packaging:</strong> Publish to PyPI. Submit VS Code extension to Marketplace.</li>
+  </ul>
+
+  <h3>Phase 2: Vocabulary Expansion (Next 6 months)</h3>
+  <ul>
+    <li><strong>Table, List, Form primitives.</strong> Real applications need these. Evidence-gate by building one dashboard example.</li>
+    <li><strong>Responsive behavior:</strong> Media queries, breakpoints, responsive property values.</li>
+    <li><strong>Custom domain support:</strong> Allow vocabularies outside web UI (data editors, analytics, etc.).</li>
+  </ul>
+
+  <h3>Phase 3: Ecosystem (6–12 months)</h3>
+  <ul>
+    <li><strong>Plugin system:</strong> Let users extend vocabularies without forking.</li>
+    <li><strong>Component registry:</strong> Central repository of reusable vocabularies.</li>
+    <li><strong>Runtime documentation:</strong> Write tutorials, build real-world examples (dashboard, form submission, state).</li>
+    <li><strong>Community Discord/forum:</strong> Build early-adopter community.</li>
+  </ul>
+
+  <h3>Phase 4: Platform (12+ months)</h3>
+  <ul>
+    <li><strong>Web REPL:</strong> Browser-based editor and preview.</li>
+    <li><strong>Design tool integration:</strong> Figma → Ine compiler (intent → code).</li>
+    <li><strong>Backend semantics:</strong> Move beyond rendering; add state, validation, data binding.</li>
+    <li><strong>Native runtime:</strong> Real iOS/Android support (not just C transpiler).</li>
+  </ul>
+
+</section>
+
+<section>
+  <h2>Competitive Advantages</h2>
+
+  <div class="metric-group">
+    <div class="metric-card">
+      <h4 style="margin-top: 0;">Single Source</h4>
+      <p>One vocabulary, multiple targets. No sync problems. Unmatched in the small niche where this matters.</p>
+    </div>
+    <div class="metric-card">
+      <h4 style="margin-top: 0;">Evidence-Based</h4>
+      <p>No guessing. Vocabulary is grounded in real programs. Intentional gaps are documented. Builds trust with users.</p>
+    </div>
+    <div class="metric-card">
+      <h4 style="margin-top: 0;">Teachable</h4>
+      <p>Intent-based syntax is intuitive for non-programmers. Learning curve is days, not weeks.</p>
+    </div>
+    <div class="metric-card">
+      <h4 style="margin-top: 0;">Lean</h4>
+      <p>No framework bloat. Runs on any Python environment. Startup time is milliseconds.</p>
+    </div>
+  </div>
+
+</section>
+
+<section>
+  <h2>Risks & Unknowns</h2>
+
+  <table style="margin-top: 1rem;">
+    <thead>
+      <tr>
+        <th>Risk</th>
+        <th>Probability</th>
+        <th>Impact</th>
+        <th>Mitigation</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Vocabulary too narrow:</strong> Apps need features Ine cannot express</td>
+        <td class="rating medium">Medium</td>
+        <td class="rating high">High</td>
+        <td>Expand Phase 2. Build real-world example to identify gaps early.</td>
+      </tr>
+      <tr>
+        <td><strong>Market too small:</strong> Few teams want intent-driven multi-target UI</td>
+        <td class="rating high">High</td>
+        <td class="rating high">High</td>
+        <td>Focus on early adopters (research, design teams). Build community first.</td>
+      </tr>
+      <tr>
+        <td><strong>Tooling incomplete:</strong> Developers want LSP, diagnostics, formatting</td>
+        <td class="rating high">High</td>
+        <td class="rating medium">Medium</td>
+        <td>LSP is Phase 1. Non-negotiable for serious adoption.</td>
+      </tr>
+      <tr>
+        <td><strong>Native backend stalls:</strong> C emission doesn't translate to working apps</td>
+        <td class="rating high">High</td>
+        <td class="rating low">Low</td>
+        <td>Deprioritize native. Focus on HTML (proven) and design/research tools.</td>
+      </tr>
+      <tr>
+        <td><strong>Breaking changes needed:</strong> Parser is frozen; refinements require major version bump</td>
+        <td class="rating medium">Medium</td>
+        <td class="rating medium">Medium</td>
+        <td>Document deprecation policy early. Plan for v2 if semantic changes emerge.</td>
+      </tr>
+    </tbody>
+  </table>
+
+</section>
+
+<section>
+  <h2>Summary: Is This Good?</h2>
+
+  <div class="highlight">
+    <strong>Technical Quality: 8/10</strong>
+    <p style="margin-top: 0.75rem;">
+      Ine demonstrates professional engineering in its core (lexer, parser, backends, tests). Architecture is clean and disciplined. Code is maintainable. The decision to freeze the parser and ground vocabulary in evidence shows good judgment.
+    </p>
+  </div>
+
+  <div class="highlight">
+    <strong>Product Readiness: 4/10</strong>
+    <p style="margin-top: 0.75rem;">
+      The language works, but the ecosystem is not ready. No LSP, limited editor support, minimal documentation, incomplete tooling. A developer cannot adopt Ine today without accepting rough edges.
+    </p>
+  </div>
+
+  <div class="highlight">
+    <strong>Market Timing: 6/10</strong>
+    <p style="margin-top: 0.75rem;">
+      The idea is sound and timely. Intent-driven UI is a growing interest in design systems and AI-assisted development. But demand is speculative — no one is shouting for this yet. Ine has the chance to create that demand if it builds the right examples and community.
+    </p>
+  </div>
+
+  <div class="highlight">
+    <strong>Industry Positioning: Unique but Niche</strong>
+    <p style="margin-top: 0.75rem;">
+      Ine occupies space no one else is filling. That is partly because the space is small, partly because few teams have the flexibility to adopt a new language. The upside is zero direct competition. The downside is zero proof that the market exists.
+    </p>
+  </div>
+
+  <h3 style="margin-top: 2rem;">Bottom Line</h3>
+  <p>
+    <strong>Ine is good work.</strong> It is well-engineered, thoughtfully scoped, and grounded in sound principles. It is not yet ready for mainstream adoption, but it is ready for experimental adoption by teams with flexibility and interest in the problem space.
+  </p>
+  <p>
+    The project has a clear identity and a defensible point of view. If the team (or whoever carries it forward) commits to filling the ecosystem gaps — LSP, documentation, vocabulary expansion, examples — Ine could become a valuable tool for a specific class of problems. If not, it will remain a technically impressive proof-of-concept.
+  </p>
+  <p>
+    <strong>Verdict:</strong> Publish it, build community, focus Phase 1 on tooling (LSP, packaging), and let early adopters shape the roadmap. The foundations are strong enough to iterate on.
+  </p>
+
+</section>
+
+<div class="footer-note">
+  Analysis completed 2026-09-15. Based on codebase review (235 tests, 9,283 lines of Python, 15 dictionary files, 4 golden examples), AGENTS.md, control-plane documentation, and comparative positioning vs. React, Flutter, SwiftUI, and web/native frameworks.
+</div>

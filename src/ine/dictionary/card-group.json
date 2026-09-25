@@ -4,6 +4,9 @@
   "element": "div",
   "layout": "row",
   "meaning": "A row of members of one kind, presented side by side, equal in width and evenly spaced. On narrow contexts the group stacks its members.",
+  "properties": {
+    "layout": ["row", "column"]
+  },
   "defaults": {
     "layout": "row",
     "member-width": "equal",

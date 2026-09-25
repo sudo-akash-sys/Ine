@@ -1,0 +1,111 @@
+# A small marketing site — a whole page, end to end.
+#
+#   page
+#     header  (logo, navigation)
+#     main    -> act one: the hero banner, then three framed cards
+#     work    -> act two: its own heading, then three unframed columns
+#     section -> one button
+#     footer
+#
+# Everything here is dictionary vocabulary: every kind, every property,
+# every containment pair. Nothing in this file says how anything looks, and
+# nothing in it is a number. Space, frames, corner radii, alignment and the
+# row layout all come from the defaults the dictionary already declares for
+# each kind — and the few lines that do write something are written in the
+# dictionary's own words (`compact`, `none`, `comfortable`).
+
+make page
+page title "Northwind Studio"
+
+make header
+header inside page
+
+make brand logo
+brand text "Northwind"
+brand inside header
+
+make nav navigation
+nav text "Work, Studio, Notes"
+nav link-spacing "wide"
+nav inside header
+
+# --- act one: what we do -----------------------------------------------
+
+make main container
+main inside page
+
+make intro banner
+intro title "We build calm software."
+intro text "Small tools that do one thing properly, then get out of the way."
+intro inside main
+
+make features card-group
+features inside main
+
+make f1 card
+make f2 card
+make f3 card
+group feature-set = f1 f2 f3
+feature-set inside features
+
+f1 title "Fewer moving parts"
+f1 text "Every feature we ship removes work rather than adding it."
+
+f2 title "Quiet by default"
+f2 text "No notifications, no dashboards, no numbers nobody reads."
+
+f3 title "Yours to leave"
+f3 text "Plain files and open formats. Your work outlives the tool."
+
+# --- act two: how we work ----------------------------------------------
+#
+# The same three-column shape, deliberately not the same object. Act one is
+# three things we make, so they are framed. Act two is three steps in one
+# way of working, so the frames come off and the space tightens. That
+# contrast between the two rows is the whole of what separates them, and it
+# is stated in three lines rather than drawn.
+
+make work container
+work inside page
+
+make ethos banner
+ethos title "How we work"
+ethos padding "comfortable"
+ethos inside work
+
+make approach card-group
+approach inside work
+
+make a1 card
+make a2 card
+make a3 card
+group approach-set = a1 a2 a3
+approach-set inside approach
+
+approach-set padding "compact"
+approach-set corner-radius "none"
+approach-set border "none"
+
+a1 title "We start small"
+a1 text "A week of work, and then we look at it together."
+
+a2 title "We stay in the open"
+a2 text "Every decision is written down where you can read it."
+
+a3 title "We finish"
+a3 text "Shipping beats polishing, so we ship."
+
+# --- the one call to action --------------------------------------------
+
+make cta section
+cta inside page
+
+make action button
+action text "Start a project"
+action inside cta
+
+make footer
+footer text "Northwind Studio"
+footer inside page
+
+say page title

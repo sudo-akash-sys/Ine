@@ -167,7 +167,9 @@ async function provideCompletionItems(document, position) {
       item.label,
       KIND_OF[item.type] || vscode.CompletionItemKind.Value
     );
-    if (item.value_shape === "text") {
+    if (item.snippet) {
+      completion.insertText = new vscode.SnippetString(item.snippet);
+    } else if (item.value_shape === "text") {
       completion.insertText = new vscode.SnippetString(
         item.label + ' "${1}"'
       );
