@@ -6,14 +6,16 @@ not no.
 
 ## Blocked on evidence
 
-- **First enumerated `choice` value.** The value-shape representation
-  **can** express choices — a `properties`-block value that is a list of
-  strings becomes a `"choice"` shape (e.g. `"layout": ["row", "column"]`).
-  But **no current dictionary entry declares one**: no property carries
-  enough evidence, and `layout` still documents only a single `"row"` option.
-  Declaring a choice requires either a real program using a second option
-  (e.g. `layout column`) or a deliberate WORKBOOK decision. Blocked until
-  then.
+none currently — the first enumerated `choice` value was RESOLVED by
+commander decision (below).
+
+- ~~**First enumerated `choice` value.**~~ **RESOLVED** (Session 49
+  interactive, commander delegation — "layout column, you could decide on
+  your own"): `card-group.json` now declares `"properties": {"layout":
+  ["row", "column"]}`. `value_shape("card-group","layout")` is the first
+  `"choice"` shape; the snippet offers `${1|row,column|}`, `--dict
+  card-group` prints `layout  choice: row, column`, and the advisory pass
+  flags a written layout outside row/column. PLAN item 7 → DONE.
 
 ## Not started / deferred (no decision)
 
@@ -116,7 +118,10 @@ landed (58/59 fed by 22/23/55/56/57; 61 fed by 54/60).
   (NOTES Missions 22 / 56). Gates: commander accepts one
   `@media (max-width: 768px)` `row -> stack` rule; evidence from Missions
   55/56 accepted. No fifth construct — conditions/state stay UNDECIDED.
-  Backend freeze: none.
+  Backend freeze: none. **Gate cleared** (Session 49 interactive) and
+  delivered by PLAN item 83: `backend_html._narrow_rule` emits one
+  `@media (max-width: 768px) { .card-group { flex-direction: column; } }`
+  rule, gated on the declared narrow defaults. Item 59 → DONE.
 - **61 — `link` navigation (kind or property).** `link` is declared but used
   by zero programs (below: dead vocabulary); there is no link syntax and no
   backend emits a clickable target. What a link is and how to express it is
@@ -131,3 +136,83 @@ kinds, `boolean`/`date` type extensions (commander approved `number`
 kinds, `search`, `subtitle`/`description`, `button inside header`,
 conditions/state, HTML fidelity pass, and the installed-copy packaging
 caveat (fixed by PLAN 63).
+
+## Commander decision — item 58 mapping values + palette (Session 42)
+
+**Question.** PLAN item 58 was implemented without clearing its second
+precondition ("the commander accepts the Mission 57 mapping scope"). The
+mechanism is sound, the suite passes, and the language surface did not move —
+but the *values* the dictionary now paints with are the agent's, and
+DECISIONS.md lists "CSS fidelity … the real color palette" as UNDECIDED.
+Accept, amend, or revert the mapping?
+
+**Evidence.**
+
+- M57 (DONE) proposed the contract: `card.padding` comfortable ->
+  `padding:20px`; `card.border` subtle -> `border:1px solid #e0e0e0`;
+  `card.corner-radius` slight -> `border-radius:8px`; `banner.padding`
+  generous -> `padding:3rem`; `banner.text-alignment` center ->
+  `text-align:center`. Scope: "first property only … inline styles,
+  `backend_html.py` only".
+- Shipped instead: `1.25rem`, `1px solid #e2e8f0`, `10px`,
+  `3.5rem 1.5rem`, `text-align: center`. Only `text-align` matches.
+  `1.25rem` (=20px) and `10px` trace to card.json's pre-existing
+  `implementation.guess` (`padding: 20px`, `border-radius: 6-10px`);
+  `#e2e8f0` traces to nothing — the guess says only "light", which is not a
+  value.
+- Scope shipped: 7 kinds (page, header, logo, navigation, banner, card,
+  footer), a per-kind stylesheet rule plus inline overrides for
+  entity-written values, and a `<meta viewport>` + `body` baseline. The last
+  two appear in no proposal.
+- Goldens: all four changed. M57's probe recorded `hello` / `topbar` as
+  no-diff; both gained a viewport meta, a `<style>` block and `class`
+  attributes. Byte-identical discipline held; this is still an output change.
+- Language surface unchanged: no lexer, parser, semantic or interpreter edit.
+
+**Options.**
+
+- **(a) Accept the shipped mapping as-is.** Cheapest; the stylesheet
+  architecture is less repetitive than inline-only and the site renders. But
+  it lets a convenience hex become the project's palette by accident.
+- **(b) Accept the mechanism, restate the values.** Keep `style` blocks +
+  `style_declarations()`; the commander sets the numbers — in particular
+  either one named colour token replacing `#e2e8f0`, or a decision that
+  painting stays structural-only and colour waits.
+- **(c) Revert to M57's contract.** Inline styles only, card + banner only,
+  M57's five fragments, goldens regenerated. Most faithful to the gate;
+  discards the extra kinds and the stylesheet.
+
+**Recommendation.** (b). The mechanism is the engineering and it is good;
+the numbers are the commander's. This is also the moment to settle the
+palette question DECISIONS.md already flags, rather than letting a
+convenience hex answer it by default.
+
+**Consequences.** (a) makes an UNDECIDED decision by default. (c) loses
+working, tested code and re-changes four goldens a second time. (b) needs
+one more pass but leaves the palette decision where it belongs.
+
+**Related.** `make <count> <kind>` reuse collision — hit independently while
+writing `examples/site/site.ine` (two rows of three cards cannot both use
+`make 3 card`; both rows are hand-named and grouped). Already recorded
+above as evidence-gated with no PLAN entry. No new evidence, no action.
+
+## Watch item — one unreproducible red full-suite run (Session 45)
+
+Not a gate, and deliberately not a blocker. Recorded only so a future reader
+who sees this claim elsewhere knows it was investigated and dismissed.
+
+While verifying Mission 76, one `python -m pytest tests -q` reported **6
+failures** in `tests/test_ine_agent.py` (`ExitCodeContractTests`,
+`SupervisorTests`, four `CliTests`), printing the park-after-repeated-failures
+message where the tests expect the cycle-limit message. Three later runs were
+fully green (full suite ×2, the six tests in isolation), and the failing
+output carried its own explanation: the supervisor invoked the real `opencode`
+worker rather than the stub the test injected, with CLI *subprocess* tests
+failing in the same run — an environment-side artifact rather than a code
+regression. `make_root()` seeds a fresh temp root with no attempts state, so
+persistent-state leakage was ruled out.
+
+**If it recurs**, the question worth settling is a real one: whether the
+whole-run `--cycle-limit` should still hard-stop with `STOP_ERROR` (item 50's
+DECIDED contract) while parking stays scoped to a single mission's failure
+budget. That would be the commander's call. No action until it reproduces.

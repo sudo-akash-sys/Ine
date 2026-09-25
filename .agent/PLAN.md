@@ -116,11 +116,14 @@ first `EXECUTABLE` item in list order.
    `python -m py_compile src/ine/dictionary.py` and 217 dictionary +
    autocomplete tests pass.
 
-7. `BLOCKED` — **First enumerated `choice` value.** Add `"choice"`-style
+7. `DONE` — **First enumerated `choice` value.** Add `"choice"`-style
    options to a `properties` block (e.g. `"layout": ["row", "column"]` in
    `card-group.json`), then teach the extension's snippet path to offer
    `choice` options. Precondition: a real program or decision showing a
-   second `layout` value; only `"row"` is documented today.
+   second `layout` value; only `"row"` is documented today. RESOLVED by commander
+   decision (Session 49): card-group `properties` declares `layout` as a
+   choice; snippet offers `${1|row,column|}`, `--dict` prints it, advisory
+   flags out-of-choice values.
 
 8. `DONE` — **Add error handling test for malformed dictionary JSON.**
    `test_malformed_dictionary_json_is_skipped_without_crashing` in
@@ -687,22 +690,30 @@ evidence-based fix would be.
     Verify: the proposal lists each hint -> exact CSS fragment and the diff;
     in-tree goldens are untouched and byte-identical.
 
-58. `BLOCKED` — **HTML backend: wire declared physical hints into inline
-    styles.** The Missions 23/56/57 smallest change: map the already-declared
-    `padding` / `corner-radius` / `border` metadata (card, banner) to inline
-    styles via a small per-kind style column in `backend_html.py`.
-    Preconditions (see BLOCKERS.md): the Session 25 freeze is lifted for
-    `backend_html.py` for this change; the commander accepts the Mission 57
-    mapping scope; goldens are updated deliberately with the byte-identical
-    discipline preserved.
+58. `DONE` — **HTML backend: wire declared physical hints into styles.**
+    GATE UNCLEARED (Session 42): the mechanism landed, but this item's
+    precondition "the commander accepts the Mission 57 mapping scope" was
+    never cleared — it was never escalated at the time. Implemented as a
+    per-kind `style` block in the dictionary, read by
+    `dictionary.style_declarations()` / `style_overrides()`; `backend_html.py`
+    emits one stylesheet rule per kind plus an inline `style` for
+    entity-written values. Freeze precondition MET (Session 41). Goldens
+    updated, but all four changed — including `hello` / `topbar`, which M57's
+    probe recorded as no-diff. Scope exceeded: 7 kinds, not card + banner;
+    stylesheet rather than inline-only; plus a viewport meta and `body`
+    baseline present in no proposal. Shipped values differ from M57's
+    (`1.25rem` / `10px` / `#e2e8f0` / `3.5rem 1.5rem` vs `20px` / `8px` /
+    `#e0e0e0` / `3rem`). See `.agent/BLOCKERS.md` (Session 42) — commander
+    must accept, amend, or revert the mapping.
 
-59. `BLOCKED` — **HTML backend: one narrow responsive rule.** For members
+59. `DONE` — **HTML backend: one narrow responsive rule.** For members
     that declare `narrow-class` / `narrow-layout` (card-group), emit ONE
     `@media (max-width: 768px)` rule switching `layout: row` to a stack — the
     Missions 22/56 recommendation. Preconditions (see BLOCKERS.md): the
     freeze is lifted for `backend_html.py`; the commander accepts the
     single-rule scope; evidence from Missions 55/56 is accepted. No language
-    construct is added — conditions/state stay UNDECIDED.
+    construct is added — conditions/state stay UNDECIDED. Gate cleared
+    (Session 49) and delivered by item 83 via `_narrow_rule`.
 
 ### Linking/navigation — investigation first, implementation gated
 
@@ -865,35 +876,158 @@ evidence-based fix would be.
 
 ### Backend enhancements — within freeze constraints
 
-76. `EXECUTABLE` — **Native target expansion research.** Investigate
+76. `DONE` — **Native target expansion research.** Investigate
+> remark: mission failed (worker exit 1); recorded and deferred so independent work continues
+> remark: mission failed (worker exit 1); recorded and deferred so independent work continues
+> remark: mission failed (worker exit 1); recorded and deferred so independent work continues
     lowering non-`say` statements to C. Design minimal UI runtime for
     native executables. Prototype in `.tmp/` with simple
     `make` → struct definitions. Document feasibility and architecture
     trade-offs.
     Output: Architecture proposal + prototype in `.tmp/native-expansion/`.
+    Resolution (Session 45): complete. The three failures above were not
+    missing work — the prototype was substantially built and the worker died
+    before recording. Re-verified end to end: the harness itself had a
+    path-shadowing import bug (repo-root `ine.py` ahead of `src/` under
+    pytest) and a wrong repo-root level; both fixed, 6 prototype tests pass.
+    Deliverable: `.tmp/native-expansion/PROPOSAL.md` (lowering table for
+    every statement type, 8 findings, 3 options) over a 640-line prototype.
+    Recommendation: **option C — native UI stays research-only**, with B
+    (generic node table + dictionary-driven painter) recorded as the shape
+    any future work takes. No dictionary, language or backend change.
 
-77. `EXECUTABLE` — **Visual backend theming system.** Research tkinter
+77. `DONE` — **Visual backend theming system.** Research tkinter
+> remark: did not complete after 1 attempt(s) (unknown: diagnosis produced no classification); recorded and deferred so independent work continues
+> remark: mission failed (worker exit 1); recorded and deferred so independent work continues
+> resolution (Session 47): completed in one pass by the commander-directed
+> agent — the two failures were the worker dying before recording, exactly
+> Mission 76's pattern: the code and NOTES section were already in the tree.
+> Verify: `_padding_of` reads `card` comfortable → (20,20) and `banner`
+> generous → (56,24) from `style.properties.padding.values`; fallback (8,16)
+> stands for kinds without a hint; a unit test (no window) pins all three;
+> NOTES `## Mission 77 — visual theming`. Scope: `padding` only; the color
+> finding (a `colors` schema field is the commander's call) is in the same
+> NOTES section; `KIND_COLORS` unchanged; goldens byte-identical.
     theming from dictionary hints. Map physical hints (padding,
     corner-radius) to tkinter geometry. Prototype color/font
     customization via dictionary (not hard-coded KIND_COLORS).
     Output: Theming proposal + sample implementation in `.tmp/`.
 
-78. `EXECUTABLE` — **Multi-backend consistency audit.** Compare
+78. `DONE` — **Multi-backend consistency audit.** Compare
+> remark: did not complete after 1 attempt(s) (unknown: diagnosis produced no classification); recorded and deferred so independent work continues
+> remark: mission failed (worker exit 1); recorded and deferred so independent work continues
+> resolution (Session 47): completed — NOTES `## Mission 78 — multi-backend
+> consistency` carries the four-row behaviour table (layout row:
+> intentional; `position: bottom`: bug — HTML never reads `position`;
+> written per-entity properties: bug — Visual reads only `text`/`title`
+> and defaults, HTML builds inline styles; dictionary style hints: bug —
+> HTML consumes the whole `style` block, Visual only `padding`) and three
+> candidate follow-up missions. No source file changed.
     HTML/Visual/Native backend behavior for same model. Document
     discrepancies in layout, positioning, styling. Propose alignment
     rules or intentional divergence. Focus on layout:`row`, position:
     `bottom`, and universal properties.
     Output: Consistency report in NOTES.
 
-79. `EXECUTABLE` — **Backend plugin architecture investigation.**
+79. `DONE` — **Backend plugin architecture investigation.**
+> remark: did not complete after 1 attempt(s) (unknown: diagnosis produced no classification); recorded and deferred so independent work continues
+> remark: mission failed (worker exit 1); recorded and deferred so independent work continues
+> resolution (Session 47): completed — NOTES `## Mission 79 — backend plugin
+> contract` carries the five-stage pipeline, the consumption asymmetry
+> (html/visual consume the model, native consumes resolved statements,
+> three unrelated error classes), the minimal registry contract, the
+> edit-cost list, and the explicit "did not decide" paragraph (migration
+> cost of touching `cli.py`'s public flags is the commander's call). A
+> scratch registry under `.tmp/backend-plugin-probe/` compiles and runs.
+> No source file changed.
     Research extensibility for new backends (React, Flutter, etc.).
     Design interface contract between semantic model and backend.
     Prototype simple adapter pattern in `.tmp/`.
     Output: Plugin architecture proposal.
 
+### Commander priority — dictionary-driven semantics (Session 49)
+
+Commander direction: the dictionary is the semantics authority. It must know
+its own format (structured template per kind), back semantic validation, and
+drive responsiveness. Scope intent — semantics "simple by function but an
+extension of prior semantics," never a fifth construct without WORKBOOK §25.
+See DECISIONS.md (Session 49).
+
+80. `DONE` — **Dictionary format exposure: `--dict <kind>` prints the
+    full structured entry** (term, kind, element, meaning, defaults,
+    style/properties, members/parents, implementation), not the flat
+    suggestion list. Deliverable per MISSION_PROMPT: index 80.md. Mission 80
+    — see "Mission 80" in NOTES.md; `--dict card-group` exposes
+    `narrow-layout`/`narrow-class` from defaults for item 83.
+
+81. `DONE` — **Editor inserts a shaped `<kind>` body template.** On
+    `make footer`, completion offers a starting-point body built from the
+    dictionary entry (declared members, property options, defaults) that the
+    user edits — template lives in the editor/dictionary layer, not the
+    grammar. Deliverable per MISSION_PROMPT: index 81.md.
+
+82. `DONE` — **Dictionary-backed semantic validation in `analyze`.**
+    Check property names against the dictionary, values against
+    `value_shape`/hint vocabulary, containment against `parents`/`contains`.
+    Advisory-first: warn where any example legitimately uses undeclared
+    vocabulary (e.g. Alice's custom domain). Deliverable per MISSION_PROMPT:
+    index 82.md.
+
+83. `DONE` — **Responsiveness consumption: HTML backend emits a real
+    `@media` rule** from `narrow-layout`/`narrow-class`. Unblocks item 59.
+    Golden-based check — changing a single declared value must not break
+    unrelated output. Deliverable per MISSION_PROMPT: index 83.md.
+
+### Commander priority — low-token worker refactor (Session 50)
+
+Commander-approved incremental refactor: preserve the PLAN, mission indexes,
+verification, and continuous queue, but replace repeated control-plane prompt
+injection and model-driven recording with one small execution contract, a
+structured receipt, bounded related context, and provider profiles. Existing
+`EXECUTABLE` product work resumes after this section. No Ine language syntax or
+semantic changes. See DECISIONS.md (Session 50).
+
+119. `DONE` — **Lean one-mission handoff and structured receipt.** Send
+     the worker its mission plus a fixed small contract, not full
+     WORKER_PROMPT/MISSION/STATE documents; require a machine-readable receipt;
+     let Python record completion and proposal-only follow-up data.
+     Deliverable: index 119.md.
+
+120. `DONE` — **Related compact mission memory.** Persist one bounded
+     receipt per completed/blocked mission under `.agent/compaction/`; load only
+     snippets sharing an explicit area, dependency, or changed file, under hard
+     count/character caps. Deliverable: index 120.md.
+
+121. `DONE` — **Named worker profiles, doctor, and resolved dry-run.**
+     Support OpenCode, Claude, and arbitrary local CLI command profiles with
+     explicit model arguments, prompt transport, and environment-owned
+     credentials; add a non-model `doctor` command and show the resolved command
+     in `run --dry-run`. Deliverable: index 121.md.
+
+122. `DONE` — **Bounded OpenCode execution profile.** Add a project
+     OpenCode primary agent with finite steps, local edit/test tools only, no
+     web/subagent/question/external-directory access, and a minimal execution
+     prompt; keep model choice in the worker profile. Deliverable: index 122.md.
+
+123. `DONE` — **One external invocation and bounded runtime.** Remove the
+     automatic diagnosis call, add a universal subprocess timeout, and record
+     prompt/output size and elapsed time per cycle without claiming unrelated
+     global provider usage as this run's cost. Deliverable: index 123.md.
+
+124. `DONE` — **Run the executable queue to exhaustion.** Make the queue
+     bound optional (`--max-missions`, with the old flag retained as an alias),
+     default to one attempt per mission, continue past independent failures,
+     and send one completion summary plus immediate blocker/gate alerts.
+     Deliverable: index 124.md.
+
+125. `DONE` — **Migration, user workflow, and pilot verification.** Keep
+     existing CLI compatibility, document mission authoring/profiles/dry-run,
+     run focused and full verification, compare prompt/runtime metrics with the
+     baseline, and record the result. Deliverable: index 125.md.
+
 ### Editor & developer experience
 
-80. `EXECUTABLE` — **Editor diagnostics implementation.** Extend
+84. `EXECUTABLE` — **Editor diagnostics implementation.** Extend
     `validate` query to include semantic errors (undeclared entity,
     double-parent, cycles). Add VS Code DiagnosticCollection
     integration. Implement hover provider for dictionary meanings.
@@ -901,20 +1035,20 @@ evidence-based fix would be.
     Verify: extension shows parse + semantic errors; hover shows
     `meaning` field.
 
-81. `EXECUTABLE` — **Formatter implementation.** Design deterministic
+85. `EXECUTABLE` — **Formatter implementation.** Design deterministic
     formatter for Ine's simple syntax. Implement formatting rules
     (indentation, spacing, line breaks, blank lines between sections).
     Add format-on-save and format command to extension.
     Verify: formatter produces consistent output; extension command
     works.
 
-82. `EXECUTABLE` — **Code actions/refactoring investigation.** Research
+86. `EXECUTABLE` — **Code actions/refactoring investigation.** Research
     useful code actions: extract group, rename entity, inline group,
     convert `make 3 card` ↔ handwritten. Design minimal refactoring
     support. Prototype one action (e.g., "extract to group").
     Output: Code actions proposal + sample.
 
-83. `EXECUTABLE` — **Editor testing infrastructure.** Set up extension
+87. `EXECUTABLE` — **Editor testing infrastructure.** Set up extension
     testing (VS Code test runner). Create integration tests for
     completion, diagnostics, formatting. Add CI workflow for extension
     tests (separate from main test suite).
@@ -923,7 +1057,7 @@ evidence-based fix would be.
 
 ### Packaging & distribution
 
-84. `DONE` — **Packaging fix implementation.** Move dictionary
+88. `DONE` — **Packaging fix implementation.** Move dictionary
     JSON to `src/ine/dictionary/`. Use `importlib.resources` for
     package-relative access. Update `pyproject.toml` with package-data.
     Test wheel installation in throwaway venv under `.tmp/`. This fixes
@@ -939,14 +1073,14 @@ evidence-based fix would be.
     > stale-tag drift the review flagged; no further work needed. See HISTORY
     > Session 41 continuation "packaging" entry.
 
-85. `EXECUTABLE` — **Extension packaging investigation.** Research
+89. `EXECUTABLE` — **Extension packaging investigation.** Research
     `.vsix` creation with engine dependency. Design installation story:
     bundle Python or require separate install? Consider pyodide
     embedding vs. documented prerequisite. Create packaging script in
     `.tmp/`.
     Output: Packaging strategy + `.vsix` build script.
 
-86. `EXECUTABLE` — **CLI enhancement audit.** Review CLI commands and
+90. `EXECUTABLE` — **CLI enhancement audit.** Review CLI commands and
     UX. Add missing features: `--version` flag, improved `--help`,
     config file support (`~/.config/ine/config.json`). Design
     subcommand structure for future extensions. Document CLI evolution
@@ -955,28 +1089,28 @@ evidence-based fix would be.
 
 ### Testing & reliability
 
-87. `EXECUTABLE` — **Performance benchmarking suite.** Create benchmark
+91. `EXECUTABLE` — **Performance benchmarking suite.** Create benchmark
     tests for lexer, parser, semantic analysis (input sizes: 10, 100,
     1000 lines). Measure autocomplete worker latency under load.
     Establish performance baselines for regression detection. Store
     results in `.agent/benchmarks/`.
     Verify: benchmarks run; baseline recorded.
 
-88. `EXECUTABLE` — **Fuzz testing investigation.** Research fuzzing
+92. `EXECUTABLE` — **Fuzz testing investigation.** Research fuzzing
     approaches for parser/lexer. Create simple fuzzer in `.tmp/`
     generating random .ine files (valid structure + mutation). Run 1000
     iterations; document crash/resilience findings. Test against
     parser/lexer exception coverage.
     Output: Fuzzing report + tool in `.tmp/fuzzer/`.
 
-89. `EXECUTABLE` — **Cross-platform testing matrix.** Document
+93. `EXECUTABLE` — **Cross-platform testing matrix.** Document
     platform-specific behaviors (Windows vs Unix paths, line endings).
     Test native backend with different C compilers (zig, clang, gcc,
     MSVC). Investigate tkinter differences across platforms (macOS,
     Linux, Windows). Propose platform compatibility strategy.
     Output: Cross-platform compatibility report.
 
-90. `EXECUTABLE` — **Golden test modernization.** Review golden file
+94. `EXECUTABLE` — **Golden test modernization.** Review golden file
     strategy (byte-identical discipline). Consider golden
     diffing/approval workflow (pytest-golden or similar). Update test
     helpers for easier golden maintenance. Document when to update
@@ -985,27 +1119,27 @@ evidence-based fix would be.
 
 ### Documentation & examples
 
-91. `EXECUTABLE` — **Tutorial series creation.** Create step-by-step
+95. `EXECUTABLE` — **Tutorial series creation.** Create step-by-step
     tutorials in `docs/tutorials/`: (1) Your first Ine program, (2)
     Understanding the dictionary, (3) Using the editor, (4) Building a
     card layout. Include exercises and solutions. Real programs, no
     lorem ipsum.
     Verify: tutorials build and run; exercises are solvable.
 
-92. `EXECUTABLE` — **API documentation generation.** Set up Sphinx or
+96. `EXECUTABLE` — **API documentation generation.** Set up Sphinx or
     pdoc for `src/ine/` modules. Document public APIs (dictionary,
     autocomplete, backends). Add docstring consistency check to test
     suite. Generate docs to `docs/api/`.
     Verify: API docs build; all public functions documented.
 
-93. `EXECUTABLE` — **Example gallery expansion.** Create comprehensive
+97. `EXECUTABLE` — **Example gallery expansion.** Create comprehensive
     example gallery in `examples/gallery/`: basic (hello, say), UI
     patterns (header/footer, cards, navigation), data display
     (dashboard), forms. Each with .ine source and rendered output.
     Structure by difficulty/complexity.
     Verify: all examples build; gallery README complete.
 
-94. `EXECUTABLE` — **Workbook reconciliation audit.** Map WORKBOOK.md
+98. `EXECUTABLE` — **Workbook reconciliation audit.** Map WORKBOOK.md
     proposals to implemented features. Identify outstanding proposals
     vs. DECIDED items. Create implementation status tracker
     (spreadsheet or markdown table). Clarify which proposals are
@@ -1014,27 +1148,27 @@ evidence-based fix would be.
 
 ### Language evolution — research only
 
-95. `EXECUTABLE` — **Syntax sugar investigation.** Research useful
+99. `EXECUTABLE` — **Syntax sugar investigation.** Research useful
     syntactic sugar: `every` keyword, `with` property blocks, shorthand
     for common patterns. Design minimal sugar that doesn't change
     semantics. Prototype in `.tmp/` with source transformation (AST
     rewrite before semantic analysis).
     Output: Syntax sugar proposal in NOTES.
 
-96. `EXECUTABLE` — **Import/module system research.** Investigate
+100. `EXECUTABLE` — **Import/module system research.** Investigate
     module system for .ine files (reuse entity definitions, share
     groups). Design simple `import` statement for vocabulary reuse.
     Consider dictionary fragment imports. Address identity and
     namespace concerns.
     Output: Module system proposal.
 
-97. `EXECUTABLE` — **Meta-programming investigation.** Research
+101. `EXECUTABLE` — **Meta-programming investigation.** Research
     template/macro system for repetitive patterns (e.g., "make card for
     each product"). Design declarative expansion system. Prototype
     simple template in `.tmp/`. Distinguish from code generation.
     Output: Meta-programming proposal.
 
-98. `EXECUTABLE` — **Language versioning strategy.** Design versioning
+102. `EXECUTABLE` — **Language versioning strategy.** Design versioning
     for language changes. Consider compatibility breaks and migration
     paths. Document version policy (semantic versioning for .ine
     programs?). Propose file format version marker (`# ine-version:
@@ -1043,26 +1177,26 @@ evidence-based fix would be.
 
 ### Community & ecosystem
 
-99. `EXECUTABLE` — **Contributor onboarding improvement.** Create
+103. `EXECUTABLE` — **Contributor onboarding improvement.** Create
     `CONTRIBUTING_GUIDE.md` with detailed workflow: repo setup, running
     tests, making changes, PR process. Add issue/PR templates. Document
     review process and quality standards. Link from main CONTRIBUTING.md.
     Verify: guide is complete; templates work.
 
-100. `EXECUTABLE` — **Community vocabulary repository investigation.**
+104. `EXECUTABLE` — **Community vocabulary repository investigation.**
      Design system for community-contributed dictionary entries.
      Consider quality control, validation, namespace. Prototype simple
      vocabulary package format (JSON + metadata). Research distribution
      mechanism.
      Output: Community vocabulary proposal.
 
-101. `EXECUTABLE` — **Plugin ecosystem investigation.** Research plugin
+105. `EXECUTABLE` — **Plugin ecosystem investigation.** Research plugin
      system for backends, linters, formatters. Design simple plugin
      interface (entry point, manifest). Prototype one plugin example
      (custom backend). Consider security and sandboxing.
      Output: Plugin ecosystem proposal.
 
-102. `EXECUTABLE` — **Integration with other tools research.**
+106. `EXECUTABLE` — **Integration with other tools research.**
      Investigate integrations: IDE plugins (JetBrains), build tools
      (Make, npm scripts), CI/CD (GitHub Actions). Design simple API for
      tool integration. Prototype one integration (e.g., GitHub Action
@@ -1071,26 +1205,26 @@ evidence-based fix would be.
 
 ### Quality & maintenance
 
-103. `EXECUTABLE` — **Code quality audit.** Run static analysis (mypy
+107. `EXECUTABLE` — **Code quality audit.** Run static analysis (mypy
      strict mode, pylint, bandit security scanner). Document findings
      and fix critical issues. Establish code quality standards (type
      coverage target, complexity limits). Add quality checks to CI.
      Verify: tools run clean or with documented exceptions.
 
-104. `EXECUTABLE` — **Dependency audit.** Review all dependencies
+108. `EXECUTABLE` — **Dependency audit.** Review all dependencies
      (direct and transitive via `pip show`). Check for security
      vulnerabilities (pip-audit). Consider dependency minimization
      strategy (Ine has zero non-dev dependencies today). Document
      dependency policy.
      Output: Dependency audit report.
 
-105. `EXECUTABLE` — **Build system modernization.** Review current build
+109. `EXECUTABLE` — **Build system modernization.** Review current build
      approach (setuptools + pytest). Consider migration to more standard
      tools (hatch, rye, uv). Improve build performance (parallel tests,
      caching). Document build system decisions.
      Output: Build system improvement plan.
 
-106. `EXECUTABLE` — **Release process documentation.** Document release
+110. `EXECUTABLE` — **Release process documentation.** Document release
      checklist: version bump, changelog update, tag, build wheel, test
      install, GitHub release. Create version bump automation (script or
      tool). Test release process in dry-run mode. Consider automation
@@ -1099,28 +1233,28 @@ evidence-based fix would be.
 
 ### Research & future directions
 
-107. `EXECUTABLE` — **AI code generation integration research.**
+111. `EXECUTABLE` — **AI code generation integration research.**
      Investigate AI-assisted .ine generation from natural language.
      Design prompt templates for Ine generation. Prototype simple AI
      integration in `.tmp/` (OpenAI API or local model). Consider
      dictionary-aware generation.
      Output: AI integration proposal + prototype.
 
-108. `EXECUTABLE` — **Visual editor investigation.** Research visual
+112. `EXECUTABLE` — **Visual editor investigation.** Research visual
      editor for Ine (block-based like Scratch, or diagram-based). Design
      minimal visual representation (drag-drop entities, visual
      containment). Prototype simple visual editor in `.tmp/`. Consider
      round-trip (visual ↔ text).
      Output: Visual editor proposal + prototype.
 
-109. `EXECUTABLE` — **Accessibility audit.** Audit HTML backend for
+113. `EXECUTABLE` — **Accessibility audit.** Audit HTML backend for
      accessibility compliance (WCAG 2.1 AA). Document gaps: semantic
      HTML, ARIA labels, keyboard navigation, color contrast. Design
      accessibility hints in dictionary (`role`, `label`). Propose
      backend improvements.
      Output: Accessibility report + recommendations.
 
-110. `EXECUTABLE` — **Internationalization research.** Investigate i18n
+114. `EXECUTABLE` — **Internationalization research.** Investigate i18n
      for Ine programs (multilingual UI text). Design string
      externalization approach (separate .json files, `text-key`
      property?). Consider dictionary translation (French `carte` kind =
@@ -1129,7 +1263,7 @@ evidence-based fix would be.
 
 ### ine-agent — observed-usage telemetry and request frugality
 
-111. `DONE` — **mission: cut autonomous-worker model-request waste**
+115. `DONE` — **mission: cut autonomous-worker model-request waste**
      (enforcement work, commander-approved). Objective: reduce unnecessary
      Big Pickle/OpenCode requests on the free tier WITHOUT reducing
      autonomy. Measures implemented:
@@ -1159,6 +1293,222 @@ evidence-based fix would be.
      **375 passed, 9 subtests**; live CLI demo with `--usage-warn-requests
      1` recorded start/cycle/warning/end/delta lines and fired the warning
      exactly once (10 requests observed in the demo window).
+
+116. `DONE` — **mission: phase 1 of failure handling — diagnose, then defer**
+     (supervisor-owned, commander-directed; Session 43). Objective: stop
+     spending worker cycles on a mission that cannot finish. A cycle ending
+     `failed` or `stuck` is now diagnosed before anything else happens to it.
+     - **In-band classification first.** `impl_prompt` requires the worker's
+       last two printed lines to be `CLASSIFICATION: <needs_commander |
+       missing_prerequisite | transient | agent_error>` and `REASON: <one
+       line>`. `parse_classification()` takes the LAST match of each
+       (`findall`, not `search` — the prompt promises the last two lines),
+       folds punctuation to underscores, maps unrecognized wording to
+       `unknown` while keeping the raw text as the reason, and truncates
+       reasons to 200 chars.
+     - **One short follow-up call as fallback** (`diagnosis_prompt`, used only
+       when the worker printed no classification — the crash case): tool-free
+       and explicitly forbidden from attempting the mission, so it costs one
+       short round-trip instead of a re-run. A raising call is swallowed as
+       `unknown` with the exception text as the reason: the run never dies
+       because diagnosis failed.
+     - **Gate dominance:** when `state.human_decision_indicated(root)` the
+       cycle is not diagnosed at all — the mission stopped because a
+       HUMAN_DECISION_REQUIRED gate is open, so it is `needs_commander` by
+       construction, and diagnosing it only burned a call.
+     - **Disjoint outcomes** (`classify_action`): `needs_commander` -> human
+       (gate flag, exit 2); `missing_prerequisite` -> blocked (recorded,
+       deferred, exit 1); `transient` / `agent_error` -> retry while
+       `attempts + 1 < max_attempts`, otherwise deferred.
+     - **The retry-vs-defer rule for silence** (`retryable`): an unclassified
+       cycle is retried only when the outcome was `stuck` (a clean exit that
+       advanced nothing — the pre-existing bounded-retry semantics) and
+       deferred when it was `failed` (a crash — Session 41's rule against
+       re-burning an unexplained failure).
+     - **`max_attempts` is no longer a stop condition.** Exhausting it defers
+       that ONE mission and the run continues with independent work; the
+       deferral set is keyed on `Task.identity` (the tag-stripped first line,
+       so `> remark:` continuation lines never change identity) and honoured
+       by `first_executable(skip=deferred)`. `max_cycles` remains the hard
+       bound, and a run whose every remaining mission is deferred or blocked
+       still exits 1.
+     - **The retry carries the reason forward** (`retry_block`): the next
+       attempt's prompt gains a `FAILED PREVIOUS ATTEMPT` note with the
+       classification and reason, plus an instruction to classify and stop
+       rather than repeat the failed approach.
+     - **Every durable surface carries the reason**, not just the class: the
+       RUN_REPORTS line, the `mark_blocked` text, the BLOCKERS entry, and the
+       notification body ("Ine · decision required" / "task blocked" /
+       "task stuck" / "task failed", the last distinguishing a nonzero exit).
+     Tests: +27 (`ClassificationParseTests` 8, `ClassifyActionTests` 6,
+     `Phase1DiagnosisTests` 13); 10 existing tests updated to the new call
+     counts and deferral semantics, with
+     `test_reset_does_not_disable_the_bounded_stop_guard` renamed to
+     `test_retry_budget_defers_instead_of_stopping_the_run`. Fixed en route:
+     `classify_action` first deferred every unclassifiable cycle, which
+     regressed silent-no-progress retries and the exit-code contract —
+     splitting them by outcome via `retryable()` restored both.
+     Verified: `test_ine_agent.py` = 142 passed; full suite 449 tests / 18
+     subtests, green apart from the known tkinter `TclError` flake (422 tests
+     before this session). Caveat: the new diagnosis path is covered by stub
+     workers only — it has not yet been exercised end to end against a live
+     agent worker.
+
+117. `DONE` — **mission: phase 2 of failure handling — a schema, not a string**
+     (supervisor-owned, commander-directed; Session 44). Objective: make the
+     Phase 1 classification vocabulary a TYPE that every parser pathway folds
+     onto, so a malformed, misspelled or drifted worker answer can no longer
+     reach a decision or a report as free text. Phase 1 matched substrings, and
+     a substring match is not a decision procedure — `server error` contains
+     `error`, so `agent_error` was reachable from a transient failure.
+     - **The schema is the single source of truth.** `Classification` is a
+       plain `enum.Enum` over the five vocabulary strings (plain, not a
+       `str` mixin: `requires-python = ">=3.10"` and `enum.StrEnum` is 3.11+,
+       and on 3.10 a str-mixin member FORMATS as `Classification.TRANSIENT` —
+       so nothing formats a member into text; every text surface goes through
+       `canonical()` or `.value`). `CLASSIFICATIONS`, `RETRYABLE`,
+       `UNCLASSIFIED` and the two prompt menus (`_VOCABULARY`) are all derived
+       from the enum, and a test asserts the menu the prompts print equals
+       `" | ".join(CLASSIFICATIONS)` — the prompt and the parser can no longer
+       drift apart.
+     - **Whole-token alias matching replaces substring scanning.** A label is
+       folded onto a class only by an exact canonical match (token-joined:
+       `agent error`, `agent-error`, `AGENT_ERROR` all land EXACT) or by whole-
+       token alias coverage against a curated synonym table (`transient_error`,
+       `Transient-Error`, `flaky`, `timeout`, `my mistake`, `missing prereq`,
+       `not implemented yet`, ...), with abbreviation tolerance requiring the
+       shorter token to be >=4 chars and a prefix relationship, and longest
+       alias winning on ties. A negation or hedge word blocks the alias it
+       appears in *unless the alias itself owns that word* — so `not
+       implemented yet` folds while `not a commander issue` and `maybe
+       transient?` do not.
+     - **Unreadable is not guessable.** Off-vocabulary text, the `<a | b | c>`
+       placeholder echoed back verbatim, and a bare `CLASSIFICATION:` marker
+       all read as no-match. They are recorded with the raw text preserved as
+       the reason, and they do NOT trigger the follow-up call — only a
+       genuinely ABSENT line does, because the follow-up is the expensive path.
+     - **The safe default is `unknown`, deliberately NOT `agent_error`.**
+       `agent_error` is unconditionally retryable, so defaulting gibberish to
+       it would re-burn a worker cycle on every malformed answer — exactly the
+       token waste this phase exists to stop. `unknown` defers a crash and
+       still permits the bounded retry after a clean no-progress exit, which
+       preserves the Missions 30/41/51/52 semantics untouched.
+     - **Every answer is a `Diagnosis`** (`classification`, `reason`, `raw`,
+       `match`, `source`), where `Match` is EXACT / ALIAS / EXPLICIT / NONE /
+       ABSENT and `Source` is WORKER / FOLLOW_UP / GATE / ERROR.
+       `parse_classification()` survives as the 2-tuple view of the same call, so
+       the Phase 1 contract still holds and no existing test changed behaviour.
+     - **`REASON:` now accepts real prose** (the phase's third objective): the
+       last `REASON:` marker wins, and it takes the following text with no
+       regard to whether it started on that line, wrapping across up to 4
+       non-blank lines, stopping at the next tag or blank line, truncated to
+       200 chars — so a wrapped explanation, an inline value and an inverted
+       `REASON:`-before-`CLASSIFICATION:` order all read the same.
+     - **Drift and fallback are durable, not silent** (`diagnosis_trace`): an
+       ALIAS fold writes a `NOTE`, a NONE match writes a `WARNING` naming the
+       raw text and the default it took, and a FOLLOW_UP or ERROR source writes
+       a `WARNING` saying the class did not come from the worker. Warnings also
+       print to the console; exact canonical reads and an explicit
+       `unknown`/`n/a`/`unclear`/`?` stay silent, so the trail means something
+       when it appears.
+     Tests: +34 (`ClassificationSchemaTests` 7, `RobustParsingTests` 17,
+     `DiagnosisTraceTests` 7, `DiagnosisTelemetryTests` 4). Five failed first
+     and each one was right to: a test step passed a helper's callable where a
+     3-tuple belonged; `unknown` read EXPLICIT instead of EXACT (fixed by
+     removing `unknown` from the explicit-unknown synonyms list, so the
+     canonical value travels the same path as the other four); `?` was
+     punctuation-stripped to empty before the explicit check; four synonym
+     expectations were ALIAS when the token-join already made them EXACT; and
+     the blanket negation guard wrongly rejected `not implemented yet`, which
+     forced the guard inside the alias loop where the alias's own tokens are
+     known. Verified: `test_ine_agent.py` = 176 passed (was 142); full suite
+     **483 tests / 18 subtests** green (449 before this session). Same caveat
+     as item 116: the path is covered by stub workers only — no live agent
+     worker has been run through it.
+
+118. `DONE` — **mission: phase 3 of failure handling — memory, evidence, and
+     re-measurement** (supervisor-owned, commander-directed; Session 46).
+     Objective: close the loop's two remaining failings — it forgot between
+     runs, and "did that help?" had no number. Measured first, then changed:
+     see the baseline at the end of this item.
+     - **The attempt ledger is durable and pruned** (`.agent/attempts.json`,
+       new durable record; `attempts_path`/`read_attempts`/`write_attempts`/
+       `record_failure`/`clear_mission_attempts`/`prune_attempts`/
+       `parked_missions`). A failed cycle writes to it; a mission that has
+       failed in `max_failures` (default 3) different RUNS is PARKED and is not
+       picked again until it is rewritten or its entry is removed. RUNS, not
+       attempts, decide parking: several failures inside one run are what
+       `max_attempts` already governs, so a mission retried 20 times in one
+       run is not parked by `max_failures`. That distinction was not designed
+       in — two pinned cycle-limit tests failed when the ledger first counted
+       every attempt, which is why the entry carries `runs` and `attempts`
+       plus the `run_id` (`_new_run_id`: timestamp + process-global sequence)
+       that last wrote it, and why `--max-failures 0` disables parking
+       outright. Completing a mission clears its entry.
+     - **Parked is reported, never silent.** Identity is `state.headline_key`
+       (the tag-stripped first line), so `> remark:` continuation lines never
+       change a mission's identity and a commander's resolution remark does
+       not orphan its history. The ledger is PRUNED at run start to the
+       identities still executable: without that, rewriting a headline left a
+       phantom entry, which was reported as a parked mission forever and — once
+       nothing executable remained — turned an honest exit-0 "no work remains"
+       into a false exit-1 "everything is parked". Every run that starts with
+       parked missions prints them once (`[parked] <headline> (failed in N
+       run(s), M attempt(s); last <class>: <reason>) — not re-picked`), records
+       the same line in RUN_REPORTS, and notifies once. Parking everything
+       exits 1 with a message that names it: `every remaining mission is parked
+       after repeated failures; commander action required.`
+     - **Evidence per cycle, not just "it ran"** (`worktree_signature`,
+       `--stall-limit`, default 3): a cycle that completes nothing, blocks
+       nothing and changes no file OUTSIDE `.agent/` counts as no progress;
+       `stall_limit` of those in a row ends the run early with the count
+       stated. `.agent/` is excluded on purpose — the supervisor's own
+       remarks, ledger and run report change on every cycle, so counting them
+       would let a spinning loop look busy forever. The signature comes from
+       `git status --porcelain` including untracked files; where git cannot
+       answer (no repository, no git on PATH) it is unknown and the guard
+       stays silent, because silence must never be read as a stall. The check
+       sits after the cycle bound, so `--cycle-limit` remains the predictable
+       hard stop.
+     - **The re-measure harness** (new `src/ine_agent/measure.py`, read-only,
+       `python -m ine_agent.measure [--root .]`): reads only
+       `.agent/RUN_REPORTS.md` and the attempt ledger and prints one row per
+       run plus the comparison numbers — cycles, completed, blocked, deferred,
+       parked, "runs that completed nothing", "cycles per completion" and
+       "completions per 1,000 requests", because "the same output, more
+       cheaply" is exactly a ratio of the two. Two limits are printed rather
+       than guessed at: usage numbers exist only for workers reporting into
+       the OpenCode database (a `--worker claude` run shows zero requests
+       instead of a fabricated figure), and a run with no `- exit:` line was
+       interrupted rather than ended, so its exit prints as `-`.
+     - **The baseline this phase has to move** (`python -m ine_agent.measure`,
+       taken BEFORE the change shipped, over every run the loop has recorded):
+       **17 runs, 20 cycles, 2 completions, 15 of 17 runs completed nothing,
+       10.00 cycles per completion, 1 request observed (10,885 in / 35 out
+       tokens)** — the same finding the commander-directed efficiency
+       measurement reached: cost per line of output was never the problem,
+       completion was. Phase 4 is measured against these numbers, and the
+       harness is what makes that a number rather than a feeling.
+     Tests: +29 (`AttemptLedgerTests` 7, `WorktreeSignatureTests` 4,
+     `ParkedMissionTests` 5, `StallGuardTests` 6, `MeasureTests` 5, plus two
+     `CliTests` pinning `--max-failures`/`--stall-limit` in `run --help` and
+     their arrival at `Supervisor`). Fixed en route: the ledger counted
+     attempts for parking (above); `measure.py` crashed on `exit {:<4s}` with
+     an int exit code; the no-git worktree-signature test passed for the wrong
+     reason until its fixture root moved outside the repository (a temp root
+     under `.tmp/` is still inside this repo, so git answered `""` instead of
+     nothing); and the stall-guard test used thresholds that let the guard fire
+     before the cycle bound it was asserting. Verified: `test_ine_agent.py` =
+     205 passed; full suite **512 tests / 18 subtests** green (483 before this
+     session). Same caveat as items 116 - 117: stub workers cover this path — no
+     live worker has run it end to end yet.
+     Records: this session also closes two Session 45 watch items as side
+     effects — the six `test_ine_agent.py` failures Session 45 attributed to
+     "the supervisor invoked the real opencode worker" carry the exact symptom
+     of this item's pre-fix ledger (the park-after-repeated-failures message
+     where the cycle-limit contract expects its own), and STATE's "large
+     uncommitted supervisor rewrite" watch item is the uncommitted Phase 1-3
+     supervisor work itself (+1134/-54 lines against `HEAD`).
 
 ## Candidate missions — Ine authoring & UI capability (next-stage direction)
 

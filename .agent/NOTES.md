@@ -1345,7 +1345,7 @@ candidate types split cleanly by how much they need:
 No syntax, semantics, dictionary, or backend change was made; this is
 evidence only, feeding the typed-value decision gates.
 
-## Mission 111 - Autonomous-worker request frugality (baseline metrics)
+## Mission 115 - Autonomous-worker request frugality (baseline metrics)
 
 Commander-approved enforcement arc: cut Big Pickle / OpenCode model-request
 waste on the free quota tier without reducing in-mission autonomy. Baseline
@@ -1372,3 +1372,555 @@ measured before any change (all LOCAL observed OpenCode counts, sqlite at
   conversation): keep the tracking warn-only, re-evaluate a hard budget
   only after several real runs correlate observed usage with actual quota /
   rejection events.
+## Mission 77 — visual theming
+
+The visual (tkinter) backend now takes spacing from the dictionary's
+machine-readable hints instead of hard-coded literals. Scope: `padding`
+only. Colors are untouched and are the subject of the finding at the end
+of this section.
+
+### Named size -> pixel table (what the resolver derives)
+
+`_hint_lengths` reads `style.properties.<name>.values[<the entry's defaults
+hint word>]` and converts: the leading number is the vertical value, `rem`
+reads as 16px, a bare number is already px, and `border-radius: 0` is 0.
+Values with no length in them (`none`) yield nothing.
+
+| kind | hint | hint word (default) | named sizes -> px |
+| --- | --- | --- | --- |
+| `card` | `padding` | `comfortable` | `compact` 0.75rem -> 12; `comfortable` 1.25rem -> 20; `generous` 2rem -> 32 |
+| `card` | `corner-radius` | `slight` | `none` 0 -> 0; `slight` 10px -> 10; `round` 999px -> 999 |
+| `card` | `border` | `subtle` | `subtle` "1px solid #e2e8f0" -> leading length 1; `none` -> nothing |
+| `banner` | `padding` | `generous` | `compact` "1rem 1.5rem" -> (16, 24); `comfortable` "2rem 1.5rem" -> (32, 24); `generous` "3.5rem 1.5rem" -> (56, 24) |
+| `navigation` | `link-spacing` | `even` | `tight` 0.75rem -> 12; `even` 1.5rem -> 24; `wide` 2.5rem -> 40 |
+| `logo` | `style` (font-weight) | `strong` | not a length: 700 / 400 -> nothing |
+
+Two shapes the table exposes:
+
+- **`padding` is declared by `card` and `banner` only.** `header` and
+  `footer` carry their padding as a literal `base` declaration
+  (`padding: 0.75rem 1.5rem`, `padding: 1.25rem 1.5rem`) rather than as a
+  named hint, and `logo`/`navigation` declare none at all. So a
+  `_padding_of` that reads hints answers for two kinds and falls back for
+  the rest -- the split is the dictionary's, not the backend's.
+- **A single length is a CSS shorthand for all four sides**, so `card`
+  (one length) resolves to (20, 20) while `banner` (two) resolves to
+  (56, 24). The backend takes the second length as the horizontal value
+  when there is one.
+
+### What the prototype now reads from the dictionary
+
+`src/ine/backend_visual.py` gains `_hint_lengths(kind, name)`,
+`_hint_px(kind, name)` (leading length, or `None`) and
+`_padding_of(model, entity_id)` -> `(pady, padx)`. `_render_entity`
+replaces three literals with that call: the `logo` label (`padx=16,
+pady=8` -> the fallback, unchanged), the `navigation` frame (`padx=16` ->
+the horizontal value, unchanged) and the `banner` label (`pady=48,
+padx=24` -> the dictionary's 56/24). Every other geometry value in the
+renderer is left alone.
+
+The fallback pair is `(8, 16)` -- the literals the logo branch packed with
+before this change. It is used whenever the kind declares no `padding`
+hint, which today is `header`, `footer`, `logo`, `navigation`, `page` and
+every future kind until its entry learns to declare one.
+
+Two deliberate limits, both wider than this mission:
+
+- The resolver reads only the entry's **defaults hint word**. A value a
+  program writes for one entity (`card-1 padding 32`) reaches HTML through
+  `style_overrides()` but not yet through the visual backend.
+- Only the leading two lengths of a hint are read. `border` is a width, a
+  style and a colour in one string; a tkinter border needs the width and
+  the colour separately, which is a change to the helper's shape, not to
+  the dictionary.
+
+### Finding: dictionary-driven color needs a new schema field
+
+**The dictionary cannot express color today.** Every `style.properties`
+entry is a value *table for an Ine property* -- `padding`, `border`,
+`corner-radius`, `link-spacing` -- and the color-bearing CSS in the
+dictionary is buried inside a shorthand that the backend cannot reach: the
+only colour a dictionary entry carries is `#e2e8f0` inside
+`card.border.values.subtle`, which is part of `border: 1px solid #e2e8f0`,
+not a value of its own. `dictionary/README.md` ("Physical declarations")
+already states the intent -- the `style` block is "the only place a colour,
+a length, or any other CSS value is written down" -- and `KIND_COLORS` /
+`KIND_TEXT_COLORS` at the top of `backend_visual.py` are exactly the
+second vocabulary that sentence forbids. Closing that gap is a
+dictionary-schema change (a new field, plus a `dictionary/README.md`
+schema note), not a backend detail, so it is recorded here and left for
+the commander. It also touches `.agent/DECISIONS.md`, where the colour
+palette is UNDECIDED (see `dictionary/README.md`, "Provenance of the
+values above", Session 42).
+
+The field it would take: a **`colors` block on the entry**, sibling to
+`style`, holding background and foreground as the same kind of named-hint
+table the rest of the dictionary uses -- e.g.
+
+```json
+"colors": {
+  "background": { "css": "background-color", "values": { "surface": "#ffffff", "muted": "#f0f0f0" } },
+  "foreground": { "css": "color", "values": { "body": "#333333", "on-dark": "#ffffff" } },
+  "defaults": { "background": "surface", "foreground": "body" }
+}
+```
+
+so a kind declares *which* named colour it uses and the palette itself
+lives in one place, swappable without touching an entry. The open
+questions are the commander's: whether the palette is authored per kind or
+in a single shared table the entries reference; whether `logo` and
+`navigation` should keep "inherit from parent" as a declared word
+(`"inherit"`) rather than as a Python `None`; and whether
+`KIND_TEXT_COLORS`' light-on-dark pairs (`header`, `banner`, `footer`) are
+pairs a kind declares together (`"on-dark"`) or two independent choices
+that a designer can put into conflict. Until that is decided the renderer
+keeps its own table, and `KIND_COLORS` is unchanged by this mission.
+
+## Mission 78 — multi-backend consistency
+
+Read-only audit of how the HTML backend (src/ine/backend_html.py) and the
+visual backend (src/ine/backend_visual.py) render the SAME semantic model.
+`semantic.Model` (src/ine/semantic.py:21-26) is the whole interface both
+backends see: `entities`, `properties`, `relationships`, `groups`.
+No source file changed by this mission.
+
+### Behaviour table
+
+| behaviour | HTML | Visual | verdict |
+| --- | --- | --- | --- |
+| children layout, `layout: row` | `_layout_for_kind` (:49) reads `layout`; a row parent emits `display:flex; gap:20px` and each child carries inline `flex:1` (`_attrs`:136-140) | `_layout_of` (:140-145) reads the same entry; `_pack_children` (:319-330) packs row children with `side="left"` | **intentional** — same declared intent, target-idiomatic implementation (flexbox vs pack side=LEFT); only `card-group` declares `row`, and both backends honor it. |
+| `position: bottom` (footer) | not read anywhere — grep shows `backend_html.py` has no `position` handling; a footer renders in normal document flow like any sibling | `_position_of` (:148-153) reads it and `_pack_children` (:327-328) packs such a child `side=tk.BOTTOM`, pinning it to the window's bottom edge | **bug** — the dictionary declares `footer` `position: bottom`; HTML ignores the declared intent while Visual honors it, so one program renders differently per target. |
+| per-entity written properties | `_written` (:110-115) collects them; `_attrs` (:126-144) turns them into an inline `style` via `style_overrides`; `title`/`text` also become h3/text content (`_render_children`:159-180) | `_render_entity` reads only `text` (:215) and `title` (:216) from `model.properties`; `_padding_of` (:123-137) reads dictionary DEFAULTS, never a value the program wrote | **bug** — a program writing `card-1 padding 32` changes the HTML output and is ignored by the visual window; recorded already as a "deliberate limit" in Mission 77's finding, but the divergence is real. |
+| dictionary style hints | fully consumed: `_stylesheet` (:95-107) emits one `.kind` rule per used kind via `style_declarations`, inline overrides via `style_overrides` (:141); padding/border/corner-radius/link-spacing all paint | reads ONLY `padding` via `_hint_lengths`/`_padding_of`; `border`, `corner-radius`, `link-spacing` are never consumed; colors remain in `KIND_COLORS` — the second vocabulary Mission 77 flagged | **bug** — same dictionary, different coverage: HTML consumes the whole `style` block, Visual consumes one hint class. |
+
+### Candidate follow-up missions (recorded, not implemented)
+
+- HTML footer pin: read `position` in `backend_html.py` and emit the declared
+  bottom placement; pin with a new golden (footer-bearing program) asserting
+  the footer element's style carries the position, and the four existing
+  goldens stay byte-identical.
+- Visual written-value parity: `_padding_of` (and the visual renderer) honor
+  entity-written property values like HTML `style_overrides` does; pin with a
+  unit test (no window) asserting an entity that wrote `padding` resolves to
+  its written value.
+- Visual style-block parity: consume `corner-radius` and `border` width in
+  the visual backend; pin with a unit test asserting the resolver reads the
+  dictionary hint for those names. No window.
+
+## Mission 79 — backend plugin contract
+
+Read-only investigation of what a new backend (React, Flutter, …) would
+have to touch today, and the minimum contract that removes that cost.
+No source file changed by this mission.
+
+### The five-stage pipeline each CLI path repeats
+
+`_html` (via `build`, cli.py:17-34), `_native` (cli.py:110-117) and
+`_visual` (cli.py:133-140) each run the identical head:
+
+    lex(source) -> parse(tokens) -> analyze(statements) -> resolve(...) -> execute(...)
+
+The divergence is the last step: HTML renders the MODEL to a `str` and writes
+a file; native compiles the RESOLVED STATEMENTS to C and runs the exe; visual
+shows the model in a tkinter window.
+
+### The consumption asymmetry
+
+| backend | entry point | consumes | line |
+| --- | --- | --- | --- |
+| `backend_html` | `render(model)` | the **model** | backend_html.py:56 |
+| `backend_visual` | `render(model, title_override=None)` / `show(model)` | the **model** | backend_visual.py:181/333 |
+| `backend_c` | `emit(statements)` | the resolved **statements** | backend_c.py:30, called from native.py:36 |
+
+Two backends speak the model; the native one speaks an earlier stage. There
+is no uniform stage input.
+
+Arguments, returns, failure:
+
+- HTML: `render(model)` — one required arg; returns `str`. No override hook.
+- Visual: `render(model, title_override=None)` — optional override; returns a
+  live `tk.Tk` widget (not a string).
+- C: `emit(statements)` — returns C source `str` (pure).
+- Failure: three UNRELATED exception types can be raised behind one command —
+  `BackendError` (backend_html.py:35), `VisualError` (backend_visual.py:257),
+  `NativeError` (native.py:18) — no shared base, which is why cli.py:86 names
+  all three (plus the lexer/parser/semantic errors) in one except tuple.
+
+### The proposed minimum contract
+
+```python
+class BackendError(Exception): ...          # one base replaces the three
+
+@dataclass
+class Result:
+    content: object        # str (html / c source) or a live widget (visual)
+    artifact: str | None = None   # output path when the backend wrote a file
+
+BACKENDS: dict[str, Backend] = {}   # registry, keyed by backend name
+
+def render(backend, stage_input) -> Result: ...   # one entry point per backend
+```
+
+The CLI then reduces to: pick `stage_input` (model or statements) from the
+dictionary entry's declared consumption, call `BACKENDS[name].render(...)`,
+and map `BackendError` to the error report. Nothing new is designed here —
+this is the smallest shape that removes the asymmetry of step 2.
+
+### What a new backend still costs under the contract
+
+| edit a new backend needs today | removed by the contract? |
+| --- | --- |
+| a new argparse flag + an `if args.cooltarget:` branch (cli.py:81-85) | the branch/selection is removed; a user-facing flag is still required (that is how a target is chosen) |
+| a module import (`from .backend_react import ...`) | **removed** — the module registers itself in `BACKENDS` by name |
+| a new `_react(source)` stage function repeating the five-stage head | **removed** — a shared pipeline helper feeds the stage input; the backend implements only `render` |
+| a new error class + a new entry in the cli.py:86 except tuple | **removed** — single `BackendError` base |
+| the backend module, its tests and goldens, dictionary coverage | still required (that is the point of a new backend) |
+
+### What this mission did NOT decide
+
+Whether the contract is worth its migration cost. Adopting it touches
+`cli.py`'s public flags and both existing backends (visual's live-widget
+return and native's statements-input would both have to fit the uniform
+shape), and that is an architecture decision for the commander, not an
+engineering reflex. A scratch registry under `.tmp/backend-plugin-probe/`
+was type-checked to confirm the shape compiles; it is scratch and not cited
+as the location of any durable result.
+
+## Mission 80 — dictionary format exposure
+
+`ine --dict <kind>` now prints the full structured entry — the shaped body
+`make <kind>` should surface, instead of the flat suggestion list.
+
+**footer** prints: `footer (bar)`, `element: footer`, the meaning, the defaults
+(`content-position: center`, `height: compact`, `position: bottom of page,
+always`), the style block (`display: flex`, `padding: 1.25rem 1.5rem`,
+`content-position` → css `justify-content`, values `center|left|right`),
+`belongs inside: page`, and `implementation.html: footer element`.
+
+**card-group** prints the responsiveness data item 83 will consume:
+`narrow-layout: stack members` and `narrow-class: viewport.width == narrow`
+both come from its `defaults` block, along with `layout: row`, `member-width:
+equal`, `member-spacing: even` and `contains: card`.
+
+**Field coverage across all 13 makeable kinds:** every entry carries `term`,
+`kind`, `element`, `meaning` and `implementation`. Two structural variations
+the printer already handles: (a) `style` may have a `base` list and a
+`properties` map, either alone — bare kinds (button, card-group, container,
+image, section, title) have only `properties` or neither, footer/header/logo/
+navigation have a `base` list; (b) `defaults` is optional — `title` is the
+only kind with no `defaults` block, so the printer skips it rather than
+printing an empty map. No dictionary JSON schema was changed.
+
+## Mission 81 — kind body templates
+
+`make <kind>` completion now offers an editable starting-point body built
+from the dictionary entry (`kind_snippet` in `src/ine/autocomplete.py`),
+delivered as a VS Code snippet whose first default value is the initial
+tabstop; item 81 index executed 1-5, tests green.
+
+**Template shape.** Two line kinds, dictionary-only: (a) each declared
+member (`defaults.contains`) becomes a `make <member>` line plus a
+`<member> inside <kind>` line; (b) every style/default property becomes a
+`<kind> <property> "<default>"` statement, the property value resolving
+from `defaults` first, a style spec's own `value` key second (none declare
+one today), else omitted — no fabricated values. The snippet leads with the
+kind name so insertion follows a typed `make `; `$0` anchors the final
+cursor, `${1:...}` the first default.
+
+**footer:**
+```
+make footer
+footer content-position "center"
+footer height "compact"
+footer position "bottom of page, always"
+```
+
+**card-group:**
+```
+make card-group
+card-group layout "row"
+card-group member-spacing "even"
+card-group member-width "equal"
+card-group narrow-class "viewport.width == narrow"
+card-group narrow-layout "stack members"
+make card
+card inside card-group
+```
+
+**Kinds that cannot yet generate a template:** only `title` (no `defaults`
+block, no `style`, no `contains`) yields `None`, so `make title` completes
+with no body — correct; nothing is invented. All other 12 makeable kinds
+produce a body. Properties whose `defaults` value is a prose hint (logo
+`interactive "false by default - not settable yet...`, image `source "the
+asset the implementation pulls from"`) flow through verbatim as editable
+start — editable but not settable, worth community itemizing later; item
+82 will grow advisory checks.
+
+**Boundary honored:** the template is editor/dictionary layer only — no
+grammar, parser, or dictionary schema change; a user deleting the whole
+body regresses nothing (completion degrades to the plain `insert`).
+Protocol: kind items carry an optional `snippet` field; the extension
+substitutes it as a `SnippetString`, so the editor holds no vocabulary
+(`editor/vscode-ine/extension.js`, README updated).
+
+## External assessment — verified against ground truth
+
+An external reviewer's project rating claimed: (a) "13 kind files",
+(b) "112 mission index", (c) only "two statement kinds observed",
+(d) item 58 was "Mission 57 mapping … over-shipped" (palette UNDECIDED),
+and (e) "describing vs doing" open / say compile-time-resolve only.
+
+Verified against `.agent/` and source:
+
+- **(a)** 15 JSON files under `src/ine/dictionary/`; **13 makeable kinds**
+  (banner…title; universal.json + viewport.json are unmade metadata). The
+  "13 kind files" claim is right only if it means *makeable kinds*, wrong
+  if it counts *files*.
+- **(b)** PLAN items run **1–118** (reindexed by the PlanHygiene fix), not
+  112.
+- **(c)** `parser.py` declares **five** statement kinds (MakeStatement,
+  PropertyStatement, SayStatement, InsideStatement, GroupStatement). The
+  interpreter executes only `Say`, which may explain the undercount, but
+  the grammar has five.
+- **(d)** Correct with a level off: the over-ship was **item 58** being
+  implemented without clearing item 58's second precondition ("the
+  commander accepts the Mission 57 mapping scope"); M57 itself (the
+  mapping *proposal* and NOTES finding) was never in question. Palette
+  (CSS fidelity) remains UNDECIDED; `#e2e8f0` traces to neither guess nor
+  proposal.
+- **(e)** Accurate: `semantic.resolve()` turns `say <ref>` into a concrete
+  value at compile time; `interpreter.execute()` echoes it. There is no
+  doing-side construct — `say` is the whole runtime surface.
+
+Rating-level judgment is not a repo fact and is not recorded here as one.
+
+## Mission 82 — dictionary-backed validation
+
+Implemented the first real consumption of the "dictionary is the semantics
+authority" decision (DECISIONS Session 49): `advisory_warnings(model)` in
+`src/ine/semantic.py`, run after `analyze` by the CLI (`build`, `_native`,
+`_visual`). Strictly advisory — warnings to stderr, exit status and model
+unchanged. Three checks:
+
+- **(a) property name** the kind does not declare, against
+  `properties_for(kind)` (declared hints + universal `title`/`text`).
+- **(b) property value** outside the kind's declared vocabulary — the
+  `values` map of the property's `style` block (the same data
+  `style_declarations`/`style_overrides` read). `title`/`text` have no
+  values map, so free text is never flagged; numbers pass.
+- **(c) containment** where the child kind is not in the parent's `members`
+  (from `contains`/`parents`). Kinds the dictionary does not declare (Alice's
+  `person`) are skipped entirely — no custom-domain false positive.
+
+**Classification across the repository (no hits — zero GENUINE, zero FALSE
+POSITIVE):**
+
+| program | (a) props | (b) values | (c) containment |
+|---|---|---|---|
+| examples/dictionary-demo.ine | none | none | none |
+| examples/alice/alice.ine | skipped (person undeclared) | skipped | n/a |
+| examples/hello/hello.ine | none | none | n/a |
+| examples/homepage-cards/cards.ine | none | none | none |
+| examples/homepage-hero/hero.ine | none | none | none |
+| examples/homepage-topbar/topbar.ine | none | none | none |
+| examples/native/hello.ine | n/a (say only) | n/a | n/a |
+| examples/say/say.ine | n/a | n/a | n/a |
+| examples/site/site.ine | none | none | none |
+| examples/test.ine | n/a (empty) | n/a | n/a |
+| .agent/experiments/*.ine (8) | none | none | none |
+
+Why: every shipped program was written against the dictionary's own
+suggestions (`--dict` discovery), and the containment pairs (banner-inside-
+container, button-inside-section, section-inside-page, card-group-inside-
+container, card-inside-card-group) are exactly the dictionary's `contains`
+entries. The experiments deliberately stay inside declared vocabulary.
+
+**Verdict — safe to harden next:** all three checks produced zero hits on
+real programs, so converting any of them to a hard `SemanticError` would
+break no existing example today. Recommend hardening order by confidence:
+(1) containment (c) — the dictionary's `contains` is the most authoritative
+data and site.ine's comment chains match it exactly; (2) property name (a) —
+guards typos like `colour`, needs commander opt-in only because `properties`
+blocks could grow more kinds; (3) value vocabulary (b) — keep advisory
+longest, because `style` values maps are just paint words and the escape
+hatch (authors writing raw CSS) is a documented feature. No hardening happened
+in this mission per the commander-opt-in rule.
+
+**Tests:** `AdvisoryValidationTests` in `tests/test_ine.py` (12 tests): each
+check flagged + still-builds, valid cases not flagged, universal title/text
+free, Alice's custom domain free, CLI reports to stderr with exit 0, and a
+full-examples sweep asserting zero warnings. Suite: 555 passed, 31 subtests.
+
+## Mission 7 — the first enumerated `choice` value (commander decision)
+
+The longest-standing evidence blocker (Session 33 revert, "`card-group
+layout` stays unknown until a second option exists") was resolved by
+commander delegation: "the thing is the layout column … you could decide on
+your own." So `card-group.json` now declares the first `"choice"`:
+
+- `"properties": {"layout": ["row", "column"]}` (bare option words; the
+  grammar still writes them quoted: `card-group layout "column"`).
+- `value_shape("card-group","layout")` → `ValueShape("choice",
+  ("row","column"))`; the Session 33 revert test
+  (`test_card_group_layout_stays_unknown`) became
+  `test_card_group_layout_is_the_first_choice`.
+- `kind_snippet` offers the options for choice-shaped properties —
+  `card-group layout "${1|row,column|}"` — instead of a fixed default
+  (VS Code choice placeholder).
+- `--dict card-group` now prints a `properties:` section:
+  `layout  choice: row, column` (the shaped body surfaces the options).
+- The advisory pass's `_value_words` now joins the declared `choice` options
+  with the style `values` map, so `layout "diagonal"` warns while
+  `layout "column"` is clean. `--dict` and the whole ESG-triple agree.
+
+Commander guidance recorded: keep the vocabulary minimal — "not much
+unnecessary quotation brackets, everything has to have a meaning," a chess
+analogy (few rules, massive combination). `column` is the second and last
+layout word today; evidence (a real program) gates further layout options.
+
+## Mission 83 — one narrow responsive `@media` rule (unblocks item 59)
+
+Commander decision received: item 59's single-rule scope accepted — "cards
+stack on narrow … you could decide on your own." `backend_html.py`:
+
+- `_narrow_rule(kind)` — when the kind's entry declares `narrow-class` AND
+  `narrow-layout` in `defaults` while its `layout` is `row` (card-group
+  only today), contributes one
+  `@media (max-width: 768px) { .<kind> { flex-direction: column; } }` rule.
+- Gated on the *declared data*, never the kind name; a program with no such
+  kind gains zero `@media` output. Hint translation documented in the module
+  (not invented): `narrow-layout` "stack members" → column; the
+  `narrow-class` condition is NOT evaluated (conditions/state UNDECIDED) —
+  its presence is the gate; 768px is a platform document-level fact in the
+  same class as the viewport meta.
+- Members keep inline `flex:1` from the row layout; in a column stack the
+  container is content-sized so there is no free space to grow into and each
+  member keeps its natural height.
+- Goldens: `tests/expected/cards.html` and `tests/expected/site.html`
+  regenerated deliberately; each gained exactly one line (the @media rule).
+  hello/topbar/hero goldens byte-identical, unchanged.
+
+**Verification:** 5 `NarrowResponsiveRuleTests` (rule emitted for
+card-group; no `@media` for kinds without narrow declarations; desktop row
+output unchanged; declared-value change keeps exactly one rule), plus the
+choice tests. Suite: **563 passed, 33 subtests**.
+
+**Next:** PLAN item 84 (editor diagnostics) — verified next EXECUTABLE via
+`python -m ine_agent.cli run --dry-run`; index `.agent/missions/84.md`
+needed.
+
+## Mission 124 - Queue to exhaustion, and what a proposal actually is
+
+- **A bound is not a loop condition.** The run ends when the next mission
+  lookup finds nothing `EXECUTABLE`, when the mission-number set is exhausted,
+  or when an optional bound is reached. A cycle counter is not a mission
+  counter: a mission given three attempts is one mission, so the bound keys on
+  mission identity (`_counted`), not on attempts. `--max-attempts` stays a
+  per-mission budget and defaults to 1.
+- **An unset bound is still finite.** "Run until the queue is exhausted" is
+  bounded because a mission is attempted at most once and is then `DONE`,
+  `BLOCKED`, or `DEFERRED`, and a proposal is never executable. That is the
+  only reason the default can be unlimited work rather than an infinite loop.
+- **`CLAUDE_REVIEW` is NOT inert in this plan.** Mission selection treats it as
+  executable and routes it to the claude review pre-pass. So filing a worker
+  proposal under that tag alone would make the *next* run pick it up, refuse it
+  for want of an execution index, and tag it `BLOCKED` — a suggestion
+  manufactured as a blocker, and one that a human would then have to clear. The
+  inertness comes from `PROPOSAL_MARKER` in the item text plus
+  `Task.executable` returning False for it, which means the plan's own parsing
+  enforces the contract, not the worker's good intentions.
+- **Compare proposals on identity-bearing words, and read them back from the
+  span you wrote.** Two traps, both hit here: comparing the raw headline text
+  fails once the stored item carries its annotation, and comparing the whole
+  item line makes every proposal unique because the annotation's own words
+  differ. `state.content_words()` strips the tag, the bold markers and function
+  words; `Task.proposed_text` recovers the proposal from the bolded span. With
+  those, "finish the thing" is recognised as a restatement of
+  "`EXECUTABLE` — **finish the thing.**", and a repeated proposal is caught
+  without depending on the annotation's wording.
+- **Refusals are not missions.** A refusal (no execution index) happens outside
+  a cycle, so a run that refused everything has a full tally of zeros. The
+  summary must add the refusal count from `self._refused`, or the run reports a
+  clean queue while outstanding planner work waits — which is exactly the
+  outcome a commander would not want to be told about by silence.
+
+## Mission 125 - What the handoff costs, measured
+
+The pilot: three missions in one run over a stub worker - one completes, one
+fails (exit 1 + a `failed` receipt), one reports `needs_commander`. The
+assertions are in `tests/test_ine_agent.py` (`PilotRunTests`, 5); the
+measurement script was scratch (`.tmp/pilot.py`, deleted after the run).
+
+**Per-mission handoff, after (measured on the pilot, 27 Sep 2025):**
+
+| mission | prompt chars | prompt lines |
+| --- | --- | --- |
+| 1 (no related earlier mission) | 2,944 | 64 |
+| 2 (one related snippet selected) | 3,111 | 68 |
+| 3 (gate) | 2,944 | 64 |
+
+Run totals: 3 missions, **3 worker invocations**, 8,999 prompt chars, 451 output
+chars, **0.24 s** wall clock, exit 2. So the per-mission handoff is ~3 KB / ~65
+lines, and the marginal cost of one related earlier mission is ~170 chars / 4
+lines - which is the whole point of selecting snippets on declared signals
+rather than resending the history.
+
+**Before, for comparison:** the pre-arc handoff embedded these blocks whole,
+and there was no mission index at all - the plan item was the only per-mission
+content. Measured on today's files, those blocks are:
+
+| block | chars | lines |
+| --- | --- | --- |
+| `WORKER_PROMPT.md` | 4,041 | 93 |
+| `MISSION_PROMPT.md` | 3,628 | 92 |
+| `PLAN.md` | 96,217 | 1,648 |
+| `STATE.md` (distilled head) | 5,428 | 90 |
+| `HISTORY.md` (last 80 lines) | 5,021 | 80 |
+| **sum** | **114,335** | |
+
+The plan alone is ~32x the new prompt, and it grew with the project. Read
+honestly: the old prompt was a *distilled* STATE, so this sums whole files
+where the old code sent excerpts - it is an upper bound on the old handoff and
+an order-of-magnitude statement, not a byte-exact A/B. The part that is exact
+is the direction and the shape: **the old prompt was dominated by content the
+mission did not need, and it re-sent that content on every cycle.**
+
+**Model requests per mission.** Not measured by this pilot, which is a stub: a
+stub makes zero real requests, and no number from it would mean anything. The
+honest numbers are the ones already recorded under Mission 115: a near-empty
+`opencode run` costs ~5-6 requests in practice (one `role=assistant` message ~
+one request), so 3 missions ~ 15-18 requests, and the *old* path added a
+further diagnosis call whenever a worker printed no `CLASSIFICATION:` line
+(Mission 116) - up to one extra invocation per failure. The new path spends
+exactly one invocation per attempt, always, and never a second. This run
+therefore does not claim a new request count: it claims the diagnosis call is
+gone, which is a structural change, not a measurement.
+
+**What the pilot changed in the code.** It found two tally defects that unit
+tests had let through, because no single test had a mission that failed *and*
+a mission that was gated in the same run:
+
+1. A gated mission was counted twice as human (once in the diagnosis branch,
+   once in the loop) and **not** counted as blocked at all - so a run whose
+   plan said `BLOCKED` reported "0 blocked". The diagnosis path is now the
+   single owner of the counts, and a gated mission is counted as both human
+   and blocked.
+2. A failed mission was counted as both `failed` and `deferred`. The buckets
+   are now mutually exclusive: a mission that failed is `failed`, and
+   `deferred` means held without a failure to report. The four counts now sum
+   to the missions the run touched, which is the only version of this number a
+   commander can use.
+
+Also added: the run summary counts the follow-up proposals it filed, because
+Mission 124 asked for it and the pilot is where its absence was visible
+("1 follow-up(s) proposed").
+
+**Documentation delivered.** `CONTRIBUTING.md` now documents the flow a
+contributor actually uses (`doctor`, `run --dry-run`, `run --worker <name>`,
+`--max-missions`, `--max-attempts`), how to author a mission index, what the
+receipt contains, how related snippets are selected, and what the commander is
+asked to decide - plus the two enforced rules (a worker never edits the control
+plane; a follow-up is proposed, never executed).
+`.agent/DECISIONS.md` records the approved architecture and the three rejected
+alternatives (injected state snapshot, whole-history summaries, automatic retry
+with diagnosis).

@@ -6,7 +6,37 @@ decision — nothing is copied here until it is real.
 
 ## DECIDED
 
-- **Language identity** (Session 23): Ine, extension `.ine`, CLI `ine`.
+- **The worker architecture** (Missions 119-125): one fresh process per
+  mission, executing a written index and nothing else. Specifically DECIDED:
+  - **Lean handoff** — the worker is given the mission, the rules, the
+    receipt contract, and only the compact receipts of missions related by a
+    *declared* signal (same `Area:`, `Depends on:`, or a changed file in
+    common). Not the plan body, not the history, not a STATE snapshot.
+  - **Structured receipt** — a worker ends with one bounded JSON object after
+    the `INE_RECEIPT_JSON` marker. Python writes every `.agent/` record from
+    it, so a worker never edits the control plane and cannot half-record a
+    mission. An unreadable receipt means "did not report", never a second
+    request spent interpreting it.
+  - **Selective compact memory** — a mission that declares no relation is
+    offered nothing. An unfiltered snippet list is the history this replaces.
+  - **Provider profiles** — named worker profiles (`opencode`, `claude`, or
+    `.agent/workers.json`), resolved and reported by `doctor` and the dry run
+    before anything is launched. A model is a refinement a profile must
+    declare how it wants, not a selector the caller forces.
+  - **One invocation per attempt** — a worker classifies itself in-band in its
+    receipt. There is no automatic second call to ask why, and no automatic
+    retry: `--max-attempts` is a per-mission budget the commander sets
+    explicitly, and it defaults to 1.
+  - **Queue-to-exhaustion** — a run ends when nothing is `EXECUTABLE`, when
+    the mission set is exhausted, or when the optional `--max-missions` bound
+    is reached. `--max-missions` defaults to unset, which is finite because a
+    mission is attempted at most once and a proposal is never executable.
+  - **Follow-ups are proposals** — a receipt's follow-up is filed as a
+    `CLAUDE_REVIEW` item carrying a non-executable marker. The tag alone is
+    not enough: `CLAUDE_REVIEW` is itself executable in this plan, so without
+    the marker a proposal would be picked up by the next run and turned into a
+    blocker.
+- **Ine language identity** (Session 23): Ine, extension `.ine`, CLI `ine`.
 - **Four constructs only** (Session 25): Entity (`make`), Kind (properties),
   Property Value, Container (containment). A fifth requires evidence +
   WORKBOOK §25 framework.
@@ -61,6 +91,36 @@ decision — nothing is copied here until it is real.
   OBSERVED local usage, NOT the provider quota, and the warning is purely
   advisory — no hard pause or budget enforcement until real runs correlate
   observed usage with actual quota/rejection events.
+- **REJECTED — injecting a distilled state into every prompt** (Missions
+  119-125): the snapshot was re-sent in full on every cycle, so its cost was
+  paid once per mission for context the mission's own index already stated,
+  and it went stale between the read and the worker's first step. A stale
+  position is worse than none. A worker that needs a control-plane file reads
+  it, at the point it needs it.
+- **REJECTED — whole-history summaries** (Missions 119-125): the same cost
+  problem, worse. Related compact receipts on declared signals carry what is
+  actually relevant; a mission with no declared relation is offered nothing.
+- **REJECTED — automatic retry with a diagnosis call** (Missions 116, 123):
+  a second model request to ask a worker why it failed is a request spent
+  making a decision the worker was already asked to make in its receipt, and
+  it is how a bounded runner becomes an unbounded one. Failure handling is
+  now a budget the commander sets (`--max-attempts`) plus durable deferral.
+
+- **Dictionary is the semantics authority** (Session 49, commander, supersedes
+  "Dictionary is advisory, never a validator" from Session 25): the dictionary
+  is no longer a passive suggestion list. It must (a) *know its own format* —
+  `make footer` surfaces the shaped body (element, defaults, style, members,
+  enclosing context) as a starting-point template the user edits, never a
+  constraint on experts; (b) back semantic validation in `analyze` — property
+  names, property values against `value_shape`/hint vocabulary, and containment
+  against `parents`/`contains` — rolled out **advisory-first**, hardened only
+  where no example breaks; (c) drive responsiveness — `narrow-layout` /
+  `narrow-class` are consumed by the HTML backend to emit a real `@media` rule
+  (unblocks item 59). Scope intent: semantics "simple by function but an
+  extension of prior semantics" — not so small that every idea needs endless
+  manual expression, not so large that the language surface grows a fifth
+  construct without the WORKBOOK §25 framework. Templates live in the
+  editor/`--dict` layer, not in the grammar.
 
 ## PROPOSED / EXPERIMENTAL / UNDECIDED
 

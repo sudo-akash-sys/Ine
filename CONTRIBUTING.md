@@ -103,14 +103,112 @@ original intent are acceptable when the implementation requires it
 
 ## Working with the autonomous control plane (`.agent/`)
 
-`.agent/` tracks the development plan (PLAN.md), state (STATE.md), history
-(HISTORY.md), and blockers (BLOCKERS.md). Key conventions:
+`.agent/` is the development plan (`PLAN.md`), the current position
+(`STATE.md`), the append-only narrative (`HISTORY.md`), the durable findings
+(`NOTES.md`), the open decisions (`BLOCKERS.md`, `DECISIONS.md`) and one
+execution index per mission (`missions/<item-number>.md`). The supervisor in
+`src/ine_agent/` reads it, hands one mission to one worker, and writes every
+record itself.
 
-- **PLAN selection rule:** the first `EXECUTABLE` item in list order is the
-  next task; `BLOCKED` / `DONE` items are never picked.
-- **STATE / HISTORY updates:** every completed session updates both files.
-- **`.tmp/`** is the only location for temporary artifacts (gitignored);
-  never commit generated files outside this directory.
+### The loop, as you actually use it
+
+```sh
+ine-agent doctor              # is this toolchain usable? read-only, no model call
+ine-agent run --dry-run       # what would run next, with the resolved command
+ine-agent run --worker opencode            # run the executable queue
+ine-agent run --worker opencode --max-missions 3   # stop after three missions
+```
+
+- `doctor` resolves the worker profile, the command, the prompt position and
+  the timeout, and reports what is wrong with a remedy. It launches nothing.
+- `--dry-run` prints the profile, the exact command, the budget, the next
+  mission and its index state, and how much of the plan is still `EXECUTABLE`.
+- `--worker <name>` takes a built-in (`opencode`, `claude`) or one declared in
+  `.agent/workers.json`. `--model` is a refinement, not a selector: a profile
+  that does not declare how it wants a model does not get one.
+- The run drains the queue: it ends when nothing is `EXECUTABLE`, when the
+  mission set is exhausted, or when `--max-missions` is reached. A mission gets
+  `--max-attempts` (default 1) invocations, and is counted once however many it
+  takes.
+- One completion notification per run — not one per mission. An immediate alert
+  is reserved for a commander gate and for a run that completed nothing.
+
+### Authoring a mission index
+
+A mission is a numbered PLAN item plus an execution index at
+`.agent/missions/<item-number>.md`. **A mission with no index is refused**,
+recorded `BLOCKED`, and costs no worker call, so the index is the deliverable
+that makes a mission runnable. The index states the *change*, not the
+investigation: each step names what to do, not what to go and find out. A step
+the worker has to think its way into is a planning defect.
+
+Suggested shape (`.agent/MISSION_PROMPT.md` is the contract):
+
+```markdown
+# Mission <n> — <title>
+Area: <subsystem>
+Depends on: <item numbers>
+Goal: <what is true when this is done>
+## Files      # the files you expect to touch
+## Steps      # each names the change
+## Constraints
+## Done when  # how you will know
+```
+
+### What the worker gets, and what it returns
+
+The worker is handed a lean handoff: the mission, the rules for carrying it
+out, the receipt contract, and — only when an earlier mission actually worked on
+the same thing — that mission's compact receipt. It is **not** handed the plan
+body, the history, or a snapshot of STATE: those were re-sent in full on every
+cycle, and a snapshot that goes stale before the first step is worse than none.
+A worker that needs one of them reads it itself, at the point it needs it.
+
+Related compact snippets are selected on three declared signals only — the same
+`Area:`, an explicit `Depends on:`, or a changed file in common. A mission that
+declares none of them is offered nothing, which is the safe default.
+
+The worker ends by printing one JSON object after the marker line
+`INE_RECEIPT_JSON`:
+
+```json
+{"status": "done", "summary": "what happened",
+ "changed_files": ["src/thing.py"], "verification": ["pytest -q: 12 passed"],
+ "area": "ine-agent", "finding": "a durable fact", "follow_up": "a proposed next mission"}
+```
+
+`status` is one of `done`, `failed`, `missing_prerequisite`,
+`needs_commander`. Every field is optional and bounded, and a receipt that
+cannot be read is treated as "this worker did not report", never as a reason
+to spend another request interpreting it.
+
+Two rules make this safe, and both are enforced rather than asked for:
+
+- **A worker never edits the control plane.** The plan, state, history and
+  notes entries are written by Python from the receipt, so a worker cannot
+  half-record a mission.
+- **A follow-up is a proposal, never work.** It goes to the run report, and a
+  real deliverable is appended to the plan as a `CLAUDE_REVIEW` item carrying a
+  marker that makes it non-executable. Nothing runs a proposal until a human
+  re-tags it.
+
+### What you are asked to decide
+
+You are asked for the things an agent must not decide for itself: language
+syntax and semantics, product direction, fundamental architecture, breaking
+compatibility, and any conflicting reading of intended behaviour. Those go to
+`.agent/BLOCKERS.md` and stop the run with exit code 2. Ordinary engineering
+choices — an implementation that preserves the semantics, a reversible
+decision, a choice the project already has a convention for — are the agent's
+to make and it makes them without asking.
+
+### Conventions
+
+- **PLAN tags:** every numbered item carries exactly one of `EXECUTABLE` /
+  `BLOCKED` / `DONE` / `CLAUDE_REVIEW`. A compound tag parses as no tag and
+  breaks mission selection.
+- **`.tmp/`** is the only location for scratch (gitignored). Every durable
+  artifact belongs in this repository; nothing durable may live in `.tmp/`.
 - **Dictionary is advisory:** the autonomous agent never unblocks
   evidence-gated work by guessing — evidence-gated means evidence is needed.
 

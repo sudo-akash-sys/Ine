@@ -190,8 +190,15 @@ def has_usage(delta_dict):
         or bool(delta_dict.get("by_model"))
 
 
-def format_snapshot(snapshot_dict):
-    """One-line human summary of a snapshot."""
+def format_snapshot(snapshot_dict, scope="global"):
+    """One-line human summary of a snapshot.
+
+    `scope` says whose usage this is. The database is global — every request
+    OpenCode has ever made on this machine, from any session — so it is
+    labelled as such and never presented as this run's cost. Only a delta
+    (`format_delta`) or the run's own local measurement is a per-run number.
+    """
+    label = "global" if scope == "global" else scope
     text = "{} requests, {:,} in / {:,} out / {:,} reasoning tokens, ${:.4f}".format(
         snapshot_dict["requests"],
         snapshot_dict["tokens_input"],
@@ -204,6 +211,31 @@ def format_snapshot(snapshot_dict):
             "{}={}".format(model, count)
             for model, count in sorted(snapshot_dict["by_model"].items())
         )
+    if label == "global":
+        text += " ({} total for this machine — not this run's cost)".format(
+            label)
+    return text
+
+
+def format_local(cycles, elapsed_seconds=None):
+    """This run's own measured cost, from numbers this process recorded.
+
+    Provider-independent by construction: prompt characters, output
+    characters and wall-clock, counted here. The request *count* is exact
+    because the supervisor knows how many invocations it made — one per
+    mission attempt — which is the number a run report should lead with.
+    """
+    if not cycles:
+        return "no worker cycles this run"
+    chars = sum(cycle.get("prompt_chars", 0) for cycle in cycles)
+    out_chars = sum(cycle.get("output_chars", 0) for cycle in cycles)
+    timed_out = sum(1 for cycle in cycles if cycle.get("timed_out"))
+    text = "{} worker invocation(s) (1 per mission attempt), {:,} prompt " \
+           "chars, {:,} output chars".format(len(cycles), chars, out_chars)
+    if elapsed_seconds is not None:
+        text += ", {:.1f}s wall clock".format(elapsed_seconds)
+    if timed_out:
+        text += ", {} timed out".format(timed_out)
     return text
 
 

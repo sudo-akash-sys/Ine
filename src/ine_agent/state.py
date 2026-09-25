@@ -15,25 +15,67 @@ recording commander resolutions as new remarks, appending blockers without
 touching existing entries, and appending to the durable per-run report
 `.agent/RUN_REPORTS.md`. Every write is append-only with respect to the
 original records.
+
+It also reads the per-mission EXECUTION INDEXES under
+`.agent/missions/<item-number>.md` — the planner's concrete step list for
+one plan item. The supervisor refuses to launch a worker for a mission
+with no index, so `read_mission_index` returning None is a decision, not a
+missing-file incident.
 """
 
 import os
 import re
 import time
 
+from . import receipt as receipt_format
+
 AGENT_DIR = ".agent"
 PLAN_NAME = "PLAN.md"
 STATE_NAME = "STATE.md"
 HISTORY_NAME = "HISTORY.md"
+NOTES_NAME = "NOTES.md"
 BLOCKERS_NAME = "BLOCKERS.md"
 REPORT_NAME = "RUN_REPORTS.md"
 MISSION_PROMPT_NAME = "MISSION_PROMPT.md"
+WORKER_PROMPT_NAME = "WORKER_PROMPT.md"
 MISSION_NAME = "MISSION.md"
+MISSION_DIR = "missions"
 HUMAN_MARKER = "HUMAN_DECISION_REQUIRED"
+
+#: Appended to every plan item `propose_follow_up` writes. It is the marker
+#: the plan is parsed by, not decoration: an item carrying it is never
+#: executable, so a worker can file a suggestion without being able to turn
+#: it into work the loop performs.
+PROPOSAL_MARKER = "(proposed by a worker"
+
+#: Words that carry no identity, so "finish the thing" and "`EXECUTABLE` —
+#: **finish the thing.**" compare equal. Kept short on purpose: a proposal
+#: that merely sounds like its mission is dropped, and a false drop costs a
+#: line in the run report rather than work.
+PROPOSAL_STOPWORDS = frozenset((
+    "a", "an", "and", "are", "as", "at", "be", "by", "for", "from", "in",
+    "is", "it", "its", "of", "on", "or", "that", "the", "then", "this",
+    "to", "with",
+))
+
+
+def content_words(text):
+    """The identity-bearing words of `text`, lowercased and unordered.
+
+    The comparison key for "is this proposal the same work as that mission?":
+    it ignores the PLAN tag, the bold markers and the function words, so two
+    phrasings of one job produce the same key.
+    """
+    return frozenset(
+        word for word in re.findall(r"[a-z0-9]+", (text or "").lower())
+        if word not in PROPOSAL_STOPWORDS)
 
 
 class ProjectError(Exception):
     """Raised when a usable Ine project root cannot be established."""
+
+
+_BOLD_ITEM_RE = re.compile(r"\*\*(.+?)\*\*")
 
 
 class Task:
@@ -51,8 +93,30 @@ class Task:
     def executable(self):
         # PLAN.md rule: an item is executable unless it is tagged BLOCKED
         # or DONE; unmarked items stay executable. Excluding DONE keeps a
-        # finished task from being re-picked on the next cycle.
+        # finished task from being re-picked on the next cycle. A proposal
+        # (see `propose_follow_up`) is excluded whatever its tag, because a
+        # worker's suggestion is not an instruction to the loop.
+        if self.proposed:
+            return False
         return self.tag not in ("BLOCKED", "DONE")
+
+    @property
+    def proposed(self):
+        """True when this item was filed by `propose_follow_up`."""
+        return PROPOSAL_MARKER in self.text
+
+    @property
+    def proposed_text(self):
+        """The proposal itself, or None when this item is not a proposal.
+
+        Read back out of the bolded span `propose_follow_up` writes, so a
+        later run can recognise its own earlier proposal without depending on
+        the wording of the surrounding annotation.
+        """
+        if not self.proposed:
+            return None
+        match = _BOLD_ITEM_RE.search(self.text)
+        return match.group(1) if match else None
 
     @property
     def wants_claude_review(self):
@@ -129,6 +193,132 @@ def _read_optional_text(root, filename):
         return _read_text(path)
     except OSError:
         return ""
+
+
+def _append_file(root, filename, lines):
+    """Append `lines` to a file under .agent/, creating it if absent.
+
+    The generic form of `_append_report`, for the records the receipt
+    recorder writes. Append-only by construction, and a write failure is
+    swallowed: a record that could not be saved must never fail a mission
+    whose work is already done.
+    """
+    path = os.path.join(root, AGENT_DIR, filename)
+    try:
+        with open(path, "a", encoding="utf-8", newline="\n") as handle:
+            for line in lines:
+                handle.write(line + "\n")
+    except OSError:
+        return False
+    return True
+
+
+def mission_index_relpath(number):
+    """The index path as a message should name it: repo-relative, `/`-joined.
+
+    Messages are written with forward slashes on every platform so the same
+    record reads the same everywhere (the rest of the .agent/ records name
+    paths that way too).
+    """
+    return "{}/{}/{}.md".format(AGENT_DIR, MISSION_DIR, number)
+
+
+def mission_index_path(root, number):
+    """Absolute path of the execution index for PLAN item `number`.
+
+    The index is keyed on the item NUMBER, which PLAN.md already carries
+    and `_ITEM_RE` already parses, so there is no new plan syntax and no
+    separate pointer that could drift out of step with the plan. A plan
+    item is renumbered only when the plan itself is rewritten, and the
+    index travels with it.
+    """
+    return os.path.join(
+        os.path.abspath(root), AGENT_DIR, MISSION_DIR, "{}.md".format(number))
+
+
+def read_mission_index(root, number):
+    """The execution index a planner wrote for PLAN item `number`.
+
+    Returns the index text, or None when no index exists — or when the
+    file exists but is empty. None is a first-class answer: it is what
+    makes the planner write the steps BEFORE a worker is launched, instead
+    of the worker inventing them at execution time.
+    """
+    try:
+        with open(mission_index_path(root, number), "r",
+                  encoding="utf-8") as handle:
+            text = handle.read().strip()
+    except OSError:
+        return None
+    return text or None
+
+
+def write_mission_index(root, number, text):
+    """Write the execution index for PLAN item `number`. Returns True on
+    success. Creates `.agent/missions/` on first use."""
+    path = mission_index_path(root, number)
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(text.rstrip("\n") + "\n")
+    except OSError:
+        return False
+    return True
+
+
+_AREA_RE = re.compile(r"^Area:[ \t]*(.+?)[ \t]*$", re.M)
+_DEPS_RE = re.compile(r"^Depends on:[ \t]*(.+?)[ \t]*$", re.M)
+_FILES_HEADING_RE = re.compile(r"^##[ \t]+Files[ \t]*$", re.M)
+_FRONTSECTION_END_RE = re.compile(r"^##[ \t]", re.M)
+_BACKTICK_RE = re.compile(r"`([^`\n]+)`")
+
+
+def _looks_like_path(token):
+    """Whether a backticked token in a Files list names a file.
+
+    `src/ine_agent/state.py` and `state.py` do; `new`, `(optional)` and a
+    bare `EXECUTABLE` do not. A slash or a dot is the discriminator, which
+    keeps the metadata optional and free of a new convention to get wrong.
+    """
+    if " " in token or "\t" in token:
+        return False
+    if token.isupper():
+        return False
+    return "/" in token or "." in token
+
+
+def read_mission_metadata(root, number):
+    """`{area, depends_on, files}` for one execution index, or None.
+
+    All three are OPTIONAL. An index that does not declare them loads with
+    empty values, so the hundreds of existing indexes keep working and a
+    planner is never blocked from writing a mission for want of metadata.
+    The values are how a mission says which earlier work is relevant to it —
+    the only basis on which a compact snippet is offered rather than sent.
+    """
+    text = read_mission_index(root, number)
+    if text is None:
+        return None
+    front_end = _FRONTSECTION_END_RE.search(text)
+    front = text[:front_end.start()] if front_end else text
+    area_match = _AREA_RE.search(front)
+    deps_match = _DEPS_RE.search(front)
+    depends_on = []
+    if deps_match:
+        depends_on = [int(n) for n in re.findall(r"\d+", deps_match.group(1))]
+    files = []
+    files_heading = _FILES_HEADING_RE.search(text)
+    if files_heading:
+        tail = text[files_heading.end():]
+        next_heading = _FRONTSECTION_END_RE.search(tail)
+        section = tail[:next_heading.start()] if next_heading else tail
+        files = [token for token in _BACKTICK_RE.findall(section)
+                 if _looks_like_path(token)]
+    return {
+        "area": area_match.group(1).strip() if area_match else "",
+        "depends_on": depends_on,
+        "files": files,
+    }
 
 
 def read_plan(root):
@@ -265,6 +455,277 @@ def record_resolution(root, identity, resolution, source="commander"):
     return _rewrite_plan(
         root, item.number, headline_key(item.text),
         add_remark=("> resolution ({}): {}".format(source, resolution)))
+
+
+def propose_follow_up(root, proposal, origin=None):
+    """Append a PROPOSED next mission to the plan as a `CLAUDE_REVIEW` item.
+
+    A worker's follow-up is a suggestion, and it is filed as one: the tag is
+    `CLAUDE_REVIEW`, which the selection rule never treats as executable, so
+    the proposal cannot be picked up by this run or any later one until a
+    human reads it and re-tags it. A worker therefore cannot create
+    executable work by writing one — the strongest form of the rule, because
+    it is enforced by the plan's own parsing rather than by trusting the
+    worker's intent.
+
+    Returns the new item's number, or None when the proposal is empty or the
+    plan already proposes the identical text.
+    """
+    text = " ".join(str(proposal or "").split())
+    if not text:
+        return None
+    plan = read_plan(root)
+    key = content_words(text)
+    for item in plan.items:
+        if item.proposed and content_words(item.proposed_text or "") == key:
+            return None
+    numbers = [int(item.number) for item in plan.items
+               if str(item.number).isdigit()]
+    number = (max(numbers) + 1) if numbers else 1
+    line = "{}. `CLAUDE_REVIEW` — **{}.** {}not executable until a human " \
+           "reads it{}\n".format(
+               number, text, PROPOSAL_MARKER,
+               " (after mission {})".format(origin) if origin else "")
+    with open(os.path.join(root, AGENT_DIR, PLAN_NAME), "a",
+              encoding="utf-8") as handle:
+        handle.write("\n" + line)
+    return number
+
+
+def mark_done(root, identity):
+    """Tag a mission DONE, preserving its original text.
+
+    The completion counterpart of `mark_blocked`, and idempotent: a mission
+    the worker already tagged itself is left exactly as it is. Returns True
+    when the mission exists and carries the DONE tag afterwards.
+    """
+    plan = read_plan(root)
+    item = plan.item(identity=identity)
+    if item is None:
+        return False
+    if item.tag == "DONE":
+        return True
+    return _rewrite_plan(root, item.number, headline_key(item.text),
+                         tag="DONE")
+
+
+# --------------------------------------------------------------------------
+# Deterministic recording from a worker receipt.
+#
+# The worker states four things (status, summary, files, verification) in one
+# machine-readable block, and this module turns that into the durable records.
+# It is the reason a worker no longer spends a mission's worth of tokens
+# rewriting PLAN, HISTORY, STATE and NOTES by hand — and the reason those
+# records are written the same way whether the worker was thorough or terse.
+# --------------------------------------------------------------------------
+
+_SESSION_HEADING_RE = re.compile(r"^#{2,3} Session (\d+)")
+_STATE_SESSION_RE = re.compile(r"(Current ground truth as of Session )(\d+)")
+
+
+def latest_session(root):
+    """The highest session number HISTORY.md already carries, or 0."""
+    latest = 0
+    for line in _read_optional_text(root, HISTORY_NAME).splitlines():
+        match = _SESSION_HEADING_RE.match(line)
+        if match:
+            latest = max(latest, int(match.group(1)))
+    return latest
+
+
+def next_session_number(root):
+    """The session number one recorded mission would carry.
+
+    Derived from HISTORY.md rather than a counter in this module, so the
+    history stays the single source of truth for how far the project has got
+    and a restored or hand-edited log cannot desynchronise the two.
+    """
+    return latest_session(root) + 1
+
+
+def _one_line(text, limit=200):
+    return " ".join(str(text or "").split())[:limit]
+
+
+def _history_heading(session, number, headline):
+    return "## Session {} - ine-agent mission {}: {}".format(
+        session, number, _one_line(headline, 90))
+
+
+def _history_has_mission(root, session, number):
+    """Whether this run's block for this mission is already in HISTORY.md.
+
+    The heading carries both the session and the mission number, so a repeat
+    of the same recording is recognised and skipped rather than duplicated.
+    """
+    pattern = re.compile(
+        r"^## Session {} - ine-agent mission {}\b".format(
+            int(session), int(number)))
+    return any(pattern.match(line)
+               for line in _read_optional_text(root, HISTORY_NAME).splitlines())
+
+
+def _notes_has_mission(root, number):
+    pattern = re.compile(r"^## Mission {}\b".format(int(number)))
+    return any(pattern.match(line)
+               for line in _read_optional_text(root, NOTES_NAME).splitlines())
+
+
+def _append_history(root, session, number, task, receipt):
+    """Append one mission's block to HISTORY.md (append-only)."""
+    headline = task.text.splitlines()[0] if task.text else "mission"
+    lines = [
+        "",
+        _history_heading(session, number, headline),
+        "",
+        "- outcome: {}".format(receipt.status),
+        "- summary: {}".format(_one_line(receipt.summary, 600)),
+        "- files: {}".format(
+            ", ".join(receipt.changed_files) or "(none reported)"),
+    ]
+    for entry in receipt.verification:
+        lines.append("- verified: {}".format(_one_line(entry, 200)))
+    if receipt.area:
+        lines.append("- area: {}".format(_one_line(receipt.area, 80)))
+    if receipt.finding:
+        lines.append("- finding: {}".format(_one_line(receipt.finding, 600)))
+    if receipt.follow_up:
+        lines.append(
+            "- follow-up proposed (recorded, not executed): {}".format(
+                _one_line(receipt.follow_up, 400)))
+    lines.append("- recorded by: state.record_mission_outcome from the "
+                 "worker receipt")
+    _append_file(root, HISTORY_NAME, lines)
+    return True
+
+
+def _append_note(root, number, receipt):
+    """Append this mission's durable finding to NOTES.md, once."""
+    if _notes_has_mission(root, number):
+        return False
+    if not _read_optional_text(root, NOTES_NAME).strip():
+        _append_file(root, NOTES_NAME, ["# .agent/NOTES.md", ""])
+    _append_file(root, NOTES_NAME, [
+        "## Mission {}".format(number),
+        "",
+        "Area: {}".format(receipt.area or "(not stated)"),
+        "",
+        receipt.finding,
+        "",
+    ])
+    return True
+
+
+def _replace_section(text, name, body):
+    """The file with one `## name` section's body replaced, or None.
+
+    Only the named section's lines are touched: STATE.md carries durable
+    reference sections the recorder has no opinion about, and a mission must
+    never be able to delete them by reporting.
+    """
+    lines = text.splitlines()
+    start = None
+    for position, line in enumerate(lines):
+        if line.startswith("## ") and line[3:].strip().lower() == name:
+            start = position
+            break
+    if start is None:
+        return None
+    end = len(lines)
+    for position in range(start + 1, len(lines)):
+        if lines[position].startswith("## "):
+            end = position
+            break
+    return "\n".join(lines[:start + 1] + ["", body.rstrip(), ""] + lines[end:])
+
+
+def _next_headline(root):
+    plan = read_plan(root)
+    item = plan.first_executable()
+    if item is None:
+        return "none — nothing is EXECUTABLE in PLAN.md"
+    return "{} (item {})".format(_one_line(item.text.splitlines()[0], 90),
+                                 item.number)
+
+
+def _rewrite_state_head(root, session, number, task, receipt):
+    """Rewrite STATE.md's head sections to where the project stands NOW.
+
+    Bounded on purpose: the position summary and the health note are replaced
+    whole, and everything below them — the reference sections and the
+    session preamble — is left exactly as it was.
+    """
+    text = _read_optional_text(root, STATE_NAME)
+    if not text:
+        return False
+    headline = task.text.splitlines()[0] if task.text else "mission"
+    verified = receipt.verification or ["(the worker reported none)"]
+    focus = "\n".join([
+        "- Session {} recorded mission {} (`{}`) as {}: {}".format(
+            session, number, _one_line(headline, 80), receipt.status,
+            _one_line(receipt.summary, 400)),
+        "- Next executable work: {}.".format(_next_headline(root)),
+        "- This file is position-only: the per-mission detail is the receipt "
+        "in `.agent/RUN_REPORTS.md`, the block in `.agent/HISTORY.md`, and "
+        "the index at `{}`.".format(mission_index_relpath(number)),
+    ])
+    health = "\n".join([
+        "- Recording is deterministic: PLAN tags, this head, HISTORY and "
+        "NOTES are written by `state.record_mission_outcome` from the worker's "
+        "structured receipt, not by the model in prose.",
+        "- Last recorded verification for mission {}: {}".format(
+            number, _one_line(verified[0], 200)),
+        "- Known caveats and the rest of the project's position are in the "
+        "sections below and are not rewritten by a mission.",
+    ])
+    updated = _replace_section(text, "current focus", focus)
+    if updated is None:
+        return False
+    updated = _replace_section(updated, "health", health)
+    if updated is None:
+        return False
+    updated = _STATE_SESSION_RE.sub(
+        r"\g<1>" + str(session) + r"\g<2>", updated, count=1)
+    try:
+        with open(os.path.join(root, AGENT_DIR, STATE_NAME), "w",
+                  encoding="utf-8", newline="\n") as handle:
+            handle.write(updated.rstrip("\n") + "\n")
+    except OSError:
+        return False
+    return True
+
+
+def record_mission_outcome(root, task, receipt, status, session=None):
+    """Record one mission attempt from its receipt, deterministically.
+
+    Writes exactly what the receipt states: the plan tag for a completed
+    mission, one HISTORY block, the bounded head of STATE.md, and a NOTES
+    section only when the receipt carries a durable finding. A receipt that
+    reports anything other than completion is recorded by the caller through
+    the blocked / failure paths instead, which already carry the reason.
+
+    Returns what was written. Never raises: a mission that finished must not
+    be reported as failed because a record could not be saved.
+    """
+    number = getattr(task, "number", None)
+    identity = getattr(task, "identity", None)
+    written = {"plan": False, "history": False, "state": False, "notes": False}
+    if number is None or receipt is None:
+        return written
+    if status != receipt_format.DONE:
+        return written
+    if identity:
+        written["plan"] = mark_done(root, identity)
+    if session is None:
+        session = next_session_number(root)
+    if not _history_has_mission(root, session, number):
+        written["history"] = _append_history(root, session, number, task,
+                                             receipt)
+    if receipt.finding:
+        written["notes"] = _append_note(root, number, receipt)
+    written["state"] = _rewrite_state_head(root, session, number, task,
+                                           receipt)
+    return written
 
 
 def append_blocker(root, number, headline, detail):
