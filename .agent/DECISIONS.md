@@ -122,6 +122,45 @@ decision — nothing is copied here until it is real.
   construct without the WORKBOOK §25 framework. Templates live in the
   editor/`--dict` layer, not in the grammar.
 
+- **DECIDED - INE is provider-independent; no provider project file**
+  (Session 52, commander; supersedes PLAN item 122 / Session 50
+  .opencode/agents/ine-worker.md): INE is an independent Python CLI that
+  drives external coding CLIs through their command line and process
+  boundary. It does not modify a provider's UI, configuration, agents, modes
+  or plugins, and it depends on no provider-specific project file. A built-in
+  profile therefore passes no --agent/--mode/--plugin flag: the tool's own
+  default agent runs, and INE supplies the behaviour in the prompt
+  (.agent/WORKER_INSTRUCTIONS.md). The command name is ine-agent, not
+  ine run, because ine is the language CLI and its 
+un executes a .ine
+  file - two unrelated meanings under one command is a worse answer than a
+  longer name. Also ruled out for now, explicitly: a credential manager
+  (external CLIs keep their own authentication; doctor reports inherited
+  readiness without handling secrets), automatic model fallback or routing, a
+  second LLM for diagnosis, replanning or decomposition, and any provider UI
+  integration. **Accepted costs, stated rather than hidden:** the prohibitions
+  are now advisory to the model where the agent file was enforced by the tool,
+  and the 60-step budget is not reproduced, so a profile's wall-clock timeout
+  is the only hard bound on a run. ProviderIndependenceTests pins all of it,
+  including the file's absence.
+- **DECIDED - a worker profile is a capability grant** (Session 53, commander
+  directing the boundary; the first live Claude mission is the evidence): a
+  CLI driven non-interactively cannot ask for permission, so **an ungranted
+  tool is refused, not prompted** — it returns "you haven't granted it yet"
+  and the mission does nothing. The `claude` profile therefore passes
+  `--permission-mode acceptEdits` with explicit `--allowedTools`
+  (`Read,Edit,Write,Glob,Grep,Bash`) and `--disallowedTools`
+  (`WebFetch,WebSearch,Task,TodoWrite,Skill`). This is PLAN item 122's posture
+  — local edit and test work allowed, network, subagents and interactive tools
+  denied — re-expressed as documented command-line flags because the agent file
+  that used to enforce it is gone. `acceptEdits` alone would still refuse every
+  `Bash` call and no mission could test anything;
+  `--dangerously-skip-permissions` would work and is exactly what this must not
+  be, so a test fails if that string ever appears in a built-in profile. A
+  worker profile is not merely a command line: it is what the worker is
+  *able* to do, and a profile that under-grants produces a mission that reads
+  everything, designs everything, and changes nothing.
+
 ## PROPOSED / EXPERIMENTAL / UNDECIDED
 
 - **Enumerated choices** (PROPOSED): `"layout": ["row", "column"]` style

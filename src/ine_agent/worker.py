@@ -195,9 +195,64 @@ class CliWorker(Worker):
             return [override]
         return _split_command(override)
 
+    @staticmethod
+    def _terminate(proc):
+        """Stop the worker *and everything it started*.
+
+        On Windows the direct child is usually `cmd.exe` (npm ships `.cmd`
+        shims), and the process actually talking to the model is a grandchild
+        `node.exe` beneath it. Killing only the direct child leaves that
+        grandchild running — still holding a session, still spending — while
+        INE reports the worker as stopped. `taskkill /T` walks the tree, so
+        the run that gets interrupted is the run that actually stops.
+        """
+        if proc.poll() is not None:
+            return
+        if os.name == "nt":
+            try:
+                subprocess.run(
+                    ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+                    capture_output=True, timeout=30, check=False)
+            except (OSError, subprocess.SubprocessError):
+                pass
+        try:
+            proc.kill()
+        except OSError:
+            return
+        try:
+            proc.wait(timeout=30)
+        except subprocess.TimeoutExpired:
+            pass
+
     def _shell_for(self, exe):
         """Batch files need the shell: CreateProcess cannot start .cmd/.bat."""
         return os.name == "nt" and str(exe).lower().endswith((".cmd", ".bat"))
+
+    @staticmethod
+    def _creation_flags():
+        """Windows: give the worker no console of its own to prompt on.
+
+        `stdin=DEVNULL` stops a worker *reading* a question, but it does not
+        stop `cmd.exe` **writing** one. The npm shims on this machine are
+        `.cmd` files, so the direct child is cmd.exe, and the
+        "Terminate batch job (Y/N)?" prompt it prints goes to the console
+        handle (`CONIN$`), not to the handle we redirected. The child
+        therefore kept a channel to a human no matter what we did to stdin —
+        observed live, hanging a run until Ctrl+C.
+
+        `CREATE_NO_WINDOW` gives the worker no console to inherit, so that
+        prompt has nowhere to go and fails instead of blocking.
+        `CREATE_NEW_PROCESS_GROUP` additionally stops a console Ctrl+C aimed
+        at INE from reaching the child as a `CTRL_C_EVENT`, which is what
+        makes cmd offer the terminate prompt in the first place.
+
+        Both are Windows-only; on other platforms there is no console to
+        isolate and the flags do not exist.
+        """
+        if os.name != "nt":
+            return 0
+        return (subprocess.CREATE_NO_WINDOW
+                | subprocess.CREATE_NEW_PROCESS_GROUP)
 
     def _start_error(self, exc):
         """Name what was actually attempted, override included.
@@ -250,17 +305,28 @@ class CliWorker(Worker):
         what it had written is returned, so a runaway worker costs one
         timeout rather than a hung run.
         """
+        # A worker is launched non-interactively. When the prompt travels as
+        # an argument there is nothing to send, and inheriting this process's
+        # stdin would hand the child the operator's console: a CLI that then
+        # asks a question (Claude Code's "Terminate batch job (Y/N)?") blocks
+        # forever waiting for a keypress that no supervisor will ever send.
+        # DEVNULL gives it an immediately-EOF stdin instead, so it must
+        # decide for itself rather than hang the run.
+        feed = {"input": stdin_text} if stdin_text is not None else {
+            "stdin": subprocess.DEVNULL
+        }
         try:
             proc = subprocess.run(
                 argv,
                 cwd=root,
                 capture_output=True,
-                input=stdin_text,
                 text=True,
+                **feed,
                 encoding="utf-8",
                 errors="surrogateescape",
                 timeout=self.timeout,
                 shell=self._shell_for(argv[0]),
+                creationflags=self._creation_flags(),
             )
         except subprocess.TimeoutExpired as expired:
             output = expired.output or ""
@@ -285,10 +351,12 @@ class CliWorker(Worker):
         proc = subprocess.Popen(
             argv,
             cwd=root,
-            stdin=subprocess.PIPE if stdin_text is not None else None,
+            stdin=subprocess.PIPE if stdin_text is not None
+            else subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             shell=self._shell_for(argv[0]),
+            creationflags=self._creation_flags(),
         )
         out_lines, err_lines = [], []
         lock = threading.Lock()
@@ -312,21 +380,30 @@ class CliWorker(Worker):
             for thread in threads:
                 thread.start()
             if stdin_text is not None:
+                # Handing over the prompt is best-effort. A child that never
+                # reads stdin and exits promptly makes the write raise EPIPE,
+                # and that is the child declining the prompt - not a failure
+                # to launch. Letting it propagate would replace the child's
+                # real exit code and output with "could not start", throwing
+                # away the only evidence of what it actually did.
                 try:
                     proc.stdin.write(stdin_text.encode("utf-8"))
+                except BrokenPipeError:
+                    pass
                 finally:
-                    proc.stdin.close()
+                    try:
+                        proc.stdin.close()
+                    except BrokenPipeError:
+                        pass
             proc.wait(timeout=self.timeout)
         except subprocess.TimeoutExpired:
             # Kill first, then let the drain threads finish: the lines the
             # worker already wrote are collected on the way out.
-            proc.kill()
-            proc.wait()
+            self._terminate(proc)
             raise _TimedOut("".join(out_lines) + (
                 "\n" + "".join(err_lines) if err_lines else ""))
         except BaseException:
-            proc.kill()
-            proc.wait()
+            self._terminate(proc)
             raise
         finally:
             for thread in threads:

@@ -34,29 +34,50 @@ _SECRETISH_RE = re.compile(
 
 TRANSPORTS = ("argument", "stdin")
 
-#: Today's shape, plus the two things the worker needs and previously had no
-#: way to be given: a bounded step budget lives in the agent definition
-#: (`.opencode/agents/ine-worker.md`), and a wall-clock bound lives here. One
-#: hour is per mission *attempt* — long enough for a real implementation
-#: mission, short enough that a hung worker costs one timeout rather than the
-#: evening. No model on the command line unless one is asked for: the tool's
-#: own default is used otherwise.
+#: Today's shape, plus the wall-clock bound a worker needs and previously had
+#: no way to be given. One hour is per mission *attempt* — long enough for a
+#: real implementation mission, short enough that a hung worker costs one
+#: timeout rather than the evening. No model on the command line unless one is
+#: asked for: the tool's own default is used otherwise.
+#:
+#: The `opencode` profile deliberately passes no `--agent`. A project-side
+#: agent file is a provider integration: INE drives external CLIs and does not
+#: create agents, personas or modes inside one (Session 52, DECISIONS). The cost
+#: of that boundary is stated plainly rather than hidden — the agent file also
+#: carried a 60-step budget and a permission deny-list, and the step budget is
+#: not reproduced here. The wall clock below is now the only hard bound on a
+#: run, alongside INE's own prompt and output caps.
 BUILTINS = {
     "opencode": {
-        "command": ["opencode", "run", "--pure", "--agent", "ine-worker",
-                    "--dir", "{root}"],
+        "command": ["opencode", "run", "--pure", "--dir", "{root}"],
         "prompt_transport": "argument",
         "model_args": ["--model", "{model}"],
         "timeout_seconds": 3600,
-        "description": "OpenCode CLI in non-interactive run mode, with the "
-                       "bounded ine-worker agent",
+        "description": "OpenCode CLI in non-interactive run mode, using the "
+                       "tool's own default agent",
     },
     "claude": {
-        "command": ["claude", "-p"],
+        # The worker needs to edit files and run tests, and in `-p` mode it
+        # cannot ask anyone for permission, so anything not granted here is
+        # simply refused. That is why the lists are explicit: the posture is
+        # the one PLAN item 122 was approved on — local edit and test work
+        # allowed, the network, subagents and interactive tools denied —
+        # expressed as documented CLI flags rather than as a provider config
+        # file, which the Session 52 decision rules out. `acceptEdits` alone
+        # would still refuse every `Bash` call, so no mission could test
+        # anything; `--dangerously-skip-permissions` would work and is exactly
+        # what this must not be.
+        "command": ["claude", "-p",
+                    "--permission-mode", "acceptEdits",
+                    "--allowedTools", "Read,Edit,Write,Glob,Grep,Bash",
+                    "--disallowedTools",
+                    "WebFetch,WebSearch,Task,TodoWrite,Skill"],
         "prompt_transport": "stdin",
         "model_args": [],
         "timeout_seconds": 1800,
-        "description": "Claude Code CLI in print mode (review pre-pass)",
+        "description": "Claude Code CLI in non-interactive print mode, with "
+                       "edits and tests allowed and the network, subagents "
+                       "and interactive tools denied",
     },
 }
 

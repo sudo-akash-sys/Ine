@@ -2899,3 +2899,534 @@ now, and ~170 chars for one related snippet.
 **Suite: 322** in `tests/test_ine_agent.py`, **659 + 33 subtests** full. Next
 EXECUTABLE item, per `run --dry-run`, is 84 (editor semantic diagnostics) —
 index `.agent/missions/84.md` needed.
+
+## Session 52 — The worker prompt becomes a file you edit, not code you read
+
+**This session began with a question, not a mission.** The commander asked what
+the last stretch of work actually was — line counts, real decisions, whether
+the comments outweigh the code — and the answer was measured rather than
+recalled: 16,964 lines across the two commits, of which 42% is agent records,
+24% source, 24% tests. In `src/ine_agent/` the prose share is 25%. That
+accounting and the follow-up are in Session 51's block and `NOTES.md`.
+
+**Then the spec for this script was stated plainly**, and it did not match what
+had been built. What is wanted: hand missions to a coding agent one at a time,
+verify, keep snippets per session, stop and ask when a mission needs a
+decision, meter the cost, and spend as few tokens as possible — a *boring*
+script with the authority it has been given and none of its own. Three things
+followed from reading that against the code.
+
+**Fixed: the rules were in Python.** What a worker is told was a string literal
+in `impl_prompt`. The requirement was a place to customise the behaviour
+without touching the script, so `.agent/WORKER_INSTRUCTIONS.md` is now the
+literal prompt, with `{{MISSION}}`/`{{RECEIPT}}` required and validated and
+three optional slots. Substitution is a literal replace, not `str.format`,
+because a file a human edits will contain braces. `doctor` reports the file and
+fails when it is unusable; `cli.main` turns an unusable one into exit 1 with a
+remedy instead of a traceback. The prompt is **byte-identical** to the one the
+literal produced — 6525 chars both ways, checked by running the HEAD blob and
+the new function side by side, which is how the one-extra-blank-line difference
+in `{{RELATED}}` was found. `CONTRIBUTING.md` documents the file;
+`WORKER_PROMPT.md`'s claim that it *is* the embedded prompt was corrected,
+because since Mission 123 it is not.
+
+**Fixed: three tests that depended on how pytest was invoked.** They captured a
+subprocess with `text=True` and no `encoding=`, so the parent decoded with its
+own codepage and the child wrote with its own. Under `python -X utf8 -m pytest`
+the em-dash in the help text raised `UnicodeDecodeError`; without it, they
+passed — which is why Session 51 could report them green. One helper,
+`run_cli_process`, pins UTF-8 on both ends. They were failing before this change
+and are fixed by it; the cause is recorded in `NOTES.md` because it is the kind
+of thing that will otherwise be rediscovered as "flaky".
+
+**Found: the plain-script import branch has no test coverage.** `cli.py` has a
+second import block for `python src/ine_agent/cli.py`. Tests import the package
+and never take it, so all 330 tests were green while the first real `doctor`
+died with `NameError`. Both blocks updated.
+
+**Not done, deliberately.** The failure machinery — classification vocabulary,
+in-band diagnosis, attempts ledger, parking, stall guard, ~800–1000 lines — is
+the one part of the built tool the stated spec does not ask for. The
+recommendation (keep bounding and the timeout, cut the rest) is written down in
+`NOTES.md` and the question is left open, because it changes what the tool does
+when a mission goes wrong and that is the commander's decision.
+
+**Suite: 330** in `tests/test_ine_agent.py`, **668 + 33 subtests** full, 0
+skipped. `doctor` reports the instructions file; `run --dry-run` still selects
+item 84. Nothing is committed: the change is in the working tree for review.
+
+**Continued: the same session, the other half of the question.** The first
+half asked where the tokens go; this half spent them well. Four changes, and the
+thread through them is that a loop should pay for context only where a decision
+needs it.
+
+**The prompt lost its filler.** `PRIOR WORK IN THIS AREA` was sent on every
+mission, including the missions that had no prior work — and when there was
+none, it said so, in the prompt, every time. Now a mission with no declared
+`Area:`, `Depends on:` or shared changed file gets no block at all. A minimal
+mission is 3,414 chars / 61 lines / ~854 tokens; the agent body is 319. What the
+provider is handed went from ~4,511 chars to ~3,733, about 17% less, and the
+prompt is truer for it: it no longer contains a paragraph about having nothing
+to say.
+
+**A trim that was reverted, and why that is the finding.** Shortening the
+receipt contract by 50 characters broke eight tests asserting its wording. The
+contract explains what each field means; a length target is not a licence to
+delete meaning. Restored in full, and recorded in `NOTES.md` because the
+temptation recurs every time a number is measured.
+
+**`policy` reports, it does not trim.** `.agent/workers.json` can cap the
+prompt at 12,000 chars, the prior receipts at 3 / 2,000, and the attempts at 1.
+A mission over the cap is sent whole and the overage is recorded, because a
+worker silently handed half a mission reports `done` and means something else.
+`--max-attempts` now defaults to *unstated*: silence defers to the policy, and
+an explicit flag — including `1` — wins.
+
+**`verify` is opt-in, local, and structurally unable to cheat.** It runs only
+after a worker reports `done`, never for a failure, never for a second opinion
+from a model, and never re-runs a mission that failed a deterministic check.
+Every check runs even after one fails; each has a 10-minute timeout; only the
+tail of the output is kept. The "no model" part is not a promise in a comment:
+`verify.py` imports neither the worker factory nor the supervisor it lives
+inside, and a test reads the source and fails if that ever changes.
+
+**Found and fixed: a completed mission could be invoked twice.** The plan is
+re-read after every cycle, and a mission a worker finished by receipt alone —
+without editing `PLAN.md` — can still look selectable for a moment. That broke
+the one promise the whole arc rests on. Fixed by deferring the task identity on
+`done`. The regression test was written to be checked: with the fix reverted it
+fails at 2 invocations, so it is a test of the fix and not of the shape of the
+code around it.
+
+**Found and fixed: a bad `workers.json` produced a traceback.** The
+`Supervisor` constructor loads the config, and the constructor sat outside the
+`try` that turns control-plane faults into `error: ...` and exit 1 — so the
+strictness the design asks for (a malformed check list is an error, never a
+skipped check) arrived as an unhandled `ValueError`. Construction moved inside
+the guard. The CLI test now asserts the message names the offending entry.
+
+**Three findings worth more than the features.** `sys.executable` on this
+machine names a Windows Store alias that `CreateProcess` refused with
+`[WinError 2]` from inside the full suite while the same check passed in
+isolation; the fix is to probe a candidate the way the supervisor starts one,
+same executable and from a working directory. Supervisor-level checks belong
+behind a seam — the wiring is the subject and needs no subprocess, and the one
+test that starts a real process skips rather than fails. And a helper left
+behind by a bad edit once leaked a file handle, which is the sort of thing that
+makes the next machine's failure unexplainable; the module-level `_report` in
+the test file now closes what it opens.
+
+**Found in the repo's own records: a run report with a body and no header.**
+`RUN_REPORTS.md` ended in a stray `- exit:` / `- summary:` pair, and `measure`
+splits on the `### run <stamp>` header - so the fragment counted as part of the
+run above it. A cost report quietly wrong is worse than one that fails to
+parse, so the fragment is gone and a health test now fails if any block lacks
+its timestamp.
+
+**Suite: 369** in `tests/test_ine_agent.py`, **707 + 33 subtests** full (706 +
+1 skipped without a display), 0 leaked `.tmp` fixtures. `doctor`, `run
+--dry-run` and `measure` all exercised; no provider call was made. Nothing is
+committed — the change is in the working tree for review, and the next
+EXECUTABLE item is still 84, which needs an index written first.
+
+**Asked whether it works, and answered from the record rather than from
+recollection.** Two questions produced two different answers. Is the machinery
+sound? 707 tests, every command exercised, no provider call. Has it delivered?
+2 completed missions across 20 recorded runs, 17 of which completed nothing,
+and 0 compact receipts on disk - because the related-memory mechanism was only
+finished this session. So: capable, and unproven on the real thing. The savings
+are measured in prompt bytes, not in bills.
+
+**The second question had the answer sitting in the repo.** `STATE.md` claimed
+item 84 needed a mission index written. It exists, it is 3,827 chars, and
+`run --dry-run` resolves it; all 30 `EXECUTABLE` items have indexes. The
+recorded blocker was fiction, and it is the exact failure the commander was
+pointing at: the code moves, the prose about it does not. Corrected, with the
+general form written down - the worker reads real files and so cannot be
+stale, while a sentence in `STATE.md` can be, because deciding whether it is
+true means reading the code. Three ways to narrow it are costed in
+`.agent/LOOP.md` section 7; the cheapest is a deterministic staleness check
+that reuses the `verify` mechanism, and it is a commander decision because it
+changes what a run may report.
+
+**Written: `.agent/LOOP.md`** - the human-facing reference. How the cycle works,
+all four commands with every flag and the reason each exists, the config file,
+why each design choice was made, what is recorded automatically versus by hand,
+and the known limits. It exists because the loop's behaviour was spread across a
+CLI help string, a test suite and three prose files, and "how does this work"
+should not require reading all three.
+
+**Also corrected this session:** `STATE.md` still carried the retired claim that
+the prompt is byte-identical to the pre-file string literal, and the old
+per-mission cost figure. Both are gone; the focus section now carries the
+measured numbers. A first attempt to rewrite that section silently failed -
+the script asserted on a later block and exited before writing, and the passing
+tests did not notice, because none of them read those sentences. Worth
+recording: **a recording pass can fail quietly, and a green suite does not mean
+the recording happened.**
+
+**The first real `run` crashed, and that is the finding.** `TypeError:
+build_worker() missing 1 required positional argument: 'root'`, on the first
+cycle, after a `--dry-run` that had printed a perfectly correct command. The
+CLI was passing `build_worker` in raw where the supervisor calls a
+one-argument factory - a second copy of a contract the supervisor already owned,
+and a wrong one, since it also dropped `--model`. Deleted the line; one place
+owns it now.
+
+**Why the suite missed it, which matters more than the bug.** Every test
+injects `lambda name: worker`, so all 709 were testing the supervisor against a
+stub that already agreed with it, and a dry run never builds a worker at all.
+A green suite proves the parts agree with each other, not that the seam between
+them is wired - and that seam is the first thing a person touches. The new test
+runs the whole real path against a local `python -c` standing in for a coding
+agent: no model, no tokens, and it fails with exactly the commander's error
+when the bug is present. Verified in both directions.
+
+So the honest state is narrower than it was this morning: the plumbing is now
+exercised end to end, and what remains unproven is whether a real agent handed
+this prompt returns a receipt worth reading. That is a question about the
+prompt, not the loop.
+
+**Suite: 377** focused, **715 + 33 subtests** full. Nothing committed.
+
+## Session 52 (continued) - The hang, and the two things I did not decide
+
+The commander then ran a real Claude mission for real. It did not crash - it
+**hung**, printing `Execution errorTerminate batch job (Y/N)?` and waiting for a
+keypress until Ctrl+C. The traceback ended in `proc.wait(timeout=...)`, which is
+the shape of a process that is waiting for a human and never will be.
+
+The cause was a single kwarg that reads like it means "no input" and does not:
+`stdin=None` means *inherit my stdin*, so the argument-transport launch handed
+Claude Code the operator's console. Every real agent profile takes the argument
+path; only `prompt_transport: stdin` was ever safe. Both shared helpers now pass
+`DEVNULL` - an immediate EOF, so the child decides for itself instead of parking
+the queue - and the verifier got the same treatment, where a prompting check
+would have burned its full 600s timeout before producing the report that
+explains the stall.
+
+**Two of the new tests are the real guard and three are not.** The three that
+launch a questioning child pass in this shell because its stdin is already
+non-interactive; they would have passed against the old code. The two that
+inspect the launch kwargs fail when the fix is reverted, and I checked. It would
+have been easy to report five regression tests, and it would have been a lie by
+omission - the same failure mode as the `STATE.md` sentence that was quietly
+false three hours ago.
+
+**Then the boundary was drawn, and it contradicts something I shipped.** The
+product must not depend on a provider project file, and must not create an
+agent, persona or mode inside a coding tool. But `.opencode/agents/ine-worker.md`
+plus OpenCode's `--agent ine-worker` is exactly that, added in Session 50 as
+item 122, and it carries a permission deny-list. Removing it is right per the
+new boundary and it does weaken a guardrail, so it is not a call I make alone.
+
+**And a collision I cannot resolve by picking a name.** The commander asked for
+`ine run`. `ine` is the *language* CLI and already has a `run` that runs a `.ine`
+file. `ine-agent` is unambiguous but not on PATH in this checkout. Both are real
+answers; they are not the same answer.
+
+**Suite: 377** focused, **715 + 33 subtests** full. Nothing committed.
+
+## Session 52 (continued) - Provider independence, decided and implemented
+
+Both open questions came back answered: keep `ine-agent`, and remove the
+OpenCode agent file. Implemented rather than deferred, because both were small
+and the boundary is worthless as a claim.
+
+`.opencode/agents/ine-worker.md` is deleted and the built-in profile no longer
+passes `--agent`, so OpenCode runs its own default agent and INE's prompt is the
+only thing shaping behaviour. The denials it used to enforce - no web, no
+subagents, no questions, nothing outside the project - moved into
+`.agent/WORKER_INSTRUCTIONS.md` as rule 10, phrased for a model rather than a
+tool, alongside the rule this session actually needed: never stop to ask a
+question mid-run, because a worker that needs an answer it cannot infer returns
+`needs_commander` in its receipt instead.
+
+**What that costs, said out loud rather than buried.** The deny-list was
+enforced by OpenCode; the prompt is advice to a model. And the 60-step budget is
+not reproduced anywhere, so a profile's wall-clock timeout is now the only hard
+bound on a run. Both facts are in `DECISIONS.md`, and
+`ProviderIndependenceTests` fails if the file comes back, if any built-in profile
+grows an `--agent`/`--mode`/`--plugin` flag, or if the prompt stops carrying the
+prohibitions. It replaced eight tests that asserted the front matter of a file
+that should not exist - the right thing for those tests to have been guarding
+was never the YAML.
+
+## Session 53 (continued) - The first real mission, and the two bugs behind it
+
+With the boundary settled I spent the one authorized live run. It failed, and
+the reason was better than a crash: Claude read the code, settled the entire
+design for item 84, and then found every `Edit`, `Write` and `Bash` call
+refused. In print mode a CLI cannot ask for permission, so an ungranted tool is
+a refusal. Exit code 0, a well-formed receipt, a design that would have been
+right, and nothing on disk. A worker profile is a capability grant, not just a
+command line - so the `claude` profile now carries `--permission-mode
+acceptEdits` with explicit allowed and denied tool lists, which is item 122's
+posture expressed as flags, and a test fails if
+`--dangerously-skip-permissions` ever appears in a built-in.
+
+**Re-ran item 84 and it completed.** Three files edited, a `done` receipt
+listing five verifications including a scratch harness that drove the extension
+against a fake vscode host, recorded with 729 tests green. So the path works:
+prompt, CLI, receipt, records, next-mission count. Exit 1 is correct - hitting
+`--max-missions` with 29 items still open is `STOP_ERROR` by design, pinned by
+a test table, not a failure.
+
+**Then the recording broke, in the way this project already warns about.** The
+run rewrote STATE.md's bounded head and left the header reading "Session 5352":
+the substitution appended the new session to the digits it matched, so every
+recorded mission grows the number. Seven hundred and nine tests missed it
+because they pinned that the head *is* rewritten and never that the number is
+*replaced* - idempotence is a different property from effect, and only shows up
+on the second call. It took the control-plane health test, and the new
+regression test reproduces `5352` exactly when the fix is reverted.
+
+**The other thing the run taught me, which cost me an hour of writing prose in
+the wrong place.** `_rewrite_state_head` replaces the whole `## Current focus`
+and `## Health` sections by design, and everything below them is left alone. I
+had put this session's findings in `Current focus`, and the loop correctly threw
+them away. The durable facts belong in `NOTES.md`, `DECISIONS.md` and the
+sections the loop does not own - which is where they are now.
+
+**Suite: 378** focused, **730 + 33 subtests** full. Nothing committed.
+
+**And the quiet-failure warning in this file is now twice earned.** A scripted
+`str.replace` of the "Next: item 84" line in STATE.md missed its target, printed
+`ok`, and left the stale line in place — a non-raising edit is still a failed
+edit, and a green suite cannot see it. The number of tests, the wording of a
+plan line, and the presence of a heading are all assertions worth making
+explicitly when a recording pass depends on them.
+
+## Session 53 (continued) - "It's running but it's not showing a thing"
+
+The report was that a run showed nothing at all. My first explanation was that
+`claude -p` does not stream, which is true and was the *second* cause. A probe
+— a fake worker that printed a marker, slept, printed another, all piped —
+showed **9.3 seconds of nothing**, including markers the worker had itself
+flushed, and then the lot on exit. The package contained **zero** `flush` calls
+across 68 print and write sites, and Python block-buffers stdout when it is not
+a terminal. A supervisor streaming a worker nobody can see streaming has failed
+the only test that matters to the person watching it.
+
+Fixed at both levels on purpose: `_safe_stdout()` reconfigures with
+`line_buffering=True`, which covers every print site including the ones nobody
+remembers existing, and `_print` passes `flush=True` for streams that cannot be
+reconfigured. The same probe afterwards: 1 line at 1.5s, 5 by 4.3s, all of it
+by 10.4s. The probe's own `Broken pipe` failure also became visible in the log,
+which is the second half of the benefit — a silent failure is now a loud one.
+
+And because a non-streaming CLI is quiet for the whole mission no matter how
+well the loop flushes, there is now a **heartbeat**: elapsed time every 30
+seconds while a worker runs, stopping the moment it returns, console only —
+never in the run report, because a heartbeat is not evidence. Silence with a
+rising counter means working. That question is the one this loop gets asked
+most, and it got it wrong once already.
+
+**Two probe runs went against the real item 85 and both failed honestly.** The
+first recorded no classification; the second surfaced the broken pipe. Neither
+wrote anything, and PLAN item 85 is still `EXECUTABLE`, but between them they
+consumed its attempt budget, so I cleared its attempts through
+`supervisor.clear_mission_attempts` — the same call the tests use — and deleted
+the probe script. Worth recording because a diagnostic that runs against live
+state is a mutation, and the honest options were to clear it or to leave a real
+mission looking attempted-and-failed for no reason.
+
+**Suite: 385** focused, **737 + 33 subtests** full. Nothing committed.
+
+### The probe was lying to me, and then so was a test
+
+The flush fix worked, and the heartbeat landed. Then the probe kept returning
+`the worker gave no classification` for a receipt that parsed perfectly, which I
+filed as a probe artefact and nearly moved past. It was not: the run report said
+`output 93 chars` when the probe had printed 152, and the console showed lines
+that the result did not contain. `proc.stdin.close()` was raising
+`BrokenPipeError`, `run()` caught `OSError`, and the handler reported **"could
+not start claude"** — throwing away the exit code and the receipt while
+relaying them to the console. Windows pipes buffer 4096 bytes, so the 6904-char
+prompt made the parent's write *block*; the probe was still running when it
+blocked and exited without reading, and the blocked write failed.
+
+Real defect, real blast radius, and only on the streaming path — `_capture`
+never showed it because `communicate()` already swallows EPIPE. Fixed by
+treating a declined prompt as what it is: best-effort handover, with the
+child's own exit code and output as the evidence.
+
+Getting a regression test for it took three tries, and the first two are the
+point. A 30-character prompt never fills the pipe, so nothing blocked and the
+test passed against the bug. Adding a 64 KB prompt still passed — because I had
+not passed `on_line`, so it exercised `_capture`, the one path that was never
+broken. Only after forcing the streaming path did it go red, with the exact
+production string. **A regression test that cannot fail is worse than none: it
+turns a guess into a checkmark.** Every one of those green runs was evidence of
+nothing, and I would have reported the fix as verified on the strength of two
+tests that never touched it.
+
+**And the fix exposed the failure I had claimed to have already caught.** With
+the pipe fixed, the probe exited 0, and the loop recorded PLAN item 85 `DONE`,
+wrote `.agent/compaction/85.md` reading `Files: (none reported)`, and advanced
+the queue to item 86 — on the strength of a worker that changed nothing. I had
+written in NOTES that the loop would never do this. It was the exit code doing
+the rejecting, and that had only ever been a coincidence of a *broken* probe,
+not a guard. Rolled back by hand: PLAN tag to `EXECUTABLE`, compaction receipt
+deleted, attempt entry cleared, three false claims in STATE.md corrected. No
+work was lost, because nothing had been implemented. Whether an empty
+`changed_files` may complete a mission is a semantics call, so it is in
+`BLOCKERS.md` with evidence and a recommendation rather than decided here.
+
+**Suite: 395** focused, **744 + 33 subtests** full. Nothing committed. Four
+diagnostic probe runs are recorded honestly in `RUN_REPORTS.md`; they are noise,
+not missions, and item 85's plan tag is the authority on its real state.
+
+### The run that happened while nobody was looking
+
+`git status` at the end of all this showed an untracked `src/ine/formatter.py`,
+last written at 15:25:45. There is a run report at 15:23:38 — a real
+`run --worker claude` against mission 85, not a probe — and its report is
+truncated to a single `#`. So a genuine Claude run was executing item 85 while
+this session was chasing the buffering bug, and it landed real work in the tree
+with **no receipt, no HISTORY block, no compaction entry, and no plan tag**.
+
+That reframes the rollback above. Reverting item 85 was right — the probe's
+receipt was not evidence — but I had been reading "85 is untouched" as *nothing
+has happened for 85*, when in fact a partial implementation had been sitting in
+the working tree the whole time. Two people were wrong in opposite directions
+from the same missing fact, and the state file could not tell me because the
+run that produced the work never recorded itself.
+
+The work itself is careful: `format_program` emits canonical text only when it
+re-parses to the identical statement list, and returns the source untouched
+otherwise, so a half-typed buffer cannot be destroyed. It is idempotent, and
+`parse(lex(formatted))` equals `parse(lex(source))` on the samples I checked. It
+is also **unfinished and self-contradictory**: no `tests/test_formatter.py`, no
+`{"format": true}` query, no editor provider or command, no `package.json` entry
+— and it emits flush-left bodies while both its own docstring and its mission
+index specify 4-space indentation. Steps 1-2 partly done, 3-5 not started. Both
+open questions are in `BLOCKERS.md`; I did not pick either, because one is a
+language-surface decision (canonical form) and the other changes what a `DONE`
+in the plan is allowed to mean.
+
+**Suite: 375** focused, **713 + 33 subtests** full. Nothing committed.
+
+## Session 53 - ine-agent mission 84: `EXECUTABLE` — **Editor diagnostics implementation.** Extend
+
+- outcome: done
+- summary: Added a `hover` query to src/ine/autocomplete.py returning the dictionary meaning of the kind or property under the cursor (empty hover, never an error, for anything unresolvable), an advisory semantic pass reporting the one SemanticError from analyze(parse(lex(buffer))) under a new sibling `advisory` key beside validate's untouched lex+parse-only diagnostics, and wired both into editor/vscode-ine/extension.js as a hover provider plus a debounced DiagnosticCollection (parse errors red, semantic findings warnings). The mission's `property_reference` helper turned out not to exist in dictionary.
+- files: src/ine/autocomplete.py, tests/test_autocomplete.py, editor/vscode-ine/extension.js
+- verified: python -m pytest tests/test_autocomplete.py tests/test_ine_agent.py -q: 487 passed, 6 subtests passed
+- verified: python -m pytest tests -q: 729 passed, 33 subtests passed
+- verified: node --check editor/vscode-ine/extension.js: syntax OK
+- verified: node .tmp/extension_smoke.js (scratch harness driving extension.js against a fake vscode host): EXTENSION SMOKE OK — lex error published red at line 2 col 5, undeclared-entity finding published as War
+- verified: git status --short: only the three declared files edited (package.json untouched, no command needed); .tmp harness is gitignored
+- area: ine-editor
+- finding: The editor's semantic findings ride inside the same validate response under `advisory`, so a buffer that does not lex reports no advisory at all — there is no semantic model to check. The extension therefore shows red-only for lex/parse breakage and warnings only for parse-clean semantic bugs; a broken program can legitimately display just one red line and no warnings.
+- follow-up proposed (recorded, not executed): Extend the editor's `advisory` list beyond SemanticError with semantic.advisory_warnings(model) — the dictionary-backed property-vocabulary and containment warnings the CLI already prints — so the editor warns on `padding "banana"` and mis-nested containment too, still as warnings, never red.
+- recorded by: state.record_mission_outcome from the worker receipt
+
+## Session 54 - ine-agent mission 85: `EXECUTABLE` — **Formatter implementation.** Design deterministic
+
+> **RETRACTED — this block records a diagnostic probe, not a mission.** The
+> worker was a fake used to test output visibility; it read no repository and
+> edited nothing. The `outcome: done` below is the false record itself, kept
+> verbatim because HISTORY is append-only and because a retraction that
+> quietly edits history teaches the reader that the record can be trusted
+> rather than checked. PLAN item 85 was restored to `EXECUTABLE`,
+> `.agent/compaction/85.md` was deleted, the attempt entry was cleared, and
+> STATE.md was corrected. See `BLOCKERS.md` for the open question this exposed.
+>
+> **Forward pointer:** item 85 was *genuinely* completed a few minutes later
+> by a real Claude run — see Session 55 below, which is the authority on item
+> 85. The rollback above retracted the probe's record, not the mission.
+
+- outcome: done
+- summary: visibility probe
+- files: (none reported)
+- verified: probe
+- area: ine-agent
+- recorded by: state.record_mission_outcome from the worker receipt
+
+## Session 56 - interactive: why the 16:13 run died, and three fixes to the loop itself
+
+- Not a worker cycle: no mission index was executed. This session diagnosed
+  the user's failed 16:13 run and hardened the loop against what it exposed.
+- **Diagnosis of the reported failure.** Three separate things stacked: the
+  provider rejected `deepseek-v4-flash` (`[claude-code:unrecognized_model]`),
+  the worker still spawned a `cmd.exe` that printed
+  `Execution errorTerminate batch job (Y/N)?` and waited on a console nobody
+  owned, and Ctrl+C then raised a bare `KeyboardInterrupt` out of
+  `CliWorker._stream`'s `proc.wait` — a traceback, no exit line, and a run
+  report that recorded `exit 1, output 93 chars` without one word of the
+  reason. The reason existed only on a console that was already gone, so the
+  next question could only have been answered by buying another run.
+- **Fix 1 — Windows console isolation.** `CliWorker._creation_flags()` now
+  returns `CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP` on Windows, passed to
+  both spawn paths (`_capture` via `subprocess.run`, `_stream` via `Popen`), so
+  the worker cannot claim a console to prompt on. `_terminate()` kills the
+  whole tree with `taskkill /F /T` (direct-kill fallback) and is wired into both
+  the streaming timeout and `BaseException`, so a cancelled or interrupted
+  worker leaves no `node.exe` behind.
+- **Fix 2 — Ctrl+C is an outcome, not a crash.** `Supervisor.run()` is now a
+  wrapper over `_run_loop()` that catches `KeyboardInterrupt`, says so, writes
+  the interrupted outcome to the run report, and returns `STOP_ERROR`. The
+  load-bearing check: removing that handler makes
+  `SupervisorInterruptTests.test_a_keyboard_interrupt_stops_the_run` fail on
+  the raw traceback.
+- **Fix 3 — a failure must carry its own evidence.** A failed worker's output
+  now reaches `.agent/RUN_REPORTS.md` (first 20 lines, 300 chars each), pinned
+  by `SupervisorFailureEvidenceTests` including a bound test, and suppressed
+  for successful runs so a receipt is not duplicated into the record.
+- **Tests.** Full suite after the changes: `python -X utf8 -m pytest -q` →
+  green, 779–781 passed of 782 collected, up to 3 skipped, 33 subtests. Do
+  not read the varying pass count as a regression: two pre-existing tkinter
+  tests in `tests/test_ine.py` skip whenever this machine cannot find
+  `init.tcl`, and the new POSIX-console test skips deterministically on
+  Windows.
+- **Correction to Session 54's rollback.** The rollback retracted the *probe's*
+  record, not the mission: a real Claude run at 16:37 (265s, `--heartbeat 10`)
+  completed mission 85 properly — 29 formatter tests, the `{"format": true}`
+  query, the editor provider and `ine.format`, `formatOnSave`. The indent
+  question I had raised in `BLOCKERS.md` was answered by that run in the
+  direction the index specified (4 spaces), and the run also caught two real
+  defects in the earlier partial formatter: a round-trip guard that compared
+  statement dataclasses including `line` (making `format_program` a silent
+  no-op on every non-canonical buffer) and comment deletion on reformat, which
+  under `formatOnSave` would have destroyed work on every save. Added a
+  forward-pointer to the Session 54 retraction, marked the indent blocker
+  `ANSWERED`/`RESOLVED`, and updated the zero-change blocker's now-stale
+  consequence line. PLAN 84/85 `DONE`, 86/87 `EXECUTABLE`, compaction holds
+  exactly `84.md` and `85.md`, attempts empty.
+- **Left open.** The zero-change `done` hazard is still unanswered and still
+  unguarded. No per-mission spend ceiling exists (`--max-budget-usd` verified
+  available upstream, not wired). The `CONIN$` behaviour cannot be reproduced
+  in this environment, so the console-isolation tests pin wiring only.
+- Honest residue: the 17:22 diagnostic probe left a truncated run report in
+  `RUN_REPORTS.md` (its process was hard-killed by the signal it was testing,
+  see NOTES). No state was mutated by it — item 86 is untouched and `EXECUTABLE`.
+
+## Session 55 - ine-agent mission 85: `EXECUTABLE` — **Formatter implementation.** Design deterministic
+
+- outcome: done
+- summary: Formatter completed and wired to the editor. A prior attempt had already written src/ine/formatter.py, the format_program export and the autocomplete {"format": true} query; I verified those and fixed two defects in the formatter's safety machinery: the round-trip guard compared statement dataclasses field-by-field including `line`, so any reflow that inserted the canonical blank line was rejected and format_program silently returned its input unchanged (it was a no-op for all non-canonical buffers), and comment-bearing files were reformatted with their comments deleted, which formatOnSave wou
+- files: src/ine/formatter.py, tests/test_formatter.py, editor/vscode-ine/extension.js, editor/vscode-ine/package.json
+- verified: python -m pytest tests/test_formatter.py tests/test_autocomplete.py -q: 139 passed, 6 subtests passed
+- verified: python -m pytest tests -q: 773 passed, 33 subtests passed
+- verified: live protocol query `printf '{"format": true, "buffer": ..., "id": 1}' | python src/ine/autocomplete.py` returned {"format": true, "text": "make page\n page title \"Company Name\"\n\nmake header\n
+- verified: node --check editor/vscode-ine/extension.js: OK; package.json parses with contributes.commands and configurationDefaults
+- verified: examples/homepage-cards with comment lines stripped (31 statements): formats, is idempotent, statement count preserved
+- verified: verified-not-edited this run: src/ine/__init__.py already exported format_program and src/ine/autocomplete.py already carried the guarded format query with id echo, both from the deferred prior attemp
+- area: ine-editor
+- finding: Statement dataclasses from parser.py are frozen with eq comparing every field, `line` included, so `parse(lex(text)) != statements` is a layout-equality test, not a meaning test — it cannot be used to check meaning preservation across any reflow that changes line counts. The formatter's `_bare()` clears `line` at every depth (including inside PropertyRef, which `say card.title` carries) to compare meaning only. Separately: the lexer discards comments, so any formatOnSave formatter that re-emits from the parse tree alone deletes every comment in the file; format_program now returns a commented 
+- follow-up proposed (recorded, not executed): Surface why formatting was skipped. With formatOnSave now on for [ine], a commented buffer — and any buffer that does not parse — is returned unchanged and the editor reports nothing, so the user experiences a formatter that silently does not work and cannot tell a typo from a deliberate refusal. Add a refusal reason to the format response (e.g. {"format": true, "text": ..., "reason": "comment" | 
+- recorded by: state.record_mission_outcome from the worker receipt
+
+## Session 57 - ine-agent mission 86: `EXECUTABLE` — **Code actions/refactoring investigation.** Research
+
+- outcome: done
+- summary: Investigated Ine code actions and recorded the proposal in .agent/NOTES.md: the statement-to-text-rewrite safety map, a seven-candidate cost table, and a proven `extract to group` rule. A scratch probe (.tmp/code-actions-probe/probe.py) implements extract_to_group as descending line-range edits and verifies 8 accepted cases for identical entities/properties/relationships plus byte-identical rendered HTML, and 7 refusals.
+- files: .agent/NOTES.md, .tmp/code-actions-probe/probe.py
+- verified: python .tmp/code-actions-probe/probe.py: all cases verified: 8 edits, 7 refusals, 0 failure(s)
+- verified: python -m pytest tests -q: 781 passed, 1 skipped, 33 subtests passed
+- verified: find src -newermt -30min: empty (no src/ file touched); git status src/ entries are pre-existing session-start modifications
+- area: editor-tooling
+- finding: A `group` names already-declared entities and never declares them (semantic._expand_groups raises otherwise), so extract-to-group cannot replace the `make` lines it collects; it inserts the group line and collapses only the members' shared literal `inside` line and property lines they hold identically, leaving all other lines byte-identical — the prototype proves entities, properties, relationships and rendered HTML are unchanged. Two gaps for any real action: statements carry only a 1-based `line` (no column/offset/source mapping), and every precondition must be checked against the raw parse 
+- follow-up proposed (recorded, not executed): Implement extract-to-group for real per NOTES §4–§5: a `src/ine/` engine entry point, an `{"action": "extract-group", "buffer", "lines", "name"?}` op in autocomplete.py following the `format` op's no-answer-is-not-no-change rule, and a registerCodeActionsProvider in editor/vscode-ine/extension.js emitting per-line TextEdits with a stale-buffer refusal; precede it with the `make <count> <kind>` exp
+- recorded by: state.record_mission_outcome from the worker receipt

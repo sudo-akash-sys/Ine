@@ -26,6 +26,17 @@
           ".ine"
         ]
       }
-    ]
+    ],
+    "commands": [
+      {
+        "command": "ine.format",
+        "title": "Ine: Format Document"
+      }
+    ],
+    "configurationDefaults": {
+      "[ine]": {
+        "editor.formatOnSave": true
+      }
+    }
   }
 }

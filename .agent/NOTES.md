@@ -1924,3 +1924,742 @@ plane; a follow-up is proposed, never executed).
 `.agent/DECISIONS.md` records the approved architecture and the three rejected
 alternatives (injected state snapshot, whole-history summaries, automatic retry
 with diagnosis).
+
+## Session 52 - The worker prompt is a file, and a test that lied about encoding
+
+**The prompt was in Python, and the commander asked for it in a file.** The
+instructions the implementation worker receives - do this, do not do that, do
+not burn tokens - were a string literal inside `impl_prompt` in
+`supervisor.py`. The stated requirement was that this should be *a place where
+we could customize it whenever we want, without changing the entire working of
+that particular script*. Editing behaviour meant editing a 2000-line module.
+That is a defect against the spec, not a preference.
+
+`.agent/WORKER_INSTRUCTIONS.md` is now the literal prompt, and the supervisor
+only fills slots. `{{MISSION}}` and `{{RECEIPT}}` are required and validated
+before a run; `{{RELATED}}`, `{{MISSION_NUMBER}}` and `{{MISSION_HEADLINE}}`
+are optional. Three consequences worth knowing:
+
+- Substitution is a literal `str.replace`, not `str.format`, so a `{` in prose
+  (a regex, an example, a dict) is text and cannot crash the run or swallow the
+  mission. A hand-edited file is full of braces; `format` would have made it a
+  landmine.
+- A missing, empty or tokenless file raises `ProjectError`, which `cli.main`
+  turns into exit 1 with a remedy, and which `doctor` reports and fails on.
+  There is deliberately **no** built-in fallback text: a silent default would
+  mean the shipped file is not the only thing that can be sent, which is the
+  property the change exists to establish.
+- `{{RELATED}}` is substituted with its trailing newline stripped. `compaction`
+  already returns text ending in `\n` and the old template added a literal one;
+  leaving both put an extra blank line in, and made the file's own blank lines
+  stop describing the output. Editing the file would then not be what changed
+  the prompt, which is the whole premise.
+
+**How the no-behaviour-change claim was checked.** The old `supervisor.py` was
+materialised from the HEAD blob into a throwaway package beside the new one,
+both `impl_prompt` functions were pointed at this repository, and the two
+prompts were compared: 6525 chars each, byte-identical. The first attempt
+differed by one blank line, which is how the trailing-newline rule above was
+found. Worth repeating for any future "this should change nothing" edit: build
+both versions and diff the output, do not reason about the template.
+
+**A test passed or failed depending on the command line used to run it.** Three
+`CliTests` help-text tests capture a subprocess with `subprocess.run(...,
+capture_output=True, text=True)` and no `encoding=`. `text=True` decodes with
+the *parent's* preferred codepage; the child writes with its own. Run pytest as
+`python -X utf8 -m pytest` and the parent expects UTF-8 while the child emits
+cp1252, and the em-dash in the help text (0x97) raises `UnicodeDecodeError` in
+a reader thread. Run it without `-X utf8` and both sides are cp1252 and the
+tests pass. They were passing in the Session 51 report for exactly that reason,
+and the utf-8 invocation used here is what exposed them. Fixed with one helper,
+`run_cli_process`, which pins `PYTHONIOENCODING=utf-8` on the child and
+`encoding="utf-8", errors="replace"` on the parent, so a result means the same
+thing twice.
+
+**The plain-script import branch is not covered by the test suite.** `cli.py`
+carries a second import block for `python src/ine_agent/cli.py`, taken when the
+package-relative import fails. The tests import `ine_agent.cli` as a package, so
+that branch never runs: the first real `doctor` after this change died with
+`NameError: worker_instructions is not defined` while all 330 tests were green.
+Any new name added to the `cli` import list has to go into both blocks, and
+running the real command line once is the only thing that catches it.
+
+**Still open, and it is a product decision rather than an implementation one.**
+The commander's description of this script is: hand missions to a coding agent
+one at a time, verify, keep snippets, stop for a decision when one is needed,
+and spend as few tokens as possible. The queue, the receipt, the snippets, the
+needs_commander stop, the per-mission metrics and the tests all match that. What
+does not match is the failure machinery: a five-value classification vocabulary
+with a schema, fuzzy parsing and aliases, an in-band diagnosis call, an attempts
+ledger with parking, and a stall guard - roughly 800-1000 lines in a script meant
+to be boring. The recommendation is to keep output bounding and the timeout (both
+earned their keep; the timeout is what stopped the runaway loops) and cut the
+diagnosis vocabulary, the ledger, parking and the stall guard, since
+`--max-attempts` already covers trying again. **The cut has NOT been made** - it
+changes what the tool does when a mission goes wrong, which is the commander's
+call, not the agent's.
+
+## Session 52 - The prompt, the budget, the checks, and what each one cost
+
+Four changes, one theme: the loop spends tokens only where a decision needs
+them. Measured, not asserted.
+
+**The prompt shrank by making absence the default.** The `PRIOR WORK IN THIS
+AREA` block went away, and with it the "nothing related" text that used to
+fill it. A mission with no declared `Area:`, `Depends on:` or changed file in
+common is now sent no prior-work block at all — a smaller prompt *and* a
+truer one. A minimal mission (index + headline + contract) is **3,414 chars /
+61 lines / ~854 tokens**; the agent body is 319 chars, so what the provider
+is handed is ~3,733 chars against ~4,511 before, about 17% less. The prompt
+itself grew ~300 chars; the body fell from ~1,400 to 319. That trade is the
+finding: most of what a worker was told lived in the agent definition, not
+the prompt, and moving it there is free.
+
+**A 50-character trim of the receipt contract was reverted.** The contract
+explains what each field *means*; shortening it to satisfy a length target
+broke eight tests that assert its wording, which is the tests being right.
+Length is a target to report, not a licence to delete meaning.
+
+**`policy` reports an over-budget prompt instead of hiding it.** A mission
+that needs more than `max_prompt_chars` is sent whole and the overage is
+recorded. Truncating a mission the planner asked for is the one thing the
+cap must never do: a worker silently handed half a mission reports `done` and
+means something else.
+
+**`verify` runs after `done` and nowhere else.** A deterministic local check
+that also ran on failure would be a second, vaguer opinion on a failure
+already reported; a check that called a model would be a second supervisor.
+So the rules are structural rather than editorial: `verify.py` imports
+neither the worker factory nor the supervisor it lives in, and there is a
+test that reads the source and fails if that ever changes. A failed check
+records the finding and fails the run; it does not re-run the mission,
+because a deterministic check will fail identically and the retry would
+spend a request to learn nothing.
+
+**A completed mission was being invoked twice.** The plan is re-read after
+every cycle, and a mission a worker finished by receipt alone — without
+editing `PLAN.md` — can still look selectable for a moment. That broke the
+one promise the arc is built on: one mission, one process. Fixed by adding
+the task identity to the run's deferred set in the `done` branch, and
+`test_a_receipt_completion_costs_exactly_one_invocation` was confirmed to
+fail with the fix reverted (2 calls, not 1), rather than merely passing with
+it in place.
+
+**Three traps worth carrying forward.**
+
+1. *A malformed config must not be a traceback.* `Supervisor` loads
+   `workers.json` in its constructor, and the constructor sat outside the
+   `try` that turns control-plane faults into `error: ...` plus exit 1, so a
+   bad check list escaped as an unhandled `ValueError`. Construction moved
+   inside the guard, and the CLI now names the offending entry
+   (`verify[1]`, `unknown key`) instead of printing a stack.
+2. *`sys.executable` is not always launchable.* On this machine it names a
+   Windows Store app-execution alias that `CreateProcess` refused with
+   `[WinError 2]` from inside the full suite, while the same check passed in
+   isolation. Probing the candidate the way the supervisor starts a check —
+   same executable, and from a working directory — is what makes it
+   reliable; the probe is `working_python()` in `tests/test_ine_agent.py`. A
+   test that shells out to "the interpreter" is asserting something about
+   the machine, not about the code.
+3. *Supervisor-level checks go through a seam.* The tests that assert the
+   wiring pass a `verify_runner`; the one test that starts a real process is
+   separate, and skips rather than fails. The wiring is the subject, and the
+   wiring does not need a subprocess to be tested.
+
+**Scenario coverage, as tested rather than as claimed.** One process per
+mission (`test_a_crashing_worker_costs_exactly_one_invocation`, plus the
+receipt-path regression above); queue progression without a plan edit
+(`test_successful_cycle_advances_and_rereads_state`); a failure, a missing
+prerequisite and a commander gate each recorded once with no second call
+(`test_a_failed_cycle_spends_no_second_call_when_the_receipt_says_why`,
+`test_missing_prerequisite_blocks_records_and_continues`,
+`test_worker_failure_is_recorded_deferred_and_stops_with_error`); related
+context only on declared signals, and none at all without them
+(`test_the_prompt_carries_a_related_snippet_as_data`,
+`test_an_unrelated_mission_is_sent_no_prior_work_at_all`); over-budget
+reported not truncated
+(`test_an_over_budget_prompt_is_reported_and_still_sent_whole`); policy
+defaults, overrides and CLI precedence (`BudgetPolicyTests`); checks off by
+default, run after `done`, all of them run, non-zero exit, no model, no
+retry, timeout and bounded output (`VerificationTests`); per-mission cost
+recorded and measured (`PerMissionCostTests`,
+`MeasureMissionCostTests`); bad config reported rather than crashed out of
+(`test_a_bad_config_is_reported_by_the_cli_not_crashed_out_of`).
+
+**A run report had been left with a body and no header.** `RUN_REPORTS.md`
+ended in a stray `- exit: 0` / `- summary:` pair with no `### run <stamp>` line
+above it - the tail of a dry-run whose header never landed. `measure` splits
+the file on that header, so the fragment was being read as part of the run
+before it: a cost report quietly wrong rather than a parse error. The fragment
+was removed and
+`ControlPlaneHealthTests.test_every_run_report_block_carries_its_own_header`
+now fails if any block lacks its timestamp, which is the difference between a
+report that is wrong and one that says so.
+
+**Suite: 369** in `tests/test_ine_agent.py`, **707 + 33 subtests** full (706 +
+1 skipped without a display), 0 leaked `.tmp` fixtures. Nothing is committed.
+
+## Session 52 - The control plane drifts; the code does not
+
+Asked whether the loop is actually usable, and whether the reports fall behind
+the codebase. The second question had a live answer inside the repo.
+
+**`STATE.md` was wrong about the next mission.** It said item 84 "needs an
+index written at `.agent/missions/84.md`". The index exists, is 3,827 chars,
+and `run --dry-run` resolves it. A queue audit found **all 30** `EXECUTABLE`
+items have written indexes (44 index files exist) - so the loop can run today
+and the recorded blocker was fiction. Corrected in `STATE.md`.
+
+**The general shape, stated once.** The worker reads the actual files, so its
+knowledge of the codebase cannot go stale. What goes stale is the *prose about*
+the codebase: `STATE.md`, `NOTES.md`, `DECISIONS.md`, and the older mission
+indexes. Those are written by an agent at session end or at planning time, and
+nothing in the loop can check a sentence. So after N missions the summaries
+describe a project that has moved, while the work itself stays correct.
+
+**What the loop already does automatically**, and should keep doing: plan tags
+and remarks, run reports, compact receipts, the failure ledger, follow-up
+proposals, one `HISTORY.md` block per completion. All of it derived from a
+fixed-shape receipt, none of it needing judgement.
+
+**What it cannot do without spending a model call**, and should not: rewrite
+`STATE.md` / `NOTES.md` prose. That is a per-run cost on every mission to
+maintain a summary, authored by a process nobody chose - the exact trade this
+arc deleted when it removed the diagnosis call.
+
+**The three options, cheapest first.**
+
+1. A deterministic staleness check with no model and no tokens: fail the run
+   when a cheap fact is checkable and false. Candidates that are all decidable
+   from files already on disk - `STATE.md`'s next-item claim disagreeing with
+   what the selector picks; an `EXECUTABLE` item whose declared `## Files` have
+   changed since its index was written; N missions completed since the last
+   state refresh. This is the existing `verify` mechanism pointed at the
+   control plane instead of the code, so it needs no new machinery.
+2. A budgeted refresh mission: when such a check trips, file a
+   `CLAUDE_REVIEW` item that says "re-read the code, rewrite the stale parts of
+   `STATE.md` and `NOTES.md`". One mission, when it is owed, instead of
+   background work forever - and it goes through the normal plan, so it is
+   visible and refusable.
+3. Automatic prose rewriting per run: rejected, for the reason above.
+
+Option 1 is a product decision (it changes what a run may report), so it is
+the commander's to make; it is not a blocker for running missions today.
+
+## Session 52 - 709 green tests, and the tool was broken on first use
+
+The commander's first real `run` died immediately:
+
+    TypeError: build_worker() missing 1 required positional argument: 'root'
+
+**The cause was a duplicated contract.** `Supervisor` owns the worker-factory
+contract and already binds both `root` and `model` into a one-argument factory
+(`lambda name: build_worker(name, root=self.root, model=self.model)`). The CLI
+passed `build_worker` in raw, which is a second copy of that contract - and a
+wrong one: it needs three arguments and the supervisor calls it with one. The
+CLI's copy was *also* silently dropping `--model`, so even a fixed arity would
+have ignored the model the commander asked for. Fix: delete the line. One place
+decides how a worker is built.
+
+**Why 707 tests did not catch it.** Every test injects
+`worker_factory=lambda name: worker` - which is the correct contract, so the
+tests were testing the supervisor against a *stub that agrees with it* and
+never against the factory the CLI actually supplies. And `--dry-run` cannot
+catch it, because a dry run resolves a profile and never builds a worker: it
+printed a correct command and the crash came on the next cycle. **A green suite
+proves the parts agree with each other; it does not prove the seam between them
+is wired.** The seam here was the one place a user touches first.
+
+**The fix is two tests, and both were checked against the bug:**
+
+1. `test_a_real_run_through_the_cli_builds_the_worker_it_printed` runs the whole
+   real path - CLI -> factory -> profile -> subprocess -> receipt -> records -
+   against a profile whose command is a local `python -c` that prints a
+   receipt. It costs nothing, calls no model, and fails with exactly the
+   commander's `TypeError` when the bug is present. This is the integration
+   test the suite was missing: not "does the supervisor work" but "does the
+   thing a person types work".
+2. `test_the_supervisor_factory_is_the_only_place_a_worker_is_built` asserts
+   `cli.py` contains no `worker_factory=`, so the second copy cannot come back.
+
+**Also verified, not a bug.** A hand-written fixture with an unbackticked tag
+(`1. EXECUTABLE - ...`) is re-tagged to `` 1. `DONE` EXECUTABLE - ... `` -
+two tags. The parser takes the *first*, so `DONE` wins and the mission leaves
+the queue, and `PlanHygieneTests` already requires exactly one tag per numbered
+item. The real `PLAN.md` has zero double-tag lines because the loop's own
+rewriter replaces a backticked tag in place. Recorded because a double tag that
+happened to be ordered the other way would be a mission that silently never
+leaves the queue.
+
+**The limitation it retires.** The loop had never executed its own real path:
+"707 tests, never a live mission" was true, and it is now narrower. The path is
+exercised end to end against a local stand-in agent. What is still unproven is
+the *worker* half - whether a real coding agent, handed this prompt, returns a
+receipt worth reading - which is a question about the prompt, not the plumbing.
+
+**Suite: 377** in `tests/test_ine_agent.py`, **715 + 33 subtests** full.
+
+## Session 52 - A supervisor must never hand the worker a console
+
+The first live Claude run did not fail fast; it hung, and the traceback ended
+in `proc.wait(timeout=self.timeout)` until a human pressed Ctrl+C. The cause is
+one kwarg, and it is the kind that stays invisible until a real CLI is on the
+other end of it.
+
+**What happened.** Claude hit an API error, printed `Execution errorTerminate
+batch job (Y/N)?` and waited for a keypress. Nothing in the supervisor would
+ever send one. Both launch paths passed `stdin=None` whenever the prompt
+travelled as an *argument* - and `stdin=None` does not mean "no input", it
+means **inherit this process's stdin**, which in a terminal is the operator's
+console. With `prompt_transport: stdin` a PIPE was used and the prompt written,
+so the stdin path was always safe; the argument path was the one every real
+agent profile takes.
+
+**The fix is `DEVNULL`, and the distinction is the whole finding.** An
+immediately-EOF stdin lets the child decide for itself - abort, or proceed -
+and never parks a queue on a keypress. Applied in `worker._capture` and
+`worker._stream`, the two shared helpers, so every adapter inherits it, and in
+`verify.run_checks`, where a prompting local check would otherwise burn the full
+600s timeout before the report explaining the stall appeared. The stdin-transport
+path is untouched and pinned by a test: `subprocess.run` takes `input` *or*
+`stdin`, never both, so "there is a payload to send" and "the child is isolated"
+are mutually exclusive by construction.
+
+**Why the behavioural test alone was not trusted.** Three of the new tests
+launch a child that prints a question and then reads stdin. They pass here
+because this shell's stdin is already non-interactive, so they would also have
+passed against the *old* code. The two assertions that inspect the launch
+kwargs are the load-bearing guard, and both were verified to fail when the fix
+is reverted. Recorded because "the test hung and then it passed" is not
+evidence, and because claiming five regression tests where two are real is
+exactly the drift this file exists to prevent.
+
+**The boundary lesson is larger than the bug.** A deterministic supervisor must
+treat every external process as hostile to its own liveness: non-interactive
+stdin, a hard timeout, bounded output, and a receipt it can parse without asking
+a human anything. An agent that stops to ask a question is not a worker INE can
+use, so the fix belongs on INE's side of the pipe - not in the agent's config.
+## Mission 84
+
+Area: ine-editor
+
+The editor's semantic findings ride inside the same validate response under `advisory`, so a buffer that does not lex reports no advisory at all — there is no semantic model to check. The extension therefore shows red-only for lex/parse breakage and warnings only for parse-clean semantic bugs; a broken program can legitimately display just one red line and no warnings.
+
+## Session 53 - A non-interactive worker is refused, not prompted
+
+The first live Claude mission ran 214s, read the code, settled a complete design
+for item 84 — token scanner, hover resolution order, advisory shape, extension
+wiring — and then wrote **nothing**. Every `Edit`, `Write` and `Bash` call came
+back "requested permissions ... you haven't granted it yet". It reported itself
+`stuck`, which is the loop working: the receipt said what happened and why.
+
+**The rule worth keeping: in print mode a CLI cannot ask, so an ungranted tool
+is a refusal, not a prompt.** A worker profile is therefore a *capability
+grant*, not just a command line. A mission that needs to edit files and run
+tests against a CLI that will not prompt has to be granted both, or it will
+spend its whole budget discovering that it is unable to act. Nothing in the
+profile, the doctor output or the dry run said so beforehand; the only evidence
+was a failed mission and a receipt.
+
+**And the failure was silent in the worst way.** Exit code 0, a well-formed
+receipt, a plausible summary, a design that would have been right. If the
+receipt had claimed `done` with no changed files, or if `changed_files` were not
+part of the contract, this would have been recorded as a success. The contract
+requiring a receipt to name the files it changed is what turned a stuck worker
+into a legible result.
+
+## Session 53 - A buffered supervisor is indistinguishable from a hung one
+
+Asked why a run "isn't showing a thing", I assumed the provider was quiet and
+nearly wrote that down as the answer. A probe said otherwise: a fake worker
+that printed a marker, slept six seconds, and printed another produced **9.3
+seconds of absolutely nothing** when its output was piped — including the
+markers the worker had explicitly flushed — and then printed all of it at once
+on exit.
+
+**The cause was one missing keyword in this package, not in the provider.**
+Python block-buffers stdout when it is not a terminal, and `ine_agent`
+contained **zero** calls to `flush` across 68 print and write sites. A
+supervisor that streams a worker nobody can see streaming has failed the only
+test that matters to the person watching it. Two changes, deliberately
+overlapping: `_safe_stdout()` now reconfigures with `line_buffering=True`,
+which covers every print site at once including the ones nobody remembers
+existing, and `Supervisor._print` passes `flush=True`, which holds even when
+the stream cannot be reconfigured. The same probe afterwards showed 1 line at
+1.5s and 5 by 4.3s.
+
+**The lesson is about the order of the assumptions.** "The provider does not
+stream" was true — `claude -p` emits its whole answer at the end — and it was
+the *second* cause, not the first. It was also the cause I would have reported
+had I not run the probe, and that answer would have been half true and
+completely useless, because the fix for it (a heartbeat) does not help if the
+loop's own output is stuck in a buffer. Verify which silence you have before
+explaining it.
+
+**A heartbeat, because silence is ambiguous.** Even with perfect buffering, a
+non-streaming CLI is quiet for the whole mission, and "is it working or wedged?"
+is the question this loop was asked most often — and got wrong once, on the
+`Terminate batch job (Y/N)?` hang. `_Heartbeat` prints elapsed time every 30
+seconds while a worker runs and stops the instant it returns. It writes only to
+the console: a heartbeat in the run report would be a claim about what
+happened, and it is not evidence of anything.
+
+**A receipt that changes nothing is not a done mission, and I was wrong about
+how that failure would show up.** I expected the loop to reject the probe's
+`changed_files: []` on its own. It did not: the probe exited non-zero, so the
+EPIPE masqueraded as a launch failure and I read the rejection as the strict
+behaviour I wanted. Once the broken pipe was fixed, the same probe exited 0 —
+and the loop recorded PLAN item 85 `DONE`, wrote a compaction receipt reading
+`Files: (none reported)`, and advanced the queue, on the strength of a worker
+that had edited nothing. Rolled back by hand. The guard I "already had" was
+the exit code, and it was never a guard at all: it was a coincidence of a
+broken probe. The real question — may an empty `changed_files` complete a
+mission? — is a semantics decision, so it is in `BLOCKERS.md` rather than
+decided here. The lesson is narrower and more uncomfortable than "verify your
+assumptions": a passing test proved the code did what I believed, and the
+belief was untested. The receipt contract never promised what I assumed it did.
+
+**The broken pipe was not a probe artefact either.** It was a general defect,
+and it lived only on the streaming path. Windows pipes buffer 4096 bytes, so a
+prompt larger than that makes the parent's write *block*; a worker that never
+reads stdin and is still running when the write blocks, then exits, fails the
+blocked write with EPIPE. `run()` caught `OSError` and reported "could not start
+claude" — discarding the exit code and the receipt the child had already
+printed, while relaying those same lines to the console. The operator saw a
+receipt; the classifier saw a launch failure. `_capture` never showed it,
+because `subprocess.run`'s `communicate()` already swallows EPIPE, so only
+`_stream` was affected. Two rounds of test-writing failed to reproduce it: the
+first used a 30-character prompt (far below the buffer, so the write never
+blocked) and the second forgot to pass `on_line`, silently testing the capture
+path. Both "passed" against the bug. A regression test that cannot fail is
+worse than no test, because it converts a guess into a green checkmark — the
+fix was confirmed only by reverting it and watching the test go red with the
+exact production message.
+
+
+## Session 53 - A recorded mission grows STATE.md's session number
+
+`record_mission_outcome` rewrites the bounded head of `STATE.md`, and its
+session-header substitution was written as
+`r"\g<1>" + str(session) + r"\g<2>"` — which *appends* the new session to the
+digits it had just matched. Every recorded mission therefore grew the header:
+`52` → `5352` on the first live mission that recorded an outcome, `535352` on
+the next, and it would have gone on.
+
+**It survived 709 tests, and the reason is structural rather than accidental.**
+Nothing in the suite asserted the *value* of that header against a second
+recording — the tests checked that the sections were replaced, that a sentinel
+below them survived, and that a `DONE` mission wrote a HISTORY block. The
+control-plane health test does compare the header against the latest HISTORY
+heading, which is why it failed immediately and why the bug is worth more than
+its size: a number that only ever grows is a number that eventually disagrees
+with the thing it claims to summarise, silently, in a file every cycle reads.
+
+**The lesson is about which invariant gets pinned.** "The head is rewritten" was
+pinned; "the number in the head is *replaced*" was not. Idempotence of a
+rewriter is a separate property from its effect, and it is the one that only
+shows up on the second call.
+
+## Session 54 - Cost is per *request*, not per token
+
+The commander read the provider's request log after a run and reported it
+"burning too crazy": ~$13.60 across three bursts, ~$4.50 per mission, against
+an expectation of roughly $1 for a comparable manual session. The instinct is
+that a long transcript means many tokens means high cost. The log says
+otherwise, and says it clearly.
+
+Measured over all 100 requests in the three bursts:
+
+- **Correlation between tokens and cost is ~zero** (+0.42, -0.05, +0.22).
+- **Cost per request is nearly constant at $0.13-0.14.** Total spend is
+  `requests x $0.135`, to within a few cents.
+- The single largest request in the log — 48,210 tokens — cost **$0.272, or
+  5.6% of the run's $4.83**. The *smallest* (338 tokens) cost **$0.142**, twice
+  as much as many mid-sized requests.
+- The 27k/48k rows are also the *cheapest per token* in the log: they are the
+  uncached first turn of a coding-agent session (system prompt plus tool
+  definitions), flagged `Cache: 1` because nothing was cached yet. INE's own
+  mission prompt is 6,904 characters and is not the thing being charged for.
+
+So a mission is not expensive because it is long; it is expensive because the
+agent took ~34 turns (one API call per tool round-trip, ~1 every 4.7 seconds in
+the 15:23 run). **The lever is the number of requests, not their size.** Any
+optimisation aimed at "shorter prompt" or "fewer tokens" targets a term the
+data shows is nearly irrelevant.
+
+**The lever that exists.** `claude --help` documents
+`--max-budget-usd <amount>` — "Maximum dollar amount to spend on API calls
+(only works with --print)" — and INE runs Claude in exactly `--print` mode, so
+the ceiling is available and enforceable per mission. This build has no
+`--max-turns`. Budget cap, not turn cap, is the available instrument.
+
+**Why this went unnoticed for two runs: INE is blind to cost.** Every run
+report says `usage: ... usage_unavailable (the provider reported no usage for
+this mission; nothing is estimated)`, so the loop cannot see any of this and
+cannot warn before $13 disappears. That blindness is the real defect here, and
+it is worth more than the one that was fixed: a loop that cannot measure its
+own cost will repeat an expensive mistake indefinitely, and will do so
+silently, which is the failure mode this project keeps meeting.
+
+**And the most expensive run in the log is the one that was killed.** The
+15:23:38 run's report stops after its first mission line with no `exit:` line,
+and there is no `KeyboardInterrupt` handling anywhere in `ine_agent` — Ctrl+C
+kills the process mid-report. So ~$4.83 bought a half-written
+`src/ine/formatter.py` (no tests, no receipt, no plan tag), and `RUN_REPORTS.md`
+cannot distinguish *interrupted* from *crashed* from *still running*. An
+interrupted run is a normal thing for a human to do, and the record treats it
+like a mystery.
+## Mission 85
+
+Area: ine-editor
+
+Statement dataclasses from parser.py are frozen with eq comparing every field, `line` included, so `parse(lex(text)) != statements` is a layout-equality test, not a meaning test — it cannot be used to check meaning preservation across any reflow that changes line counts. The formatter's `_bare()` clears `line` at every depth (including inside PropertyRef, which `say card.title` carries) to compare meaning only. Separately: the lexer discards comments, so any formatOnSave formatter that re-emits from the parse tree alone deletes every comment in the file; format_program now returns a commented file untouched, and tests/test_formatter.py pins that. Mission wordings taken as read: `ene.format` implemented as `ine.format`, and `make <kind> <id>:` implemented per the real colon-free grammar. FormatterError was not added — the mission's allowed alternative, reusing SyntaxError/ValueError, is what the code does.
+
+## Windows worker isolation, and what a signal does not deliver (Session 56)
+
+**`stdin=DEVNULL` does not stop `cmd.exe` prompting.** A Windows worker
+launched via `claude.CMD` with `shell=True` still gets a console handle unless
+the spawn says otherwise, and `cmd.exe` reaching `CONIN$` prints
+`Terminate batch job (Y/N)?` and blocks. `creationflags=CREATE_NO_WINDOW |
+CREATE_NEW_PROCESS_GROUP` is the fix; the new-process-group half is also what
+makes a later `taskkill /T` able to reach the whole tree.
+
+**A child is not a process tree.** `proc.kill()` kills `cmd.exe` and orphans
+`node.exe`. `taskkill /F /T /PID <pid>` is the Windows equivalent of killing
+the group, and it must be wired into every exit path — timeout, exception, and
+operator interrupt — or a cancelled mission leaks a live process per attempt.
+
+**`CTRL_BREAK_EVENT` is a hard kill; only `CTRL_C_EVENT` is a signal.** Sending
+`CTRL_BREAK_EVENT` to a process started without `CREATE_NEW_PROCESS_GROUP`
+terminates the *whole console group* — my first probe script killed itself and
+its PowerShell parent and produced no output at all, which looked like a hang
+and was not one. With the group created, the same call returns `0xC000013A`
+(`STATUS_CONTROL_C_EXIT`): the process dies **without running Python
+handlers**, so no `except KeyboardInterrupt` fires and nothing is recorded.
+Real Ctrl+C (`CTRL_C_EVENT`) is what Python surfaces as `KeyboardInterrupt`,
+and that is the path the interrupt handling is written for. Do not try to test
+the handler with `CTRL_BREAK_EVENT`; it cannot reach it.
+
+**`output 93 chars` is not evidence.** The failed run's report line said the
+worker printed 93 characters and named none of them, so the single most useful
+fact — the provider had rejected the model id — survived only on a console
+that was already gone. Recording a bounded excerpt of a failed worker's own
+words costs ~20 lines per failure and is the difference between debugging a
+mission and re-buying it. A silently truncated report is worse than a verbose
+one, because it reads like a complete record.
+
+**A silent no-op is the hardest defect class to catch from outside.** The
+formatter's round-trip guard compared statement dataclasses field-by-field
+*including* `line`, so a reflow that inserted the canonical blank line was
+rejected and `format_program` returned its input unchanged. The function was
+correct, exported, documented, tested by nobody, and did nothing at all. It
+took reading the guard to see, not a failing test.
+
+## Mission 86 — code actions investigation
+
+Investigation only. `src/` and `editor/` are untouched by this mission: the
+deliverable is this section plus the scratch prototype
+`.tmp/code-actions-probe/probe.py` (gitignored — **not** a durable location;
+the rule it proves is stated here, and this section is the durable record).
+
+Read for this section: `src/ine/parser.py`, `src/ine/lexer.py`,
+`src/ine/semantic.py`, `src/ine/formatter.py`, `editor/vscode-ine/extension.js`
+(`DictionaryWorker`, `canonicalText`, `provideDocumentFormattingEdits`,
+`toDiagnostic`), `tests/test_ine.py` (`GroupSemanticsTests`, `SayTests`).
+
+### 1. The text-span basis, and why every action is line surgery
+
+The engine has no source mapping. A parsed statement carries `line` (1-based,
+from the token) and nothing else — no column, no end position, no offset, no
+byte span. `Token` has a `column`, but the parser drops it, and a statement's
+`line` is the line of its *first* token. Consequences any code action must
+live with:
+
+- **One line holds one statement, with two exceptions.** `make <count> <kind>`
+  is a single line that `_parse_make_many` turns into N `MakeStatement`s, all
+  with the same line, naming entities (`card-1`…) that appear nowhere in the
+  text. `group <name> = <m1> <m2> …` is one statement naming N entities on one
+  line. Everything else is one statement per line, because the parser demands
+  NEWLINE or EOF after each.
+- **Comments are discarded by the lexer.** The formatter refuses any buffer
+  holding a `#` outside a string (`formatter._commented`) for exactly this
+  reason; a re-emitting code action must adopt the same refusal or it will
+  silently delete comments.
+- **What `analyze` reports is post-expansion.** `semantic._expand_groups`
+  rewrites group-targeted statements into one statement per member before the
+  model is built, so `model.relationships[card-1]` may come from a `cards
+  inside page` line and have no per-member line to edit. Every precondition a
+  text edit depends on must be checked against the **raw parse**, before
+  expansion.
+- **A group names entities; it does not declare them.** `_expand_groups` raises
+  unless every member was declared with `make`, so a group line can never
+  replace the `make` lines it collects, and a group name may not collide with an
+  entity name (a semantic error).
+
+So an action is a list of line-range replacements computed against the
+**original** buffer — `(start_line, end_line, replacement)` — applied in
+descending line order, or handed to VS Code as `vscode.TextEdit`s built from
+`document.lineAt(line)`. `toDiagnostic` already clamps `entry.line` into the
+document this way; edits need the same clamping, and a stale snapshot (the
+document changed between sampling and applying) must be refused rather than
+applied by position.
+
+### 2. Statement map — what a text replace must change to be safe
+
+| statement | text form | who refers to it | what a rewrite must handle |
+|---|---|---|---|
+| `MakeStatement` | `make <name>` or `make <name> <kind>` | the *name* is referred to by property, `inside`, `say` and group-member lines; the *kind* is referred to by nothing | the bare form sets `kind == name`, so renaming such an entity silently changes its kind unless the replacement writes it explicitly (`make <new> <old-kind>`); a `make <count> <kind>` line declares N entities with no text of their own |
+| `PropertyStatement` | `<target> <name> <value>` | target by name; property name by `say <entity> <property>` | re-rendering the value changes its spelling (`1e3` → `1000.0`; `1` vs `1.0` is a real type difference), so retarget the leading name and leave the rest of the line byte-identical |
+| `SayStatement` | `say <value>` or `say <entity> <property>` | nothing | the only place a *property name* appears; a property rename that misses it turns a valid file into a `resolve` error |
+| `InsideStatement` | `<child> inside <parent>` | containment is unique per child — a second `inside` for the same child is a semantic error | adding a group *and* keeping the members' own `inside` lines is an error, so a collapse must be driven by raw statements only |
+| `GroupStatement` | `group <name> = <m1> <m2> …` | statements targeting the group expand per member: `inside` and properties (not `say` — `say <group> <prop>` is an error) | members must already be `make`d; the name must not collide with an entity or another group |
+| `PropertyRef` | inside a `say` line | — | not a statement; shares its `say`'s line, so editing one edits the other |
+
+### 3. Candidate actions
+
+| candidate | rough cost | why |
+|---|---|---|
+| extract to group | low — prototype exists (§4) | one inserted line plus retarget/delete of the members' shared `inside` and identical property lines |
+| expand `make <count> <kind>` into N bodies | low | one line in, N lines out, no reference changes; but it is the **prerequisite** for every other per-entity action, since a synthetic entity cannot be addressed in text |
+| inline group (flatten members into the parent) | low | replace each group-targeted statement, in place, with one per member, then delete the group line; in-place replacement preserves the last-wins order `_expand_groups` produces, so it is semantics-preserving by construction |
+| declare the missing entity (quick fix on the existing "was not declared with `make`" diagnostic) | low | insert `make <name> <kind>`; needs a kind — the dictionary's `makeable()`/`suggest()` is the authority, else refuse |
+| rename kind | low–moderate | kinds appear only on `make` lines (`make x k`, `make N k`) and no statement names one, so the scan is bounded; but renaming a *dictionary* kind to an undeclared one is a language change, so restrict it to non-dictionary (custom) kinds |
+| rename entity | moderate | must rewrite property targets, `inside` children and parents, `say <entity> <prop>` refs, and group-member lists; plus the bare-`make` kind hazard, a collision check against entity/group names, and refusal (or expand-first) for members of a `make N` line |
+| collapse N bodies back into `make <count> <kind>` | moderate | applicability is a heuristic — the names must be exactly `<kind>-1 … <kind>-N`, consecutive, all that kind, none referenced by a `make <count>` that would then duplicate them |
+
+One paragraph per candidate: *extract to group* changes containment only — it
+inserts `group <name> = <ids>` after the last member's `make` line and collapses
+the members' shared `inside` line and any property line they hold *identically*
+into one group-targeted line; it rewrites/retargets `InsideStatement` and
+`PropertyStatement` leading names and must not touch `make`, `say`, or any
+non-uniform property; the span basis is the members' `make`, `inside` and
+property lines, the only lines involved. *Expand make-many* changes one line
+into N `make` lines and rewrites nothing else; its span is that single line; it
+is safe whenever the buffer is valid (the N names cannot already be declared)
+and it is what unblocks per-entity actions on synthetic entities. *Inline group*
+rewrites every statement whose target is the group into one statement per member
+at the same position, then deletes the group line; it rewrites
+`PropertyStatement`s and `InsideStatement`s, never `say` (already an error
+against a group); spans are the group line plus each targeting line. *Rename
+kind* rewrites only `make` lines; spans are those lines, and the reference-free
+property of kinds holds throughout this grammar. *Rename entity* rewrites the
+`make` line, every property line targeting it, `inside` lines on either side,
+`say` refs, and group-member lists; spans are all of those, and it is the only
+candidate whose correctness needs a global name-collision check. *Collapse to
+make-many* rewrites N consecutive `make` lines into one; its span is that run,
+and its applicability test (exact `<kind>-N` naming) is the only heuristic in
+the list.
+
+### 4. Prototype: extract to group — the exact rule
+
+`extract_to_group(source, ids, name=None) -> str`, in
+`.tmp/code-actions-probe/probe.py` (scratch). Preconditions, all on the raw
+parse, all raising `ValueError` when unmet:
+
+1. the buffer holds no `#` outside a string (the formatter's rule);
+2. `ids` has ≥2 distinct ids, each declared by exactly one handwritten `make`
+   line (never a `make <count> <kind>` line), all with one shared kind;
+3. those `make` statements are consecutive in statement order (nothing between
+   them but the other members' `make`s) — this is the "consecutive siblings"
+   reading, and it is what makes a contiguous line selection a sufficient UI
+   gesture;
+4. each id has exactly one literal `<id> inside <parent>` line, all with the
+   same parent, and the parent is not one of the ids;
+5. the name — given, or defaulted to `<parent>-group`, uniquified with a `-2`,
+   `-3` suffix against entity and group names — is not already taken and is not
+   a keyword.
+
+Edits, against original line numbers, applied in descending order:
+
+- append `group <name> = <ids…>` to the **last** member's `make` line (the
+  `make` lines stay: a group cannot declare its members);
+- retarget the **first** member's `<id> inside <parent>` line to `<name> inside
+  <parent>` and delete the other members' `inside` lines;
+- for each property name that *every* member holds in exactly one statement with
+  an equal value **of the same type**, retarget the first member's line to the
+  group and delete the other members' lines; a property even one member lacks,
+  or holds with a different value or type (`1` vs `1.0`), is left untouched —
+  moving it onto the group would give it to every member;
+- nothing else in the buffer is touched: no `make`, no `say`, no non-uniform
+  property, no blank line.
+
+Retargeting replaces only the leading name token and keeps the rest of the line
+byte-identical, so no value is ever re-rendered. The output is *not* canonical
+layout (deleted lines leave gaps); the existing format-on-save is the layout
+pass, and it is safe here because the action already refuses commented buffers.
+
+Before → after, from the probe:
+
+```
+make page                    make page
+make card-1 card             make card-1 card
+make card-2 card             make card-2 card
+card-1 inside page     ->    group page-group = card-1 card-2
+card-2 inside page           page-group inside page
+card-1 padding "8"           page-group padding "8"
+card-2 padding "8"
+```
+
+Verification the probe runs: for 8 accepted cases it re-parses the edited
+buffer and asserts `analyze(parse(lex(edited)))` has **identical** entities,
+properties and relationships to the original, that `groups` differs only by the
+new declaration, that `render(model)` (backend_html) is byte-identical, and that
+`execute(resolve(statements, model))` — the `SayTests`-style check — returns the
+same `say` outputs. Cases cover a two-sibling extraction, a subset of three
+siblings, a property only one member holds, a property with differing values,
+`1` vs `1.0`, a surviving `say card-1 title` reference, a default-name collision
+(→ `page-group-2`) and an explicit name. Seven refusal cases cover a member from
+a `make 3 card` line, a comment, different parents, different kinds,
+non-consecutive `make`s, members already grouped (no literal `inside` line), and
+a single id. All 15 pass; `python .tmp/code-actions-probe/probe.py` prints
+`all cases verified: 8 edits, 7 refusals, 0 failure(s)`.
+
+### 5. What the real action still needs (the gap)
+
+- **No source mapping.** The engine cannot say "this entity is at bytes 40–52",
+  so ids must come from the *selection*: the extension sends the buffer plus the
+  selected line range and the engine decides which lines are handwritten `make`s
+  of one kind. The alternative — the extension scanning statements itself —
+  duplicates the parser in JavaScript and should be rejected.
+- **The worker contract already fits.** `DictionaryWorker` is one long-lived
+  `python src/ine/autocomplete.py`, JSON-lines, one in-flight request, 4 s
+  timeout, `id` echoed; `complete(payload)` dispatches on `payload.get(...)`
+  keys. A new op `{"action": "extract-group", "buffer": …, "lines": [a, b],
+  "name"?: …}` → `{"action": true, "text": …}` or `{"error": "…"}` follows the
+  `format` op exactly, including its rule that a missing `text` is *no answer*,
+  never "no change" (`canonicalText`). The engine entry point belongs in
+  `src/ine/` next to the formatter, not in `autocomplete.py`.
+- **The extension has no action provider yet.** One
+  `vscode.languages.registerCodeActionsProvider({language: "ine"},
+  {provideCodeActions}, {providedCodeActionKinds: [vscode.CodeActionKind.RefactorExtract]})`
+  in `activate`; the edit should be per-line `vscode.TextEdit`s (minimal undo),
+  not the whole-document replace the formatter uses.
+- **A stale buffer must be refused.** VS Code applies edits by position, so the
+  extension must check `document.getText()` against the sampled buffer before
+  applying, and drop the action otherwise.
+- **`group` names are a UI decision, not a language one.** The default
+  `<parent>-group` is deterministic and collision-free, but a real action should
+  prompt (QuickPick prefilled with it); `name` in the rule above is that prompt.
+
+### 6. Recommended ordering for the remaining actions
+
+1. **extract to group** — the rule is proven and nothing blocks it; it is also
+   the action whose value grows most with the dictionary workflow
+   (`group cards = …` plus one `cards inside page`).
+2. **expand `make <count> <kind>`** — cheap, and it makes every other action
+   total, because today each must refuse synthetic entities.
+3. **inline group** — the inverse of (1), shares the line-edit machinery, and is
+   semantics-preserving by construction.
+4. **declare the missing entity** — cheap, and it retires the most common red
+   diagnostic; the dictionary supplies the kind.
+5. **rename kind** — bounded to `make` lines, no references, but needs the
+   custom-vs-dictionary kind question answered before it is written.
+6. **rename entity** — because it is the only candidate with a global blast
+   radius (four statement kinds, group member lists, the bare-`make` kind
+   hazard, and a name-collision check).
+7. **collapse bodies into `make <count> <kind>`** — the only heuristic
+   applicability test of the set; lowest value per unit of risk.
+
+The ordering is a recommendation, not a decision; (1)–(2) are the pair that
+makes the rest straightforward.
+

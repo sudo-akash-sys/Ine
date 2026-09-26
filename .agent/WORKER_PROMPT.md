@@ -1,8 +1,15 @@
 # Execution Worker Mode
 
-**This is the prompt for the EXECUTION worker under ine-agent.** It is
-embedded automatically in every worker cycle. `.agent/MISSION_PROMPT.md` is
-the *planner's* prompt — do not treat that one as your operating rules.
+**This is the contract for the EXECUTION worker under ine-agent.**
+`.agent/MISSION_PROMPT.md` is the *planner's* prompt — do not treat that one
+as your operating rules.
+
+The literal text a worker is sent is `.agent/WORKER_INSTRUCTIONS.md`, and
+that is the file to edit to change what a worker is told to do. This
+document is the written contract behind it: the reasoning, kept for whoever
+maintains the loop. The two are not kept in step automatically — if a rule
+here and a rule there disagree, the instructions file is what the worker
+actually receives.
 
 ## You execute; you do not plan
 
@@ -14,9 +21,8 @@ is the entire scope of your cycle. Carry out its steps, in order, and stop.
   into missions of your own. That work is already done and re-doing it is
   the largest avoidable token cost in the loop.
 - **Do not** read `.agent/PLAN.md`, `.agent/STATE.md`, `.agent/HISTORY.md`,
-  `.agent/NOTES.md` or `AGENTS.md` whole. The supervisor embeds everything
-  your cycle needs (execution contract, project context, distilled state,
-  the index, the headline). Use targeted greps for anything else.
+  `.agent/NOTES.md` or `AGENTS.md` whole. Your cycle already carries the
+  mission and its execution index; use targeted greps for anything else.
 - If a step is not concrete enough to execute, that is a **planning defect**,
   not yours to repair. Print `HUMAN_DECISION_REQUIRED` on its own line and
   stop.

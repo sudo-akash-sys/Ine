@@ -45,6 +45,19 @@ _MISSION_RE = re.compile(r"^- mission \[cycle (\d+)\]:")
 _CYCLE_MARKER_RE = re.compile(r"^- \[cycle (\d+)\] (.+)$")
 _USAGE_RE = re.compile(
     r"^\+(\d+) requests, \+([\d,]+) in / \+([\d,]+) out tokens")
+#: Per-mission cost lines, written by the supervisor after each outcome is
+#: known. Both are local observations: the context line is arithmetic over the
+#: prompt this process built, the usage line is the provider's own delta.
+_CONTEXT_RE = re.compile(
+    r"^- \[mission (\d+)\] context: ([\d,]+) chars/(\d+) lines "
+    r"\(~([\d,]+) tokens\), (\d+) declared file\(s\), "
+    r"(\d+) previous receipt\(s\), budget ([\d,]+) chars")
+_OVER_BUDGET_RE = re.compile(r"OVER BUDGET by ([\d,]+) chars")
+_MISSION_USAGE_RE = re.compile(
+    r"^- \[mission (\d+)\] usage: status=(\S+) worker=(\S+) model=(\S+) "
+    r"elapsed=([\d.]+)s \S+ "
+    r"(?:\+(\d+) requests, \+([\d,]+) in / \+([\d,]+) out tokens"
+    r"|usage_unavailable)")
 
 
 def _number(text):
@@ -68,7 +81,7 @@ def parse_report(text):
                 "started": match.group(1), "pid": int(match.group(2)),
                 "cycles": 0, "completed": 0, "blocked": 0, "deferred": 0,
                 "parked": 0, "requests": 0, "tokens_in": 0, "tokens_out": 0,
-                "exit": None,
+                "exit": None, "missions": {},
             }
             runs.append(run)
             continue
@@ -76,6 +89,49 @@ def parse_report(text):
             continue
         if _MISSION_RE.match(line):
             run["cycles"] += 1
+            continue
+        context = _CONTEXT_RE.match(line)
+        if context:
+            # One row per mission, keyed by its number, so the context and
+            # usage lines of the same mission become one record.
+            entry = run["missions"].setdefault(
+                int(context.group(1)),
+                {"number": int(context.group(1)), "status": "",
+                 "chars": 0, "lines": 0, "tokens_estimate": 0, "files": 0,
+                 "receipts": 0, "budget": 0, "over_by": 0, "model": "",
+                 "elapsed": 0.0, "requests": 0, "tokens_in": 0,
+                 "tokens_out": 0, "usage_known": None})
+            entry["chars"] = _number(context.group(2))
+            entry["lines"] = int(context.group(3))
+            entry["tokens_estimate"] = _number(context.group(4))
+            entry["files"] = int(context.group(5))
+            entry["receipts"] = int(context.group(6))
+            entry["budget"] = _number(context.group(7))
+            over = _OVER_BUDGET_RE.search(line)
+            entry["over_by"] = _number(over.group(1)) if over else 0
+            continue
+        mission_usage = _MISSION_USAGE_RE.match(line)
+        if mission_usage:
+            entry = run["missions"].setdefault(
+                int(mission_usage.group(1)),
+                {"number": int(mission_usage.group(1)), "status": "",
+                 "chars": 0, "lines": 0, "tokens_estimate": 0, "files": 0,
+                 "receipts": 0, "budget": 0, "over_by": 0, "model": "",
+                 "elapsed": 0.0, "requests": 0, "tokens_in": 0,
+                 "tokens_out": 0, "usage_known": None})
+            entry["status"] = mission_usage.group(2)
+            entry["model"] = mission_usage.group(4)
+            entry["elapsed"] = float(mission_usage.group(5))
+            if mission_usage.group(6) is None:
+                # Recorded as unknown, not as zero: "the provider told us
+                # nothing" is a different claim from "this mission was free",
+                # and only the first one is true.
+                entry["usage_known"] = False
+            else:
+                entry["usage_known"] = True
+                entry["requests"] = int(mission_usage.group(6))
+                entry["tokens_in"] = _number(mission_usage.group(7))
+                entry["tokens_out"] = _number(mission_usage.group(8))
             continue
         marker = _CYCLE_MARKER_RE.match(line)
         if marker:
@@ -112,6 +168,9 @@ def summarize(root):
     except OSError:
         runs = []
     parked = len(read_attempts(root))
+    missions = [mission for run in runs for mission in run["missions"].values()]
+    measured = [mission for mission in missions if mission["chars"]]
+    measured.sort(key=lambda mission: mission["number"])
     totals = {
         "runs": len(runs),
         "cycles": sum(run["cycles"] for run in runs),
@@ -125,8 +184,14 @@ def summarize(root):
         "tokens_in": sum(run["tokens_in"] for run in runs),
         "tokens_out": sum(run["tokens_out"] for run in runs),
         "parked_missions": parked,
+        "missions_measured": len(measured),
+        "prompt_chars_total": sum(m["chars"] for m in measured),
+        "prompt_chars_max": max([m["chars"] for m in measured] or [0]),
+        "over_budget": sum(1 for m in measured if m["over_by"]),
+        "usage_unknown": sum(1 for m in measured
+                             if m["usage_known"] is not True),
     }
-    return runs, totals
+    return runs, totals, measured
 
 
 def format_rows(runs):
@@ -141,6 +206,34 @@ def format_rows(runs):
                 run["started"], exit_code, run["cycles"], run["completed"],
                 run["blocked"], run["deferred"], run["parked"],
                 run["requests"], run["tokens_in"], run["tokens_out"]))
+    return lines
+
+
+def format_missions(missions):
+    """One line per measured mission: what its handoff cost, and what it used.
+
+    The prompt column is the one this loop controls and can therefore be held
+    to; the request and token columns are the provider's own account of itself
+    and are shown only where it gave one.
+    """
+    lines = []
+    for mission in missions:
+        if mission["usage_known"] is True:
+            spent = ("{:>4d} req {:>9,d} in {:>8,d} out".format(
+                mission["requests"], mission["tokens_in"],
+                mission["tokens_out"]))
+        else:
+            spent = "usage_unavailable"
+        budget = ""
+        if mission["over_by"]:
+            budget = "  OVER by {:,}".format(mission["over_by"])
+        lines.append(
+            "  mission {:<4d} {:<10s} {:>6,} chars {:>4d} lines ~{:>5,} tok "
+            "{:>2d} file(s) {:>2d} prior  {:>8s} {}".format(
+                mission["number"], mission["status"] or "-",
+                mission["chars"], mission["lines"],
+                mission["tokens_estimate"], mission["files"],
+                mission["receipts"], spent, budget).rstrip())
     return lines
 
 
@@ -166,6 +259,14 @@ def format_totals(totals):
         per_1000 = totals["completed"] * 1000.0 / totals["requests"]
         lines.append(
             "completions per 1,000 requests: {:.2f}".format(per_1000))
+    if totals["missions_measured"]:
+        lines.append(
+            "missions measured: {missions_measured}  prompt: "
+            "{prompt_chars_total:,} chars total, {prompt_chars_max:,} largest, "
+            "{over_budget} over budget".format(**totals))
+        lines.append(
+            "missions with no provider usage recorded: {usage_unknown} of "
+            "{missions_measured}".format(**totals))
     return lines
 
 
@@ -180,7 +281,7 @@ def main(argv=None):
     if not os.path.isdir(os.path.join(root, state.AGENT_DIR)):
         print("no {} directory under {}".format(state.AGENT_DIR, root))
         return 1
-    runs, totals = summarize(root)
+    runs, totals, missions = summarize(root)
     if not runs:
         print("no run has been recorded in {}".format(state.REPORT_NAME))
         print("(the attempt ledger is {}: {} mission(s))".format(
@@ -188,6 +289,10 @@ def main(argv=None):
         return 0
     for line in format_rows(runs):
         print(line)
+    if missions:
+        print("")
+        for line in format_missions(missions):
+            print(line)
     print("")
     for line in format_totals(totals):
         print(line)

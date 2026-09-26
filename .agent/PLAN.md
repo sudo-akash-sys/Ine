@@ -1008,6 +1008,10 @@ semantic changes. See DECISIONS.md (Session 50).
      OpenCode primary agent with finite steps, local edit/test tools only, no
      web/subagent/question/external-directory access, and a minimal execution
      prompt; keep model choice in the worker profile. Deliverable: index 122.md.
+     Superseded in part (Session 52): the agent file is deleted and the
+     `--agent` flag dropped, because a provider project file is an integration
+     and INE is now provider-independent by decision. The denials live in the
+     prompt instead; the finite step budget is not reproduced. See DECISIONS.
 
 123. `DONE` — **One external invocation and bounded runtime.** Remove the
      automatic diagnosis call, add a universal subprocess timeout, and record
@@ -1025,9 +1029,23 @@ semantic changes. See DECISIONS.md (Session 50).
      run focused and full verification, compare prompt/runtime metrics with the
      baseline, and record the result. Deliverable: index 125.md.
 
+126. `DONE` — **Cheaper handoff, opt-in local checks, and measurable cost.**
+     Session-directed (commander's simplification brief, not a queued
+     mission), recorded here so the plan matches what exists. A mission with
+     no declared related work is sent no prior-work block at all; the minimal
+     prompt is ~3.7k chars against ~4.5k before. `.agent/workers.json` gains
+     `policy` (prompt / prior-receipt / attempt caps, with over-budget
+     reported and never truncated) and `verify` (local commands run only after
+     a `done` receipt, no model, no retry, failure exits non-zero).
+     `--max-attempts` defers to the policy unless given. `ine-agent measure`
+     reports per-mission and per-run cost. A mission completed by receipt
+     alone is deferred by identity so one mission costs one process. No index:
+     this was session work, so there is no `missions/126.md`.
+
 ### Editor & developer experience
 
-84. `EXECUTABLE` — **Editor diagnostics implementation.** Extend
+84. `DONE` — **Editor diagnostics implementation.** Extend
+> remark: retries exhausted after 1 attempt(s) (failed: The attempt went wrong before any edit: every file-write path in this session (Edit, Write, and Bash redirection) is blocked by an ungranted permission, so neither src/ine/autocomplete.py, tests/te...); recorded and deferred so independent work continues
     `validate` query to include semantic errors (undeclared entity,
     double-parent, cycles). Add VS Code DiagnosticCollection
     integration. Implement hover provider for dictionary meanings.
@@ -1035,14 +1053,18 @@ semantic changes. See DECISIONS.md (Session 50).
     Verify: extension shows parse + semantic errors; hover shows
     `meaning` field.
 
-85. `EXECUTABLE` — **Formatter implementation.** Design deterministic
+85. `DONE` — **Formatter implementation.** Design deterministic
+> remark: did not complete after 1 attempt(s) (unknown: the worker gave no classification); recorded and deferred so independent work continues
+> remark: did not complete after 1 attempt(s) (unknown: the worker gave no classification); recorded and deferred so independent work continues
+> remark: did not complete after 1 attempt(s) (unknown: the worker gave no classification); recorded and deferred so independent work continues
+> remark: did not complete after 1 attempt(s) (unknown: the worker gave no classification); recorded and deferred so independent work continues
     formatter for Ine's simple syntax. Implement formatting rules
     (indentation, spacing, line breaks, blank lines between sections).
     Add format-on-save and format command to extension.
     Verify: formatter produces consistent output; extension command
     works.
 
-86. `EXECUTABLE` — **Code actions/refactoring investigation.** Research
+86. `DONE` — **Code actions/refactoring investigation.** Research
     useful code actions: extract group, rename entity, inline group,
     convert `make 3 card` ↔ handwritten. Design minimal refactoring
     support. Prototype one action (e.g., "extract to group").
@@ -1646,3 +1668,9 @@ selection rule.
 Parser/semantic/backends are **frozen** for adding constructs. A proposed
 addition (conditions, state, styling, import) must first exist as evidence in
 examples, then be decided in WORKBOOK §25's framework before any code.
+
+127. `CLAUDE_REVIEW` — **Extend the editor's `advisory` list beyond SemanticError with semantic.advisory_warnings(model) — the dictionary-backed property-vocabulary and containment warnings the CLI already prints — so the editor warns on `padding "banana"` and mis-nested containment too, still as warnings, never red..** (proposed by a workernot executable until a human reads it (after mission 84)
+
+127. `CLAUDE_REVIEW` — **Surface why formatting was skipped. With formatOnSave now on for [ine], a commented buffer — and any buffer that does not parse — is returned unchanged and the editor reports nothing, so the user experiences a formatter that silently does not work and cannot tell a typo from a deliberate refusal. Add a refusal reason to the format response (e.g. {"format": true, "text": ..., "reason": "comment" | "unparseable"}) and have extension.js show it in the status bar; tests/test_formatter.py already pins the unchanged-text behaviour the reason would annotate..** (proposed by a workernot executable until a human reads it (after mission 85)
+
+127. `CLAUDE_REVIEW` — **Implement extract-to-group for real per NOTES §4–§5: a `src/ine/` engine entry point, an `{"action": "extract-group", "buffer", "lines", "name"?}` op in autocomplete.py following the `format` op's no-answer-is-not-no-change rule, and a registerCodeActionsProvider in editor/vscode-ine/extension.js emitting per-line TextEdits with a stale-buffer refusal; precede it with the `make <count> <kind>` expand action that makes per-entity actions total..** (proposed by a workernot executable until a human reads it (after mission 86)

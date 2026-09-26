@@ -14,25 +14,29 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
-    from . import profiles
+    from . import budget, profiles, verify
+    from .measure import main as measure_main
     from .state import (
-        ProjectError, find_project_root, read_plan, record_resolution,
+        ProjectError, WORKER_INSTRUCTIONS_NAME, find_project_root, read_plan,
+        record_resolution,
     )
     from .supervisor import (
         DEFAULT_MAX_FAILURES, DEFAULT_STALL_LIMIT, STOP_ERROR, STOP_HUMAN,
-        STOP_OK, Supervisor,
+        STOP_OK, Supervisor, worker_instructions,
     )
-    from .worker import build_worker, effective_command
+    from .worker import effective_command
 except ImportError:  # running as a plain script: python src/ine_agent/cli.py
-    from ine_agent import profiles
+    from ine_agent import budget, profiles, verify
+    from ine_agent.measure import main as measure_main
     from ine_agent.state import (
-        ProjectError, find_project_root, read_plan, record_resolution,
+        ProjectError, WORKER_INSTRUCTIONS_NAME, find_project_root, read_plan,
+        record_resolution,
     )
     from ine_agent.supervisor import (
         DEFAULT_MAX_FAILURES, DEFAULT_STALL_LIMIT, STOP_ERROR, STOP_HUMAN,
-        STOP_OK, Supervisor,
+        STOP_OK, Supervisor, worker_instructions,
     )
-    from ine_agent.worker import build_worker, effective_command
+    from ine_agent.worker import effective_command
 
 
 def _resolve_blocked(root, needle, blueprint):
@@ -85,11 +89,12 @@ def build_parser():
              "the same bound and still works",
     )
     run.add_argument(
-        "--max-attempts", type=int, default=1,
+        "--max-attempts", type=int, default=None,
         help="attempts one mission may be given within a run before it is "
-             "deferred so independent work continues (default: 1 — one "
-             "request per mission, and a second attempt is the commander's "
-             "call, not the loop's)",
+             "deferred so independent work continues (default: the policy's "
+             "max_attempts, which is 1 — one request per mission, and a "
+             "second attempt is the commander's call, not the loop's; given "
+             "here, this flag wins over the policy)",
     )
     run.add_argument(
         "--max-failures", type=int, default=DEFAULT_MAX_FAILURES,
@@ -103,6 +108,14 @@ def build_parser():
         help="consecutive cycles that neither complete nor block anything "
              "and change no file outside .agent/ before the run stops early "
              "(default: {}; 0 disables the guard)".format(DEFAULT_STALL_LIMIT),
+    )
+    run.add_argument(
+        "--heartbeat", type=int, default=30, metavar="SECONDS",
+        help="while a worker is quiet, print a '[heartbeat] ... still "
+             "running' line every SECONDS (default: 30; 0 turns it off). A "
+             "CLI in its own non-interactive print mode emits nothing until "
+             "it finishes, so this line is the only sign of life a long "
+             "mission gives - lower it to watch a run more closely",
     )
     run.add_argument(
         "--quiet", action="store_true",
@@ -159,6 +172,16 @@ def build_parser():
         "blueprint",
         help="the resolution or blueprint the commander is supplying",
     )
+    measure = sub.add_parser(
+        "measure",
+        help="re-measure past runs from .agent/ records: what each run and "
+             "each mission cost, in cycles, requests, tokens and prompt "
+             "characters (read-only; launches nothing)",
+    )
+    measure.add_argument(
+        "--root", default=None,
+        help="project root (default: search upward from the current directory)",
+    )
     return parser
 
 
@@ -187,16 +210,29 @@ def _usage_warn_requests(args):
 
 
 def _safe_stdout():
-    """Make console writes never crash on non-console-safe bytes (cp1252).
+    """Make console writes safe and *immediate*.
 
-    The worker boundary decodes UTF-8 with surrogateescape; relaying those
-    lines back to a cp1252 console under strict error handling would raise
-    UnicodeEncodeError. backslashreplace keeps live output and summaries
-    printable regardless of the terminal encoding.
+    Two separate problems, both of which look like "the tool is doing
+    nothing":
+
+    - **Encoding.** The worker boundary decodes UTF-8 with surrogateescape;
+      relaying those lines back to a cp1252 console under strict error
+      handling would raise UnicodeEncodeError. backslashreplace keeps live
+      output and summaries printable regardless of the terminal encoding.
+    - **Buffering.** Python block-buffers stdout when it is not a terminal,
+      so a piped or redirected run showed *nothing at all* until the process
+      exited - nine seconds of proven silence in the probe that found this,
+      including output the worker itself had flushed. A supervisor that
+      streams a worker it cannot see streaming is indistinguishable from a
+      hung one. `line_buffering` makes every print site in the package
+      appear as it happens, without touching all of them.
     """
     try:
-        sys.stdout.reconfigure(errors="backslashreplace")
-    except (AttributeError, ValueError):
+        sys.stdout.reconfigure(
+            errors="backslashreplace", line_buffering=True)
+    except (AttributeError, ValueError, OSError):
+        # A stream that cannot be reconfigured (a test double, a closed pipe)
+        # must not stop the run; _print still flushes explicitly.
         pass
 
 
@@ -232,12 +268,20 @@ def _describe_worker(root, name, model, out=sys.stdout):
         profile = profiles.resolve(root, name, model=model)
         command = profiles.check_executable(
             profile, [*effective_command(profile), *profile.argv()[1:]])
+        template = worker_instructions(root)
     except profiles.ProfileError as exc:
+        print("error: {}".format(exc), file=sys.stderr)
+        return 1, None
+    except ProjectError as exc:
         print("error: {}".format(exc), file=sys.stderr)
         return 1, None
     print("profile    : {} ({})".format(
         profile.name, profile.description or "no description"), file=out)
     print("prompt     : {}".format(profile.where_prompt_goes()), file=out)
+    print("instructions: {} ({} lines, you edit this to change what the "
+          "worker is told to do)".format(
+              os.path.join(".agent", WORKER_INSTRUCTIONS_NAME),
+              len(template.splitlines())), file=out)
     print("model      : {}".format(profile.model or "the tool's default"),
           file=out)
     print("timeout    : {}".format(
@@ -275,24 +319,55 @@ def main(argv=None):
         return _resolve_blocked_cli(root, args.mission, args.blueprint)
     if args.command == "doctor":
         return _doctor_cli(root, args)
+    if args.command == "measure":
+        # The same read-only report the standalone `ine_agent.measure` module
+        # prints, reached through the one CLI the commander is told to use.
+        # It resolves the root the same way, so it works from a subdirectory.
+        return measure_main(["--root", root])
 
     _safe_stdout()
-    supervisor = Supervisor(
-        root=root,
-        worker_factory=build_worker,
-        impl_worker=args.worker,
-        model=_model(args),
-        max_cycles=args.max_missions,
-        max_attempts=args.max_attempts,
-        max_failures=args.max_failures,
-        stall_limit=args.stall_limit,
-        dry_run=args.dry_run,
-        quiet=args.quiet,
-        verbose=args.verbose,
-        notify=args.notify,
-        usage_warn_requests=_usage_warn_requests(args),
-    )
-    return supervisor.run()
+    model = _model(args)
+    try:
+        supervisor = Supervisor(
+            root=root,
+            # No `worker_factory` here on purpose. The supervisor already owns
+            # that contract and binds the root and the model into it; passing
+            # `build_worker` in raw meant a second, wrong copy of it - the
+            # loop printed a correct command in `--dry-run` and then died with
+            # a TypeError on the first real cycle, because a dry run never
+            # builds a worker. One place decides how a worker is built.
+            impl_worker=args.worker,
+            model=model,
+            max_cycles=args.max_missions,
+            max_attempts=args.max_attempts,
+            max_failures=args.max_failures,
+            stall_limit=args.stall_limit,
+            dry_run=args.dry_run,
+            quiet=args.quiet,
+            verbose=args.verbose,
+            notify=args.notify,
+            usage_warn_requests=_usage_warn_requests(args),
+            # Only `run` reaches here, and only `run` declares --heartbeat,
+            # so this is the one place the interval can be set from the
+            # command line. Everything else keeps the supervisor's default.
+            heartbeat_seconds=args.heartbeat,
+        )
+    except (ProjectError, budget.PolicyError, verify.VerifyError) as exc:
+        # A control-plane fault, not a crash: an unusable instructions file, an
+        # unreadable plan or a malformed `workers.json` stops the run with its
+        # remedy rather than a traceback, and without launching a worker. The
+        # config errors are strict by design — a bad check list is reported,
+        # never quietly ignored into a green run.
+        print("error: {}".format(exc), file=sys.stderr)
+        return 1
+    try:
+        return supervisor.run()
+    except ProjectError as exc:
+        # A control-plane fault, not a crash: an unusable instructions file
+        # or an unreadable plan stops the run with its remedy rather than a
+        # traceback, and without launching a worker.
+        print("error: {}".format(exc), file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":

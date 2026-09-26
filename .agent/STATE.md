@@ -1,6 +1,6 @@
 # .agent/STATE.md
 
-Current ground truth as of Session 51. Position, not narrative: what stands
+Current ground truth as of Session 57. Position, not narrative: what stands
 where today, and what the next cycle must know. The per-session story is
 `HISTORY.md` (append-only) and the durable findings are `NOTES.md`; nothing
 that belongs there is repeated at length here, because every cycle reads this
@@ -35,69 +35,22 @@ receipt's follow-up is a proposal: appended to the plan under
 the next run cannot pick it up. The run ends when the queue has no `EXECUTABLE`
 item, or when `--max-missions` is reached; `--max-attempts` defaults to 1.
 
-Next: **item 84** (editor semantic diagnostics), which needs an index written at
-`.agent/missions/84.md`. Verified as the next EXECUTABLE by
+Next: **item 85** (deterministic formatter investigation), indexed at
+`.agent/missions/85.md`. Item 84 is **DONE** — the first real Claude mission to
+run end to end (Session 53). Verified as the next EXECUTABLE by
 `python -m ine_agent.cli run --dry-run`.
 
 ## Current focus
 
-The autonomous-worker arc (missions 119-125) is **complete and documented**.
-What it produced, in one line: the supervisor hands one mission to one fresh
-worker process, the worker executes a written index and returns a bounded
-structured receipt, Python writes every record, and the run drains the queue on
-its own. The flow a contributor uses is documented in `CONTRIBUTING.md`, the
-architecture and its three rejected alternatives are in `DECISIONS.md`, and the
-per-mission cost is measured in `NOTES.md` ("Mission 125 - What the handoff
-costs, measured"): ~3 KB / ~65 lines per mission, one invocation per attempt,
-no diagnosis call, one completion notification per run.
-
-The next work is back on the language side. Per `run --dry-run` the next
-EXECUTABLE item is **84** (editor semantic diagnostics), which needs an index at
-`.agent/missions/84.md`. Items 85-94 remain EXECUTABLE behind it.
-
-Constraints that hold for everything, and were paid for: the language surface
-is commander-owned and has not moved since Session 42; every project artifact
-lives in this repo (`.agent/` durable, `.tmp/` scratch, nothing durable in
-`.tmp/`); the recording pass is part of the work, not a postscript. Three traps
-worth carrying forward: `CLAUDE_REVIEW` is *executable* in this plan (a proposal
-needs `PROPOSAL_MARKER` to stay inert); a run that refuses everything has a
-tally of all zeros, so the refusal count must be reported separately; and a
-tally assembled from single-outcome tests is not yet a contract — the two count
-defects in mission 124 were only visible with a failed *and* a gated mission in
-the same run.
+- Session 57 recorded mission 86 (``EXECUTABLE` — **Code actions/refactoring investigation.** Research`) as done: Investigated Ine code actions and recorded the proposal in .agent/NOTES.md: the statement-to-text-rewrite safety map, a seven-candidate cost table, and a proven `extract to group` rule. A scratch probe (.tmp/code-actions-probe/probe.py) implements extract_to_group as descending line-range edits and verifies 8 accepted cases for identical entities/properties/relationships plus byte-identical render
+- Next executable work: `EXECUTABLE` — **Editor testing infrastructure.** Set up extension (item 87).
+- This file is position-only: the per-mission detail is the receipt in `.agent/RUN_REPORTS.md`, the block in `.agent/HISTORY.md`, and the index at `.agent/missions/86.md`.
 
 ## Health
 
-- Test suite: **659 tests, 33 subtests** (`python -m pytest tests` from the
-  repo root) — green: 659 passed, with **322** of the total in
-  `tests/test_ine_agent.py` (including `PilotRunTests`, the end-to-end pilot:
-  one request per mission, one completion summary, a lean prompt, no duplicated
-  control-plane records, a terminating run). The tkinter `TclError` flake is
-  tamed, not fatal: the display-guarded `VisualBackendTests` window tests catch
-  a runtime `tk.TclError` and skip via `_render_window` instead of failing, so
-  a load-triggered flake reports one `skipped` (pinned by
-  `DisplayGuardTests.test_render_window_skips_on_runtime_tcl_error`).
-- Control-plane guards are tests, not conventions: STATE.md bounded and
-  position-only (no `## Session N` headings, under the byte/line ceiling) and
-  its header session matching the latest HISTORY heading; every `BLOCKED` PLAN
-  item cross-referenced in `BLOCKERS.md`; every NOTES finding mission having
-  its NOTES section and back again; the plan tag on every numbered item exactly
-  one of `EXECUTABLE` / `BLOCKED` / `DONE` / `CLAUDE_REVIEW` (a compound tag
-  parses as no tag and breaks mission selection).
-- Goldens (hello, topbar, hero, cards) byte-identical; `dictionary-demo.ine`
-  renders. Dictionary JSON ships at `src/ine/dictionary/*.json` (resolved via
-  `importlib.resources` with a `__file__` fallback;
-  `[tool.setuptools.package-data] ine = ["dictionary/*.json"]`); the root
-  `dictionary/README.md` stays as the schema guide.
-- Environment: Windows / PowerShell 5.1, Python 3.13.14, node v24.17.0.
-  Repo-root `ine.py` is a tracked shim that inserts `src/` into `sys.path`
-  (it shadows the `ine` package — the engine run as a script self-prepends
-  `src/`).
-- PowerShell content cmdlets (`Get-Content` / `Set-Content` / `Out-File`)
-  corrupt Unicode in this repo, and a backtick in a double-quoted
-  here-string is an escape character — both have cost time. Use `edit` /
-  `write`, or Python with an explicit `encoding="utf-8"`. Scratch goes in
-  `.tmp/`.
+- Recording is deterministic: PLAN tags, this head, HISTORY and NOTES are written by `state.record_mission_outcome` from the worker's structured receipt, not by the model in prose.
+- Last recorded verification for mission 86: python .tmp/code-actions-probe/probe.py: all cases verified: 8 edits, 7 refusals, 0 failure(s)
+- Known caveats and the rest of the project's position are in the sections below and are not rewritten by a mission.
 
 ## Pipeline & entry points
 
@@ -168,11 +121,15 @@ the same run.
   `measure.py` (read-only re-measure harness over RUN_REPORTS + the ledger),
   `receipt.py` (the bounded structured receipt a worker returns), `profiles.py`
   (built-in + `.agent/workers.json` worker profiles, resolved by `doctor` and
-  the dry run), `cli.py` (argparse entry, `--root`, `--worker`, `--model`,
+  the dry run; the same file optionally carries `policy` and `verify`), `cli.py` (argparse entry, `--root`, `--worker`, `--model`,
   `--dry-run`, `--max-missions` (alias `--cycle-limit`, unset by default),
-  `--max-attempts` (default 1), `--max-failures`, `--stall-limit`,
-  `--quiet`/`--verbose`, `--usage-warn-requests`, `--notify`; `doctor` and
-  `resolve` subcommands).
+  `--max-attempts` (unset: the policy decides, and an explicit flag wins),
+  `--max-failures`, `--stall-limit`,
+  `--quiet`/`--verbose`, `--usage-warn-requests`, `--notify`; `doctor`,
+  `measure` and `resolve` subcommands), `budget.py` (validated policy +
+  defaults, and the over-budget report), `verify.py` (configured local checks
+  run only after a `done` receipt; no model, no retry, bounded tail, 600s
+  timeout).
   Guardrails in the prompts: never invent semantics, never unblock
   evidence-gated work, never modify DECISIONS.md, keep scratch under
   `.tmp/` and nothing durable there (AGENTS.md, "Repository containment").
@@ -182,6 +139,11 @@ the same run.
   `.agent/MISSION_PROMPT.md` is no longer embedded — a mission with no
   index at `.agent/missions/<item-number>.md` is refused, recorded BLOCKED
   and deferred, spending no worker call.
+- One mission costs one process, and the guarantee is enforced rather than
+  assumed: a mission completed by receipt alone, without a `PLAN.md` edit, is
+  added to the run's deferred set so the re-read plan cannot re-pick it.
+  Regression-tested (`test_a_receipt_completion_costs_exactly_one_invocation`,
+  which fails with the fix reverted).
 - Durable state the loop keeps outside the plan: `.agent/RUN_REPORTS.md` (one
   block per run, including usage deltas when a worker reports them) and
   `.agent/attempts.json` (per-mission failures: `attempts`, `runs`,

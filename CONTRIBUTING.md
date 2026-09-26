@@ -121,6 +121,10 @@ ine-agent run --worker opencode --max-missions 3   # stop after three missions
 
 - `doctor` resolves the worker profile, the command, the prompt position and
   the timeout, and reports what is wrong with a remedy. It launches nothing.
+- `ine-agent` is the mission runner's name, deliberately not `ine run`: `ine` is
+  the language CLI and its `run` executes a `.ine` file. A worker profile drives
+  an external CLI by command line only — INE creates no agent, mode or plugin
+  inside that tool, and needs no provider project file to run.
 - `--dry-run` prints the profile, the exact command, the budget, the next
   mission and its index state, and how much of the plan is still `EXECUTABLE`.
 - `--worker <name>` takes a built-in (`opencode`, `claude`) or one declared in
@@ -164,6 +168,17 @@ body, the history, or a snapshot of STATE: those were re-sent in full on every
 cycle, and a snapshot that goes stale before the first step is worse than none.
 A worker that needs one of them reads it itself, at the point it needs it.
 
+**The rules are a file, not code.** `.agent/WORKER_INSTRUCTIONS.md` is the
+literal prompt a worker receives, with `{{TOKEN}}` placeholders the supervisor
+fills: `{{MISSION}}` and `{{RECEIPT}}` are required, and `{{RELATED}}`,
+`{{MISSION_NUMBER}}` and `{{MISSION_HEADLINE}}` are optional. Change how a
+worker is told to behave by editing that file — no Python change, and no
+restart-free redeploy of the loop. It is validated before a run: a missing,
+empty or tokenless file stops the run with a remedy rather than sending a
+worker a prompt with no mission in it. `ine-agent doctor` reports the file and
+its size, and fails if it is unusable. A bare `{` or `}` in the file is prose,
+not a placeholder.
+
 Related compact snippets are selected on three declared signals only — the same
 `Area:`, an explicit `Depends on:`, or a changed file in common. A mission that
 declares none of them is offered nothing, which is the safe default.
@@ -191,6 +206,46 @@ Two rules make this safe, and both are enforced rather than asked for:
   real deliverable is appended to the plan as a `CLAUDE_REVIEW` item carrying a
   marker that makes it non-executable. Nothing runs a proposal until a human
   re-tags it.
+
+### Budgets, checks and cost
+
+Everything above runs with no configuration at all. Two things are opt-in, and
+both live in one optional file, .agent/workers.json:
+
+`json
+{
+  "policy": {"max_prompt_chars": 12000,
+              "max_previous_receipts": 3,
+              "max_previous_receipt_chars": 2000,
+              "max_attempts": 1},
+  "verify": ["python -X utf8 -m pytest tests/test_ine_agent.py -q"]
+}
+`
+
+**policy sets the context budget.** max_prompt_chars is the cap on the
+whole prompt; the two max_previous_* keys are the related-receipt caps. A
+mission that needs more than the cap is **reported as over budget and sent
+whole** — the loop never quietly truncates a mission the planner asked for.
+max_attempts is the per-mission attempt budget, and the CLI flag wins over it
+when both are given: --max-attempts 1 means one, --max-attempts 3 means
+three, and saying nothing defers to the policy. A file that exists and cannot
+be understood stops the run with its remedy — a policy you wrote and the loop
+ignored is the failure this exists to prevent.
+
+**erify adds local checks.** Each entry is a command to run in the project
+root, written as a string or as an argv list. They run **only after a worker
+reports done**, never for a failure, and they cannot call a worker or a model:
+if a check fails, the finding is recorded, the mission is not re-run, and the
+run exits non-zero so the failure cannot be mistaken for success. Every check
+runs even after one fails, each has a 10-minute timeout, and only the tail of
+its output is kept. A malformed erify list is an error, not a skipped check.
+ine-agent run --dry-run shows what is configured without running any of it.
+
+**ine-agent measure** reads the durable run reports and prints what missions
+actually cost: cycles, completions, provider requests and tokens, prompt sizes,
+how many prompts went over budget, and per-mission rows. It is read-only, needs
+no provider call, and is the number to look at before deciding a change made
+missions cheaper or more expensive.
 
 ### What you are asked to decide
 

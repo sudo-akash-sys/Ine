@@ -89,12 +89,15 @@ import os
 import re
 import subprocess
 import sys
+import threading
 import time
 
+from . import budget
 from . import compaction
 from . import profiles
 from . import receipt as receipt_format
 from . import state, usage
+from . import verify
 from .notifier import create_notifier
 from .worker import WorkerResult, build_worker, effective_command
 
@@ -743,10 +746,78 @@ def _planner_block(root):
     return block
 
 
-def impl_prompt(root, task):
+def worker_instructions(root):
+    """The worker prompt template from `.agent/`, or a remedy for its absence.
+
+    The instructions are read from a file, not held here, so that changing
+    how the worker is told to behave is an edit to prose. A missing or
+    unusable file is a configuration fault and is reported as one: this loop
+    has no built-in fallback text to fall back to, precisely so that the
+    shipped file is the only thing that can be sent.
+    """
+    text = state.read_worker_instructions(root)
+    if text is None:
+        raise state.ProjectError(
+            "no usable worker instructions: `{}` is missing, empty, or holds "
+            "no placeholders at all. It is the file that says what the "
+            "worker is told to do, so restore it (or write your own) before "
+            "running.".format(
+                os.path.join(state.AGENT_DIR, state.WORKER_INSTRUCTIONS_NAME)))
+    missing = [token for token in state.REQUIRED_TOKENS
+               if token not in text]
+    if missing:
+        raise state.ProjectError(
+            "worker instructions `{}` is missing {}: a worker sent without "
+            "{} cannot be given the mission or asked for a receipt. Restore "
+            "the placeholder or add your own."
+            .format(os.path.join(state.AGENT_DIR,
+                                 state.WORKER_INSTRUCTIONS_NAME),
+                    " and ".join(missing), "it" if len(missing) == 1 else "them"))
+    return text
+
+
+#: A local, API-free approximation of tokens-per-prompt. Exact counting needs
+#: the provider's tokenizer; this is arithmetic over a string already in
+#: hand, and it is only ever compared against another estimate.
+CHARS_PER_TOKEN = 4
+
+
+def context_diagnostic(root, task, prompt, policy, related_count=0,
+                       files_referenced=0):
+    """What this mission's handoff cost, measured locally and never sent.
+
+    Prompt size is the number worth watching: it is the one input the loop
+    controls, and the only one where a regression is silent. The receipt is a
+    control message, so the diagnostic goes to the run report and nowhere
+    near the model.
+    """
+    chars = len(prompt)
+    lines = len(prompt.splitlines())
+    limit = policy["max_prompt_chars"]
+    return {
+        "prompt_chars": chars,
+        "prompt_lines": lines,
+        "approx_tokens": -(-chars // CHARS_PER_TOKEN),
+        "files_referenced": files_referenced,
+        "previous_receipts": related_count,
+        "budget_chars": limit,
+        # Reported, never enforced. The context that pushed a prompt over
+        # the line was put there by the mission author, and a budget must
+        # not become a reason to drop a declared file.
+        "over_budget": chars > limit,
+        "over_budget_by": max(0, chars - limit),
+    }
+
+
+def impl_prompt(root, task, policy=None, diagnostic=None):
     """The prompt handed to the implementation worker (OpenCode by default).
 
-    A fixed contract and the mission's own execution index, and nothing else.
+    Assembled from `.agent/WORKER_INSTRUCTIONS.md` — the editable template that
+    says what the worker is told to do — plus three slots and nothing else:
+    the mission's own execution index, its headline, and the receipt contract
+    the recorder parses. Related prior work is substituted only when an
+    earlier mission actually worked on the same thing.
+
     The control-plane documents the loop used to embed here — WORKER_PROMPT,
     MISSION, the distilled STATE snapshot, the plan body, the history and the
     usage totals — are deliberately NOT sent:
@@ -758,11 +829,13 @@ def impl_prompt(root, task):
     - and the worker could read any of them itself, for the one it actually
       needed, at the point it needed it.
 
-    What remains is the mission (written once by the planner), the rules for
-    carrying it out, the receipt the recorder parses, and — only when an
-    earlier mission actually worked on the same thing — that mission's
-    compact receipt.
+    `policy` supplies the previous-receipt caps. `diagnostic`, when given, is
+    filled with the local cost of this prompt and ignored otherwise — passed
+    in rather than returned so the function keeps the one-value shape every
+    caller already uses.
     """
+    if policy is None:
+        policy = budget.load_policy(root)
     index = state.read_mission_index(root, task.number)
     if index is None:
         index = (
@@ -771,54 +844,36 @@ def impl_prompt(root, task):
             "`needs_commander` in your receipt and stop.)"
             .format(state.mission_index_relpath(task.number))
         )
-    related = compaction.render(compaction.select_snippets(
-        root, task.number, **_related_signals(root, task.number)))
-    related = (related + "\n") if related else (
-        "(no related earlier mission in this area yet)\n")
-    return (
-        "You are the EXECUTION worker for the Ine repository. One mission, "
-        "one pass.\n"
-        "\n"
-        "1. Carry out the mission below, in order. It is the whole scope. Do\n"
-        "   not research it, re-plan it, re-scope it or decompose it — a\n"
-        "   planner has already done that, once.\n"
-        "2. Read what the mission needs and no more: locate before you read\n"
-        "   (grep for the symbol, then read the matching region), read one\n"
-        "   representative example of a pattern rather than every instance,\n"
-        "   and batch independent lookups into a single message.\n"
-        "3. Run focused tests for the surface you changed as you work,\n"
-        "   and the full suite once at the end — not after every edit.\n"
-        "4. Do not edit the `.agent/` control-plane files. Your receipt is\n"
-        "   recorded for you; the plan, history, state and notes entries are\n"
-        "   written from it.\n"
-        "5. Do not delegate, browse, or ask questions. If a step is not\n"
-        "   concrete enough to execute, that is a planning defect: say so in\n"
-        "   the receipt and stop rather than inventing the missing scope.\n"
-        "6. Stay inside the index's Files list unless the change genuinely\n"
-        "   requires otherwise, and say why in the receipt if it does.\n"
-        "7. Guardrails, never violated: do not invent language semantics, do\n"
-        "   not unblock evidence-gated work, do not modify DECISIONS.md, do\n"
-        "   not change language behaviour unless the index explicitly says\n"
-        "   so, and keep temporary artifacts under `.tmp/`.\n"
-        "\n"
-        "PRIOR WORK IN THIS AREA\n"
-        "\n"
-        "{related}"
-        "\n"
-        "MISSION (PLAN item {number}): {headline}\n"
-        "\n"
-        "{index}\n"
-        "\n"
-        "REPORT\n"
-        "\n"
-        "{contract}"
-    ).format(
-        related=related,
-        number=task.number,
-        headline=task.text.splitlines()[0],
-        index=index,
-        contract=receipt_format.contract(),
-    )
+    signals = _related_signals(root, task.number)
+    selected = compaction.select_snippets(
+        root, task.number,
+        limit_chars=policy["max_previous_receipt_chars"],
+        max_snippets=policy["max_previous_receipts"],
+        **signals)
+    related = compaction.render(
+        selected, policy["max_previous_receipt_chars"],
+        policy["max_previous_receipts"])
+    # Empty when nothing is related, so a mission that declared no area, no
+    # dependency and no files is sent no prior-work section at all — not even
+    # a sentence telling the worker there is nothing. `compaction.render`
+    # already returns a self-contained block, headed and newline-terminated,
+    # so the template can glue the token to the MISSION line and stay honest
+    # about what editing it changes.
+    related = related.rstrip("\n") + "\n" if related else ""
+    slots = {
+        "{{RELATED}}": related,
+        "{{MISSION_NUMBER}}": str(task.number),
+        "{{MISSION_HEADLINE}}": task.text.splitlines()[0],
+        "{{MISSION}}": index,
+        "{{RECEIPT}}": receipt_format.contract(),
+    }
+    prompt = worker_instructions(root)
+    for token, value in slots.items():
+        prompt = prompt.replace(token, value)
+    if diagnostic is not None:
+        diagnostic.update(context_diagnostic(
+            root, task, prompt, policy, len(selected), len(signals["files"])))
+    return prompt
 
 
 def _related_signals(root, number):
@@ -916,17 +971,89 @@ def review_prompt(root, task):
     ).format(task=task.raw.strip())
 
 
+class _Heartbeat:
+    """Say something while the worker is quiet.
+
+    A CLI driven in its own non-interactive print mode emits nothing at all
+    until it has finished, so a five-minute mission looks precisely like a
+    wedged process — which is the question this loop was asked most often,
+    and got wrong once already (a run that sat on `Terminate batch job
+    (Y/N)?` until someone pressed Ctrl+C). Elapsed time is a fact rather than
+    an opinion, so that is what the heartbeat reports, and it stops the
+    moment the worker returns.
+
+    It never writes to the run report: this is console conversation, not
+    evidence, and a heartbeat in the record would be a lie about what
+    happened.
+    """
+
+    def __init__(self, out, seconds, message, activity=None):
+        self._out = out
+        self._seconds = seconds or 0
+        self._message = message
+        #: Optional callable returning seconds since the worker last spoke.
+        #: A worker that streams is not quiet, and telling a talking worker
+        #: that it has been silent for 30 seconds would be a lie that also
+        #: trains the reader to ignore the line.
+        self._activity = activity
+        self._stop = threading.Event()
+        self._thread = None
+
+    def __enter__(self):
+        if self._seconds <= 0:
+            return self
+        self._thread = threading.Thread(target=self._pulse, daemon=True)
+        self._thread.start()
+        return self
+
+    def _pulse(self):
+        started = time.monotonic()
+        while not self._stop.wait(self._seconds):
+            if self._activity is not None and self._activity() < self._seconds:
+                continue
+            elapsed = int(time.monotonic() - started)
+            try:
+                print("[heartbeat] {} still running, {}s elapsed".format(
+                    self._message, elapsed), file=self._out, flush=True)
+            except (ValueError, OSError):
+                return
+
+    def __exit__(self, *exc_info):
+        self._stop.set()
+        if self._thread is not None:
+            self._thread.join(timeout=1)
+        return False
+
+
 class Supervisor:
     """Sequential worker loop over .agent/ executable work."""
 
     def __init__(self, root, worker_factory=None, impl_worker="opencode",
-                 max_cycles=None, max_attempts=1, dry_run=False, out=None,
-                 quiet=False, verbose=False, notify=False, notifier=None,
-                 usage_warn_requests=None, usage_reporter=None,
-                 max_failures=DEFAULT_MAX_FAILURES,
-                 stall_limit=DEFAULT_STALL_LIMIT, model=None):
+                  max_cycles=None, max_attempts=None, dry_run=False, out=None,
+                  quiet=False, verbose=False, notify=False, notifier=None,
+                  usage_warn_requests=None, usage_reporter=None,
+                   max_failures=DEFAULT_MAX_FAILURES,
+                   stall_limit=DEFAULT_STALL_LIMIT, model=None, policy=None,
+                   verify_runner=None, heartbeat_seconds=30):
         self.root = root
         self.model = model
+        #: How often to say "still running" while a worker is quiet. 0 turns
+        #: it off. A non-streaming CLI can be silent for minutes, and the
+        #: operator's question then has a cheap factual answer.
+        self.heartbeat_seconds = heartbeat_seconds
+        #: Monotonic stamp of the last worker line, read by the heartbeat to
+        #: tell "working quietly" from "working loudly".
+        self._last_worker_line = time.monotonic()
+        #: The context/token budget, read once from `.agent/workers.json`. The
+        #: CLI's `--max-attempts` wins over `policy["max_attempts"]` when both
+        #: are given, because an explicit flag on the command line is a more
+        #: immediate statement of intent than a config file.
+        self.policy = policy if policy is not None else budget.load_policy(root)
+        # None means "not stated", and the policy answers. An explicit value —
+        # including an explicit 1 from the command line — is the more immediate
+        # statement of intent, so it is used exactly as given.
+        self.max_attempts = (
+            self.policy["max_attempts"] if max_attempts is None else max_attempts)
         self.worker_factory = worker_factory or (
             lambda name: build_worker(name, root=self.root, model=self.model))
         self.impl_worker = impl_worker
@@ -937,9 +1064,18 @@ class Supervisor:
         #: Counted in missions, not cycles, so a mission given two attempts
         #: still counts once.
         self.max_missions = max_cycles
-        self.max_attempts = max_attempts
         self.max_failures = max_failures
         self.stall_limit = stall_limit
+        #: Optional deterministic checks, run after a mission reports `done`.
+        #: Empty unless `.agent/workers.json` declares a `verify` list — and
+        #: with none declared nothing extra runs, so the loop's behaviour is
+        #: what it was before verification existed. Never a model: these are
+        #: commands this process runs itself.
+        self.verify_checks = verify.load_checks(root)
+        self._verify_failures = []
+        #: Seam for tests: anything `verify.run_checks` accepts as `runner`.
+        #: None means the real thing, which is the only thing production uses.
+        self.verify_runner = verify_runner
         self.dry_run = dry_run
         self.quiet = quiet
         self.verbose = verbose
@@ -959,9 +1095,20 @@ class Supervisor:
         # zeros means nothing was attempted, which is then literally true.
         self._tally = {}
         self._refused = []
+        #: Local cost of the handoff built for the CURRENT mission, filled by
+        #: `impl_prompt` and read by the run loop. Local facts about the
+        #: prompt; none of it is ever sent to a worker.
+        self._context = {}
+        #: The usage snapshot taken immediately before this mission's worker
+        #: call, so the delta across it is that mission's own cost rather
+        #: than the run's.
+        self._usage_mission_before = None
 
     def _print(self, message, end="\n"):
-        print(message, end=end, file=self.out)
+        # flush=True, always. A print that sits in a buffer is invisible, and
+        # an operator watching a silent terminal cannot tell a working run
+        # from a wedged one - which is the question this loop gets asked most.
+        print(message, end=end, file=self.out, flush=True)
 
     def _cycle_metrics(self, task, result, cycles):
         """One line of locally measured facts about this cycle.
@@ -985,6 +1132,79 @@ class Supervisor:
     def _print_cycle_metrics(self, task, result, cycles):
         """The same facts, without the report's leading dash."""
         self._print(self._cycle_metrics(task, result, cycles)[2:])
+
+    def _context_line(self, task, result, outcome):
+        """One report line: what this mission's handoff cost, measured here.
+
+        Purely local arithmetic over the prompt this process just built. It
+        is recorded, never sent: a diagnostic that had to be transmitted to
+        be useful would cost more than it saves.
+        """
+        facts = getattr(self, "_context", None) or {}
+        if not facts:
+            return None
+        line = ("- [mission {number}] context: {chars} chars/{lines} lines "
+                "(~{tokens} tokens), {files} declared file(s), {receipts} "
+                "previous receipt(s), budget {budget} chars".format(
+                    number=task.number, chars=facts.get("prompt_chars", 0),
+                    lines=facts.get("prompt_lines", 0),
+                    tokens=facts.get("approx_tokens", 0),
+                    files=facts.get("files_referenced", 0),
+                    receipts=facts.get("previous_receipts", 0),
+                    budget=facts.get("budget_chars", 0)))
+        if facts.get("over_budget"):
+            # Reported, never enforced: the context that caused this was
+            # asked for by the mission author, and dropping it silently to
+            # satisfy a budget would be worse than the overage.
+            line += (" — OVER BUDGET by {over} chars; sent in full rather "
+                     "than truncated, because the mission asked for it"
+                     .format(over=facts.get("over_budget_by", 0)))
+        return line
+
+    def _usage_line(self, task, result, outcome):
+        """One report line: this mission's own usage, or `usage_unavailable`.
+
+        The delta is taken across this mission's worker call, so it is that
+        mission's cost and not the run's. When the provider exposes nothing —
+        no local database, a stub worker, a tool that reports no token counts
+        — the line says `usage_unavailable` rather than zeros, because a zero
+        reads as "this was free" and that is a claim this loop cannot make.
+        """
+        before = getattr(self, "_usage_mission_before", None)
+        if before is None:
+            return None
+        try:
+            after = self._usage.snapshot()
+        except Exception:  # telemetry must never fail a mission
+            after = dict(usage.ZERO)
+        delta = usage.delta(before, after)
+        model = self._mission_model(delta)
+        if usage.has_usage(delta):
+            body = usage.format_delta(delta)
+        else:
+            body = "usage_unavailable (the provider reported no usage for " \
+                   "this mission; nothing is estimated)"
+        return ("- [mission {number}] usage: status={status} worker={worker} "
+                "model={model} elapsed={elapsed}s — {body}".format(
+                    number=task.number, status=outcome,
+                    worker=self.impl_worker, model=model,
+                    elapsed=(getattr(result, "metrics", None) or {}).get(
+                        "elapsed_seconds", 0),
+                    body=body))
+
+    def _mission_model(self, delta):
+        """The model this mission ran on, or `unknown`.
+
+        Read from the observed usage, not from the profile: a profile can
+        ask for a model and the tool can decline, and the recorded number has
+        to be the one that was actually used.
+        """
+        models = sorted(delta.get("by_model", {}))
+        if len(models) == 1:
+            return models[0]
+        if models:
+            return ", ".join(models)
+        return self.model or "unknown"
 
     def _dry_run_report(self, task):
         """Answer, without launching anything: what would run, for what.
@@ -1014,14 +1234,45 @@ class Supervisor:
                         if self.max_missions is None
                         else "up to {} mission(s)".format(self.max_missions),
                         self.max_attempts))
+        self._print("[dry-run] context    : prompt cap {} chars; at most {} "
+                    "prior receipt(s) within {} chars{}".format(
+                        self.policy["max_prompt_chars"],
+                        self.policy["max_previous_receipts"],
+                        self.policy["max_previous_receipt_chars"],
+                        "" if not self.policy.configured else
+                        " (set: {})".format(
+                            ", ".join(sorted(self.policy.configured)))))
+        if self.verify_checks:
+            self._print("[dry-run] verify     : {} deterministic check(s) "
+                        "after a mission reports done — no model involved: "
+                        "{}".format(len(self.verify_checks), " | ".join(
+                            " ".join(argv) for argv in self.verify_checks)))
+        else:
+            self._print("[dry-run] verify     : none configured")
         self._print("[dry-run] next       : PLAN item {} — {}".format(
             task.number, task.text.splitlines()[0]))
         relpath = state.mission_index_relpath(task.number)
+        facts = {}
         if state.read_mission_index(self.root, task.number) is None:
             self._print("[dry-run] REFUSED: no execution index at {} — the "
                         "planner must write one.".format(relpath))
         else:
             self._print("[dry-run] index      : {}".format(relpath))
+            # The prompt the next worker would receive, measured rather than
+            # guessed. Local arithmetic on a string this process just built,
+            # and the single most useful number a dry run can print.
+            impl_prompt(self.root, task, self.policy, facts)
+            self._print("[dry-run] prompt     : {} chars / {} lines "
+                        "(~{} tokens), {} declared file(s), {} prior "
+                        "receipt(s){}".format(
+                            facts.get("prompt_chars", 0),
+                            facts.get("prompt_lines", 0),
+                            facts.get("approx_tokens", 0),
+                            facts.get("files_referenced", 0),
+                            facts.get("previous_receipts", 0),
+                            " — OVER BUDGET by {} chars, still sent in "
+                            "full".format(facts.get("over_budget_by", 0))
+                            if facts.get("over_budget") else ""))
         queue = [item.number for item in state.read_plan(self.root).items
                  if item.tag == "EXECUTABLE" and item.number != task.number]
         self._print("[dry-run] queue      : {} further EXECUTABLE item(s) "
@@ -1095,7 +1346,13 @@ class Supervisor:
         Default relays the line indented with ANSI control sequences
         stripped; `--verbose` relays it raw and unindented, as if the
         worker ran directly; `--quiet` drops live lines entirely.
+
+        Also the record of *when the worker was last heard from*, which is
+        what the heartbeat consults. It is counted even under `--quiet`:
+        suppressing the lines is a display choice, not a claim that the
+        worker has gone silent.
         """
+        self._last_worker_line = time.monotonic()
         if self.quiet:
             return
         if self.verbose:
@@ -1156,18 +1413,35 @@ class Supervisor:
         """
 
         if task.wants_claude_review:
-            review = self._worker("claude").run(
-                self.root, review_prompt(self.root, task), on_line=on_line)
+            with _Heartbeat(
+                    self.out, self.heartbeat_seconds, "design review",
+                    activity=lambda: time.monotonic() - self._last_worker_line):
+                review = self._worker("claude").run(
+                    self.root, review_prompt(self.root, task), on_line=on_line)
             if state.output_marks_human_decision(review.output):
                 return review
-        prompt = impl_prompt(self.root, task)
+        prompt_diagnostic = {}
+        prompt = impl_prompt(self.root, task, self.policy, prompt_diagnostic)
+        self._context = prompt_diagnostic
         note = getattr(self, "_retry_note", None)
         if note is not None and note[0] == task.identity:
             prompt += retry_block(note[1], note[2])
+            # The retry note is part of what this mission is sent, so it
+            # counts against the budget rather than hiding from the
+            # diagnostic.
+            self._context = context_diagnostic(
+                self.root, task, prompt, self.policy,
+                prompt_diagnostic.get("previous_receipts", 0),
+                prompt_diagnostic.get("files_referenced", 0))
         self._retry_note = None
-        return self._worker(self.impl_worker).run(
-            self.root, prompt, on_line=on_line
-        )
+        self._usage_mission_before = self._usage.snapshot()
+        with _Heartbeat(
+                self.out, self.heartbeat_seconds,
+                "mission {}".format(task.number),
+                activity=lambda: time.monotonic() - self._last_worker_line):
+            return self._worker(self.impl_worker).run(
+                self.root, prompt, on_line=on_line
+            )
 
     def _diagnose(self, task, result, outcome, cycles, receipt=None):
         """The `Diagnosis` for a cycle that stopped uncompleted.
@@ -1197,6 +1471,24 @@ class Supervisor:
             _truncate_text(diagnosis.reason
                            or "the worker gave no classification"),
             diagnosis.raw, diagnosis.match, Source.IN_BAND)
+
+    def _verify_mission(self, task):
+        """Run the configured checks for one completed mission; report each.
+
+        Every check runs, so one run shows every problem rather than only the
+        first. A failure is remembered so a run whose checks did not pass can
+        never end as a success, which is the whole point of having them: a
+        green run has to mean the checks passed, not that nobody ran them.
+        """
+        lines = []
+        for check in verify.run_checks(self.root, self.verify_checks,
+                                       runner=self.verify_runner):
+            lines.append("- [mission {}] {}".format(
+                task.number, verify.format_result(check)))
+            if not check["ok"]:
+                self._verify_failures.append(
+                    "mission {}: {}".format(task.number, check["label"]))
+        return lines
 
     def _diagnosis_outcome(self, task, result, outcome, attempts, cycles,
                            deferred, receipt=None):
@@ -1678,6 +1970,33 @@ class Supervisor:
                     self._truncate(headline, 110))])
 
     def run(self):
+        """Run the loop, treating Ctrl+C as an outcome rather than a crash.
+
+        Stopping a long run is a normal thing for a human to do, and before
+        this the only way it could happen was an unhandled
+        `KeyboardInterrupt`: a raw traceback, no run-report summary, and a
+        worker process tree that was left alive. Interrupting is now a
+        recorded result, so the report can say "interrupted" instead of
+        stopping mid-sentence and leaving the next reader to guess whether the
+        run crashed, was killed, or is still going.
+        """
+        try:
+            return self._run_loop()
+        except KeyboardInterrupt:
+            self._print("")
+            self._print("Interrupted (Ctrl+C). Stopping the worker and "
+                        "recording the run as interrupted.")
+            state.append_run_report(self.root, [
+                "- outcome: interrupted by the operator (Ctrl+C)",
+                "- summary: the operator stopped this run; whatever the "
+                "worker had written stays in the working tree, unrecorded",
+            ])
+            return self._finish(
+                STOP_ERROR,
+                "interrupted by the operator; the worker was stopped and no "
+                "outcome was recorded for it.")
+
+    def _run_loop(self):
         plan = state.read_plan(self.root)
         # The ledger remembers missions still in the loop, so entries for
         # work that left it (rewritten, removed, completed, blocked) are
@@ -1724,14 +2043,6 @@ class Supervisor:
                     "failures; commander action required.",
                     notify_body="Missions stopped being retried after "
                                 "repeated failures and now need your review.")
-            self._no_work()
-            self._notify(
-                "Ine · run complete",
-                "All tasks done — nothing left to run.")
-            return self._finish(
-                STOP_OK, None, print_message=False,
-                report_summary="no executable work remains.")
-
         if self.dry_run:
             return self._dry_run_report(task)
 
@@ -1829,6 +2140,20 @@ class Supervisor:
             self._print("")
             self._print("[cycle {}] worker '{}'".format(cycles + 1, worker_name))
             self._print("[cycle {}] mission: {}".format(cycles + 1, headline))
+            # What the next few minutes will look like, said before they
+            # start. A CLI in its own non-interactive print mode emits
+            # nothing at all until it has finished, so without this the
+            # screen does not change until the first heartbeat - up to a
+            # minute of a terminal that is indistinguishable from a hung
+            # one, which is how a real run was read and cancelled. Naming
+            # the interval is what keeps silence legible: no [heartbeat]
+            # line for longer than that means the loop has stopped, not
+            # that it is thinking.
+            alive = ("[heartbeat] every {}s while it is quiet".format(
+                self.heartbeat_seconds) if self.heartbeat_seconds
+                else "no [heartbeat] (disabled for this run)")
+            self._print("[cycle {}] nothing appears until the worker "
+                        "writes; {}".format(cycles + 1, alive))
             self._print("-" * 60)
             state.append_run_report(self.root, [
                 "- mission [cycle {}]: {}".format(
@@ -1840,8 +2165,21 @@ class Supervisor:
             if result.exit_code != 0 and result.output:
                 self._print("[cycle {}] worker output (first 20 lines):"
                             .format(cycles + 1))
-                for line in result.output.splitlines()[:20]:
+                excerpt = [self._truncate(line, 300)
+                           for line in result.output.splitlines()[:20]]
+                for line in excerpt:
                     self._print("  " + line)
+                # The same excerpt goes into the durable report. A report
+                # that says only "exit 1, output 93 chars" cannot answer the
+                # first question anyone asks of a failed run -- "what did it
+                # say?" -- and the console is gone by the time anyone thinks
+                # to ask. This is where a provider error the commander has to
+                # fix (an unknown model id, a refused permission) becomes
+                # readable without re-running the mission to reproduce it.
+                state.append_run_report(self.root,
+                                        ["- [cycle {}] worker output:".format(
+                                            cycles + 1)]
+                                        + ["  " + line for line in excerpt])
 
             cycles += 1
             # A mission counts once against the bound, however many attempts
@@ -1863,6 +2201,24 @@ class Supervisor:
                 # same area most needs to know about.
                 compaction.write_snippet(self.root, task.number, receipt)
             outcome = self._outcome(result, task, plan, receipt)
+            if outcome == "done" and self.verify_checks:
+                # The one claim there is to check. It costs no request, it
+                # never re-runs the mission, and it never asks a model to
+                # adjudicate: a deterministic check that fails will fail the
+                # same way next time, so the finding is recorded and the run
+                # ends non-zero instead.
+                for result_line in self._verify_mission(task):
+                    state.append_run_report(self.root, [result_line])
+                    self._print(result_line[2:])
+            # The two per-mission cost lines. Recorded after the outcome is
+            # known so the usage line can name the status the mission ended
+            # in, and after the receipt is parsed so nothing here can
+            # influence what the worker is told.
+            for line in (self._context_line(task, result, outcome),
+                         self._usage_line(task, result, outcome)):
+                if line:
+                    state.append_run_report(self.root, [line])
+                    self._print(line[2:])
             task_id = task.identity
 
             if outcome == "done":
@@ -1870,6 +2226,13 @@ class Supervisor:
                     "- [cycle {}] DONE".format(cycles)])
                 self._print("[cycle {}] mission completed.".format(cycles))
                 attempts = 0
+                # A finished mission is never picked again in this run. The
+                # plan is re-read after every cycle, and a mission the worker
+                # completed by receipt alone — without editing PLAN.md — can
+                # still look selectable for a moment. Skipping it by identity
+                # is what keeps the promise that one mission costs one
+                # process.
+                deferred.add(task_id)
                 # Finishing is what clears a failure history: a mission that
                 # finally completed on a later run starts clean if it is ever
                 # re-opened.
@@ -2016,6 +2379,18 @@ class Supervisor:
                 STOP_ERROR,
                 "missions deferred after failing; "
                 "no executable work remains.")
+        if self._verify_failures:
+            # Every earlier exit has already returned for a refusal, a parked
+            # mission, a deferred failure or a commander gate, so reaching here
+            # means the work was otherwise clean and the checks are the only
+            # thing wrong. Say so — and do not exit 0. A green run has to mean
+            # the configured checks passed, not that nobody ran them.
+            return self._finish(
+                STOP_ERROR,
+                "work completed, but the configured deterministic check(s) did "
+                "not pass: {}. The missions are recorded as the worker reported "
+                "them; the checks are the part that is failing.".format(
+                    "; ".join(self._verify_failures)))
         self._no_work()
         return self._finish(
             STOP_OK, None, print_message=False,

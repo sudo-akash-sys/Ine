@@ -38,6 +38,15 @@ BLOCKERS_NAME = "BLOCKERS.md"
 REPORT_NAME = "RUN_REPORTS.md"
 MISSION_PROMPT_NAME = "MISSION_PROMPT.md"
 WORKER_PROMPT_NAME = "WORKER_PROMPT.md"
+WORKER_INSTRUCTIONS_NAME = "WORKER_INSTRUCTIONS.md"
+
+#: Placeholders the supervisor fills in the worker instructions template.
+#: The required ones are validated: a template missing one of those would
+#: send a worker a prompt with no mission, or no receipt to report in, and
+#: the run would fail after the work was already paid for.
+REQUIRED_TOKENS = ("{{MISSION}}", "{{RECEIPT}}")
+OPTIONAL_TOKENS = ("{{RELATED}}", "{{MISSION_NUMBER}}", "{{MISSION_HEADLINE}}")
+TOKEN_RE = re.compile(r"\{\{[A-Z_]+\}\}")
 MISSION_NAME = "MISSION.md"
 MISSION_DIR = "missions"
 HUMAN_MARKER = "HUMAN_DECISION_REQUIRED"
@@ -266,6 +275,25 @@ def write_mission_index(root, number, text):
     return True
 
 
+def read_worker_instructions(root):
+    """The editable worker prompt template, or None when it is unusable.
+
+    The literal text the implementation worker is sent, as a template. It is
+    a file and not part of the supervisor so that changing how the worker is
+    told to behave means editing prose, not Python: the loop supplies the
+    slots and never the instructions.
+
+    Returns the text, or None when the file is missing, unreadable, empty,
+    or carries none of the `{{TOKEN}}` placeholders — every one of which is a
+    silent way to send a worker a prompt with no mission or no receipt.
+    """
+    try:
+        text = _read_optional_text(root, WORKER_INSTRUCTIONS_NAME)
+    except OSError:
+        return None
+    return text if TOKEN_RE.search(text) else None
+
+
 _AREA_RE = re.compile(r"^Area:[ \t]*(.+?)[ \t]*$", re.M)
 _DEPS_RE = re.compile(r"^Depends on:[ \t]*(.+?)[ \t]*$", re.M)
 _FILES_HEADING_RE = re.compile(r"^##[ \t]+Files[ \t]*$", re.M)
@@ -312,13 +340,54 @@ def read_mission_metadata(root, number):
         tail = text[files_heading.end():]
         next_heading = _FRONTSECTION_END_RE.search(tail)
         section = tail[:next_heading.start()] if next_heading else tail
-        files = [token for token in _BACKTICK_RE.findall(section)
-                 if _looks_like_path(token)]
+        files = _files_in_section(section)
     return {
         "area": area_match.group(1).strip() if area_match else "",
         "depends_on": depends_on,
         "files": files,
     }
+
+
+def _files_in_section(section):
+    """The paths a `## Files` section declares, backticked or bare.
+
+    Both forms count, because a planner writing scope by hand naturally
+    writes one bare path per line:
+
+        ## Files
+
+        src/parser.py
+        tests/test_parser.py
+
+    and only one of those is a backticked token. Accepting the bare form is
+    what makes the declaration mean what it says — a `## Files` list that
+    silently parsed as empty would quietly cost a mission its previous-work
+    context, with nothing to show for it. A bare candidate still has to pass
+    `_looks_like_path`, so a prose line ("whatever the tests need") is not
+    mistaken for a path, and duplicates across both forms collapse.
+    """
+    found = []
+    seen = set()
+
+    def offer(token):
+        token = token.strip().strip("`").rstrip(".,;")
+        if _looks_like_path(token):
+            key = token.lower()
+            if key not in seen:
+                seen.add(key)
+                found.append(token)
+
+    for token in _BACKTICK_RE.findall(section):
+        offer(token)
+    for line in section.splitlines():
+        stripped = line.strip()
+        if not stripped or "`" in stripped:
+            continue
+        # A bullet or numbered marker is not part of the path.
+        stripped = re.sub(r"^(?:[-*+]|\d+[.)])\s+", "", stripped)
+        for token in stripped.split(","):
+            offer(token)
+    return found
 
 
 def read_plan(root):
@@ -684,8 +753,12 @@ def _rewrite_state_head(root, session, number, task, receipt):
     updated = _replace_section(updated, "health", health)
     if updated is None:
         return False
+    # Replace the number, not append to it. The old spelling kept the matched
+    # digits in the replacement, so every recorded mission grew the header
+    # (`52` -> `5352` -> `535352` -> ...) and the control-plane health test
+    # failed on the first live mission that recorded an outcome.
     updated = _STATE_SESSION_RE.sub(
-        r"\g<1>" + str(session) + r"\g<2>", updated, count=1)
+        r"\g<1>" + str(session), updated, count=1)
     try:
         with open(os.path.join(root, AGENT_DIR, STATE_NAME), "w",
                   encoding="utf-8", newline="\n") as handle:

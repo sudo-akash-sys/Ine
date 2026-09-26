@@ -8,7 +8,7 @@ from unittest import mock
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from ine.autocomplete import _respond, complete, context, kind_snippet, resolve_kind
-from ine.dictionary import ValueShape, makeable, parents, suggest, value_hint
+from ine.dictionary import ValueShape, find, makeable, parents, suggest, value_hint
 
 
 class ContextTests(unittest.TestCase):
@@ -709,8 +709,12 @@ class ValidateTests(unittest.TestCase):
         self.assertIn("property", diag["message"])
 
     def test_validate_response_is_distinct_from_completion(self):
+        # `advisory` rides in the same response but under its own key: the
+        # diagnostics list itself stays lex+parse only.
         result = self.validate("make page\n")
-        self.assertEqual(result, {"validate": True, "diagnostics": []})
+        self.assertEqual(
+            result, {"validate": True, "diagnostics": [], "advisory": []}
+        )
         self.assertNotIn("context", result)
         self.assertNotIn("items", result)
 
@@ -745,6 +749,172 @@ class ValidateTests(unittest.TestCase):
         second = json.loads(proc.stdout.readline())
         self.assertNotIn("error", second)
         self.assertEqual([i["label"] for i in second["items"]], ['""'])
+        proc.stdin.close()
+        self.assertEqual(proc.wait(timeout=10), 0)
+
+
+class HoverTests(unittest.TestCase):
+    """The hover query ({"hover": true, "buffer", "line", "column"}) answers
+    with the dictionary meaning of the kind or property under the cursor, and
+    with an empty hover for a position that resolves to nothing.
+
+    It also pins the split that keeps the editor honest: a semantically
+    broken but parse-clean buffer reports its finding under `advisory` while
+    `validate.diagnostics` stays lex+parse only, so nothing semantic is ever
+    red-underlined."""
+
+    @staticmethod
+    def hover(buffer, line, column):
+        return complete(
+            {"hover": True, "buffer": buffer, "line": line, "column": column}
+        )
+
+    @staticmethod
+    def validate(buffer):
+        return complete({"validate": True, "buffer": buffer})
+
+    def test_hover_a_kind_returns_its_dictionary_meaning(self):
+        result = self.hover("make card\n", 0, 6)
+        self.assertTrue(result["hover"])
+        self.assertEqual(result["label"], "card")
+        self.assertEqual(result["meaning"], find("card")["meaning"])
+        self.assertEqual(
+            [item["label"] for item in result["items"]],
+            [item.text for item in suggest("card")],
+        )
+
+    def test_hover_a_bare_kind_word_without_make(self):
+        # The word names a kind whether or not the buffer declared it.
+        result = self.hover('page title "Home"\n', 0, 1)
+        self.assertEqual(result["label"], "page")
+        self.assertEqual(result["meaning"], find("page")["meaning"])
+
+    def test_hover_a_property_returns_what_the_dictionary_says(self):
+        result = self.hover('make page\npage title "Home"\n', 1, 7)
+        self.assertEqual(result["label"], "title")
+        self.assertEqual(result["meaning"], value_hint("page", "title"))
+
+    def test_hover_an_entity_resolves_to_its_declared_kind(self):
+        buffer = 'make 2 card\ncard-1 padding "compact"\n'
+        self.assertEqual(self.hover(buffer, 1, 2)["label"], "card")
+        self.assertEqual(self.hover(buffer, 1, 8)["label"], "padding")
+
+    def test_hover_either_side_of_inside_returns_a_kind(self):
+        buffer = "make card\nmake container\ncard inside container\n"
+        self.assertEqual(self.hover(buffer, 2, 1)["label"], "card")
+        self.assertEqual(self.hover(buffer, 2, 14)["label"], "container")
+
+    def test_hover_a_say_property_reference_returns_the_property(self):
+        buffer = 'make page\npage title "Home"\nsay page.title\n'
+        self.assertEqual(self.hover(buffer, 2, 6)["label"], "page")
+        self.assertEqual(self.hover(buffer, 2, 10)["label"], "title")
+
+    def test_hover_a_blank_position_returns_empty_items(self):
+        for buffer, line, column in [
+            ("make card\n", 0, 4),          # the space after `make`
+            ("\n", 0, 0),                   # a blank line
+            ("make card\n", 5, 0),          # a line the buffer does not have
+        ]:
+            result = self.hover(buffer, line, column)
+            self.assertTrue(result["hover"])
+            self.assertIsNone(result["label"])
+            self.assertEqual(result["items"], [])
+
+    def test_hover_an_unresolvable_position_returns_empty_items(self):
+        # A keyword, a value, a string, an unknown kind and a word the
+        # dictionary does not describe are all not ours to explain.
+        cases = [
+            ("make card\n", 0, 1),                          # `make`
+            ('make page\npage title "Home"\n', 1, 13),      # inside a string
+            ("make card\ncard padding comfortable\n", 1, 18),  # a value
+            ("make zzz\n", 0, 6),                           # an unknown kind
+            ("make card\ncard zzz \"x\"\n", 1, 6),          # an unknown property
+            ("make card # a card\n", 0, 12),                # inside a comment
+            ("make card\n", 0, 10),                         # past the line
+        ]
+        for buffer, line, column in cases:
+            result = self.hover(buffer, line, column)
+            self.assertIsNone(result["label"], (buffer, line, column))
+            self.assertEqual(result["items"], [], (buffer, line, column))
+
+    def test_hover_echoes_id_and_never_errors(self):
+        result = complete(
+            {"hover": True, "buffer": "make card\n", "line": 0, "column": 6, "id": 4}
+        )
+        self.assertEqual(result["id"], 4)
+        self.assertNotIn("error", result)
+        self.assertNotIn("context", result)
+
+    def test_advisory_reports_a_semantic_error_validate_stays_clean(self):
+        # Parse-clean, semantically invalid: a property on an entity that
+        # was never declared. The parser has nothing to say; `analyze` does.
+        buffer = 'page title "Home"\n'
+        result = self.validate(buffer)
+        self.assertEqual(result["diagnostics"], [])
+        self.assertEqual(len(result["advisory"]), 1)
+        finding = result["advisory"][0]
+        self.assertEqual(finding["line"], 0)
+        self.assertIn("not declared with 'make'", finding["message"])
+
+    def test_advisory_reports_double_parent_and_cycle(self):
+        # Both are semantic: the parser accepts them.
+        double = "make page\nmake card\ncard inside page\ncard inside page\n"
+        result = self.validate(double)
+        self.assertEqual(result["diagnostics"], [])
+        self.assertIn("already inside", result["advisory"][0]["message"])
+        cycle = (
+            "make page\nmake card\npage inside card\ncard inside page\n"
+        )
+        result = self.validate(cycle)
+        self.assertEqual(result["diagnostics"], [])
+        self.assertIn("cycle", result["advisory"][0]["message"])
+
+    def test_advisory_is_empty_for_a_clean_buffer(self):
+        self.assertEqual(
+            self.validate('make page\npage title "Home"\n')["advisory"], []
+        )
+
+    def test_advisory_degrades_to_empty_when_the_buffer_does_not_parse(self):
+        # No semantic model to check: a lex error is diagnostics' business.
+        result = self.validate("make @\n")
+        self.assertEqual(len(result["diagnostics"]), 1)
+        self.assertEqual(result["advisory"], [])
+
+    @staticmethod
+    def _script():
+        return os.path.join(
+            os.path.dirname(__file__), "..", "src", "ine", "autocomplete.py"
+        )
+
+    def test_hover_then_validate_in_one_live_session(self):
+        # Protocol liveness: the hover and validation queries share the one
+        # long-lived worker and answer one-for-one.
+        proc = subprocess.Popen(
+            [sys.executable, os.path.abspath(self._script())],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+        requests = [
+            ({"hover": True, "buffer": "make card\n", "line": 0, "column": 6, "id": 1},
+             lambda r: (self.assertEqual(r["id"], 1),
+                        self.assertEqual(r["label"], "card"))),
+            ({"validate": True, "buffer": 'page title "Home"\n', "id": 2},
+             lambda r: (self.assertEqual(r["id"], 2),
+                        self.assertEqual(r["diagnostics"], []),
+                        self.assertEqual(len(r["advisory"]), 1))),
+            ({"hover": True, "buffer": "make card\n", "line": 0, "column": 4, "id": 3},
+             lambda r: (self.assertEqual(r["id"], 3),
+                        self.assertIsNone(r["label"]),
+                        self.assertEqual(r["items"], []))),
+        ]
+        for payload, check in requests:
+            proc.stdin.write(json.dumps(payload) + "\n")
+            proc.stdin.flush()
+            result = json.loads(proc.stdout.readline())
+            self.assertNotIn("error", result)
+            check(result)
         proc.stdin.close()
         self.assertEqual(proc.wait(timeout=10), 0)
 

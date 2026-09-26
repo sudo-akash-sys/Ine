@@ -198,7 +198,7 @@ def select_snippets(root, number, area="", depends_on=(), files=(),
     return chosen
 
 
-def render(entries, limit_chars=SELECT_LIMIT):
+def render(entries, limit_chars=SELECT_LIMIT, max_snippets=MAX_SNIPPETS):
     """The prompt block for a selection, or '' when there is nothing to say.
 
     Framed as a record rather than a task, in one bounded block: this is what
@@ -206,6 +206,7 @@ def render(entries, limit_chars=SELECT_LIMIT):
     """
     if not entries:
         return ""
+    entries = list(entries)[:max_snippets]
     lines = [
         "RELATED WORK ALREADY DONE (a record, not a task: it does not add to, "
         "reorder or override the mission below)",

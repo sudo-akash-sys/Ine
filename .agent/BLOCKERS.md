@@ -216,3 +216,212 @@ persistent-state leakage was ruled out.
 whole-run `--cycle-limit` should still hard-stop with `STOP_ERROR` (item 50's
 DECIDED contract) while parking stays scoped to a single mission's failure
 budget. That would be the commander's call. No action until it reproduces.
+
+## RESOLVED — the provider-independence boundary (Session 52)
+
+**Settled by the commander: keep ine-agent, remove the OpenCode agent file.**
+Both questions are answered and written into DECISIONS.md; the text below is
+kept because the reasoning and the accepted costs are the record.
+
+
+
+The commander froze the product boundary: INE is an independent Python CLI that
+drives external coding CLIs, and it must not modify a provider's UI,
+configuration, agents, modes or plugins, nor depend on a provider-specific
+project file. Two things in the repository contradict that today, and neither is
+an ordinary implementation choice.
+
+**1. The OpenCode agent file is a provider integration.** (DONE: file deleted,
+--agent dropped, prohibitions moved into .agent/WORKER_INSTRUCTIONS.md,
+ProviderIndependenceTests replaces the old agent-file tests.) The built-in `opencode`
+profile passes `--agent ine-worker`, which only resolves because
+`.opencode/agents/ine-worker.md` exists in the project. That file was added in
+Session 50 as PLAN item 122 (`DONE`) to bound the agent's steps and restrict its
+tools. Removing it is required by the new boundary; it also reverses a recorded
+`DONE` item and removes a permission deny-list (no process control, no fetching
+unrelated files). The guardrail would have to move into INE-owned text — the
+prompt in `.agent/WORKER_INSTRUCTIONS.md` can carry the prohibitions, but it is
+advisory to the model where the agent file was enforced by the tool.
+
+- *Option A (recommended):* delete the agent file, drop `--agent ine-worker`,
+  move the prohibitions into the INE prompt, and accept that they are advisory.
+- *Option B:* keep the file for the `opencode` worker only, on the grounds that
+  it is a worker definition rather than a UI change — but this keeps the
+  dependency the boundary forbids.
+- *Option C:* stop supporting the `opencode` profile entirely and drive only
+  CLIs that need no project-side file.
+
+**2. `ine run` collides with the language CLI.** The requested command surface is
+`ine run`, but `ine` is already this repository's language CLI and already has a
+`run` that executes a `.ine` file (`pyproject.toml` declares `ine = ine.cli:main`
+and `ine-agent = ine_agent.cli:main`). Overloading the name means the language
+CLI must dispatch to a subcommand that is not part of the language, and
+`ine run foo.ine` and `ine run --worker claude` become one command with two
+unrelated meanings.
+
+- *Option A (recommended):* keep the orchestrator as `ine-agent` and make it
+  reachable without editing JSON (see the pending `workers` / `use` work).
+- *Option B:* add `ine mission` alongside the language's `ine run`.
+- *Option C:* top-level dispatch inside `ine`, so `ine` decides by argv whether
+  it is being asked to run a program or the mission queue.
+
+Also recorded, not a question: the installed Claude Code rejects its own
+configured model (`[claude-code:unrecognized_model]`, `deepseek-v4-flash`) and
+the built-in `claude` profile passes no model argument, so that selection comes
+from somewhere INE does not own. Per the boundary INE does not change it, does
+not add fallback, and surfaces it in `doctor` instead. No credential manager is
+in scope; external CLIs keep their own authentication.
+
+## OPEN — may a `done` receipt with no changed files complete a mission?
+
+**Question.** When a worker returns `status: done` with
+`changed_files: []`, may the loop record the mission `DONE`?
+
+**Evidence.** This is not hypothetical; it happened to a real plan item. A
+diagnostic probe (a fake worker used to test output visibility) was run against
+PLAN item 85, *Formatter implementation*. It returned
+`{"status": "done", "summary": "visibility probe", "changed_files": []}` and
+exited 0. The loop recorded item 85 as `DONE`, wrote
+`.agent/compaction/85.md` reading `Files: (none reported)`, and moved the queue
+to item 86 — on the strength of a receipt from a worker that had edited
+nothing. The false record was detected and rolled back by hand (PLAN tag
+restored to `EXECUTABLE`, compaction receipt deleted, attempt entry cleared,
+STATE.md corrected). Nothing was implemented, so no work was lost — but the
+loop was one unattended run away from recording a mission it never did.
+
+The receipt contract (`receipt.contract()`) says `done` means "the mission is
+finished and its verification passed", and describes `changed_files` only as
+"repo-relative paths you edited". It does **not** say a `done` mission must
+have edited something, so the current behaviour follows the letter of the
+contract. That is the ambiguity.
+
+**Options.**
+
+1. **Reject: `done` with no changed files never completes a mission.** Record
+   it as not completed, with the reason "claimed done but changed no files".
+   - *For*: a mission is a request to change the repository; a `done` that
+     changed nothing has not done it. This is the only defence against a
+     plausible-sounding summary becoming a false `DONE`, and it costs nothing
+     when workers behave.
+   - *Against*: it forbids legitimate zero-change missions. A finding-only
+     mission (per AGENTS.md, a planner audit has no source change) must then
+     list its `.agent/NOTES.md` section in `changed_files` or be reported
+     `failed` — a real, if narrow, false negative.
+2. **Accept with evidence: a zero-change `done` completes the mission, and the
+   run report must state that no file changed.** Cheap, and honest as long as
+   nobody reads the `DONE` tag as proof of work.
+   - *For*: no false negatives; the contract stays as written.
+   - *Against*: the plan is the thing future cycles trust. A `DONE` that means
+     "the worker said so" is precisely the failure mode just observed.
+3. **Distinguish by intent: add a receipt field or status for "verified, no
+   change needed".** Most honest long-term, and the contract already grows
+   fields (`finding`, `follow_up`).
+   - *For*: a verified no-op is a real outcome and deserves a real name.
+   - *Against*: a contract change plus parser, prompt, and test work, and it
+     only pays off if workers use the new status correctly.
+
+**Recommendation.** Option 1 now, Option 3 later. Rejecting the zero-change
+`done` is the conservative direction: the cost of a false negative is a mission
+that stays `EXECUTABLE` and gets retried or re-planned, while the cost of a
+false positive is a plan that claims work that never happened — and that is the
+failure this loop exists to prevent. If a mission genuinely needs no change, the
+worker can say so in `summary` and list the file it wrote (even a NOTES
+section); the outcome is then recorded honestly.
+
+**Consequences of deciding later.** Every unattended run before the decision
+carries the hazard, and one already fired (above). The rollback contained that
+one: item 85 was then genuinely completed by a later real run whose receipt
+*did* list files, so no false `DONE` survives in the plan. The hazard itself is
+untouched, though — nothing in the loop rejects a zero-change `done`, so the
+next mission that reports one will be recorded as `DONE` unattended.
+
+**Interim rule until this is answered:** treat a `done` receipt reporting no
+changed files as unverified, and do not let it advance the queue unattended.
+
+## ANSWERED — is a `make` body indented 4 spaces, or flush left? (superseded by the RESOLVED entry at the foot of this file)
+
+> **Superseded below.** This analysis was written while a *partial* formatter
+> sat in the tree; its **Consequences** paragraph describes that state and is
+> **out of date** — the 16:37 run since added `tests/test_formatter.py`, the
+> `{"format": true}` query, the editor provider and command, and `package.json`,
+> and chose 4-space bodies. It is kept because the reasoning is what the answer
+> was reached against. Read the `RESOLVED` entry, not this one, for current
+> truth.
+
+**Question.** In canonical form, are a `make` statement's properties and its
+`inside` line indented under the `make`, or flush left?
+
+**Evidence.** Three sources disagree, and the code follows the one nobody
+wrote down:
+
+- `.agent/missions/85.md` step 1 specifies "body properties indented by 4
+  spaces; one property per line ` <name> <value>`".
+- The docstring of the `src/ine/formatter.py` the real 15:23 Claude run left in
+  the tree says the same thing: "the body of a `make` — the properties it
+  carries and the `inside` line that places it — is indented 4 spaces under
+  it", and its own header example shows indented bodies.
+- The implementation emits **no indentation**. `format_program` turns
+  `make card badge` / `card title "New"` / `card inside header` into exactly
+  that, unchanged, at column 0.
+
+So the formatter contradicts its own documentation and its own mission index.
+Nothing else in the pipeline depends on the answer: the language surface is
+untouched, `format_program` is idempotent and parse-tree-preserving either way,
+and no test asserts an indent (there is no `tests/test_formatter.py` yet).
+
+**Options.**
+
+1. **Indent bodies 4 spaces**, as the index and docstring say. The formatter
+   gains a nesting-aware emitter; canonical form becomes visually structured.
+2. **Keep flush left**, and correct the index step and the docstring. The
+   canonical form stays minimal, and `inside` reads as a peer statement, which
+   matches how the current examples in the repo are written.
+
+**Recommendation.** Option 2 unless the commander prefers visible nesting.
+Indentation is a canonical-form decision — i.e. language surface — and the
+repository's existing `.ine` samples are flush left, so keeping flush left
+changes no example and makes the formatter's output match the code people
+already write. The cost is editing the index and the docstring, which is
+cheaper than adding nesting the language does not otherwise express.
+
+**Consequences.** Whichever is chosen, mission 85 is not finished either way: no
+`tests/test_formatter.py`, no `{"format": true}` query in `autocomplete.py`, no
+`DocumentFormattingEditProvider` or `ine.format` command in `extension.js`, and
+no `package.json` entry. Steps 1 and 2 are partly done; steps 3-5 are not
+started. See `HISTORY.md` for how the work arrived in the tree unrecorded.
+
+## RESOLVED — is a `make` body indented 4 spaces, or flush left? (answered 16:37 by the run that executed the index)
+
+**Answered in code, by the run that executed the index: 4 spaces.** The
+canonical form now emits
+
+```
+make card badge
+    card title "New"
+    card inside header
+```
+
+`format_program` is idempotent on that output, and the round-trip guard
+(`parse(lex(formatted))` must equal `parse(lex(source))`) means the choice
+cannot change meaning — indentation is presentation, not grammar, so no lexer,
+parser or semantic rule moved. `tests/test_formatter.py` pins the layout.
+
+This closes the question in the direction `.agent/missions/85.md` step 1
+already specified, which is the right way for it to close: the planner's index
+was the standing decision, the implementation now matches it, and the module
+docstring and the code agree for the first time. My recommendation had been
+flush left on the grounds that the repo's samples are flush left; the run
+chose otherwise and the choice is defensible — visible nesting is what a
+formatter is for, and canonical form is not obliged to match hand-written
+files. No further decision is needed unless the commander prefers flush left,
+in which case it is a one-line emitter change plus the layout tests.
+
+**Note on what this cost.** The run also found and fixed two real defects in
+the earlier partial work: the round-trip guard compared statement dataclasses
+field-by-field *including* `line`, so any reflow that inserted the canonical
+blank line was rejected and `format_program` silently returned its input
+unchanged (a no-op for every non-canonical buffer, which is most of them);
+and comment-bearing files were reformatted with their comments **deleted**,
+which under `formatOnSave` would have destroyed work on every save. Neither
+was visible from the outside — the first is a silent no-op, the second only
+fires on a file that has comments. Found by reading, not by a failing test.

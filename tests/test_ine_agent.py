@@ -5,6 +5,7 @@ with a scripted stub, and CLI-level tests run with --dry-run or against
 plan fixtures with no executable work.
 """
 
+import contextlib
 import io
 import json
 import os
@@ -24,11 +25,15 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from ine_agent import cli
+from ine_agent import budget
 from ine_agent import compaction
 from ine_agent import measure
 from ine_agent import profiles
 from ine_agent import receipt as receipt_format
+from ine_agent import supervisor as supervisor_module
+from ine_agent import state as state_module
 from ine_agent import usage
+from ine_agent import verify
 from ine_agent import worker
 from ine_agent.notifier import (
     NOTIFY_ENV, NullNotifier, WindowsPowerShellNotifier, create_notifier,
@@ -36,7 +41,7 @@ from ine_agent.notifier import (
 )
 from ine_agent.receipt import Receipt, parse_receipt
 from ine_agent.state import (
-    ProjectError, append_blocker, append_item_remark, begin_run_report,
+    OPTIONAL_TOKENS, REQUIRED_TOKENS, ProjectError, append_blocker, append_item_remark, begin_run_report,
     end_run_report, find_project_root, human_decision_indicated, mark_blocked,
     mark_done, mission_index_path, mission_index_relpath,
     next_session_number, output_marks_human_decision, read_mission_index,
@@ -50,7 +55,7 @@ from ine_agent.supervisor import (
     classify_action, clear_mission_attempts, diagnose_output, diagnosis_prompt,
     diagnosis_trace, impl_prompt, parked_missions, parse_classification,
     read_attempts, record_failure, retry_block, review_prompt,
-    worktree_signature,
+    worktree_signature, worker_instructions,
 )
 from ine_agent.worker import (CliWorker, OpenCodeWorker, StubWorker,
                               _split_command, build_worker)
@@ -121,9 +126,78 @@ def _leftover_fixture_dirs():
                   if name.startswith(FIXTURE_PREFIXES))
 
 
+def run_cli_process(args, **kwargs):
+    """Run `cli.py` as a real subprocess and decode it as UTF-8 on both sides.
+
+    `text=True` alone decodes with the *parent's* preferred encoding while
+    the child writes with its own, so the two disagree the moment one of
+    them is started under `-X utf8` — which is how the whole suite is
+    usually run here. The help text carries an em-dash, so the mismatch
+    surfaced as a UnicodeDecodeError in a reader thread and three tests
+    that passed or failed depending on the command line used to run them.
+    Pinning both ends is what makes a test result mean the same thing
+    twice.
+    """
+    env = dict(os.environ, PYTHONIOENCODING="utf-8")
+    return subprocess.run(
+        [sys.executable, os.path.join(REPO_ROOT, "src", "ine_agent",
+                                      "cli.py"), *args],
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+        env=env, **kwargs)
+
+
+_WORKING_PYTHON = []
+
+
+def working_python():
+    """An interpreter this process can actually start, or None.
+
+    Probed the way erify starts a check — same executable, and from a
+    working directory — because on this machine the Windows Store alias that
+    sys.executable names only resolves for some callers, and a test that
+    shells out to it then fails with [WinError 2] for a reason that has
+    nothing to do with what it is testing. Probed once and remembered.
+    """
+    if _WORKING_PYTHON:
+        return _WORKING_PYTHON[0]
+    for candidate in (sys.executable, shutil.which("python"),
+                      shutil.which("python3")):
+        if not candidate or not os.path.isfile(candidate):
+            continue
+        try:
+            subprocess.run([candidate, "-c", "pass"], cwd=REPO_ROOT,
+                           stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL, timeout=60)
+        except (OSError, subprocess.SubprocessError):
+            continue
+        _WORKING_PYTHON.append(candidate)
+        break
+    return _WORKING_PYTHON[0] if _WORKING_PYTHON else None
+
+
+def _report(root):
+    """The durable run report, as the next reader of it would see it."""
+    with open(run_report_path(root), "r", encoding="utf-8") as handle:
+        return handle.read()
+
+
+def shipped_instructions():
+    """The real `.agent/WORKER_INSTRUCTIONS.md`, for a fixture root.
+
+    Copied rather than faked so the prompt tests assert the prompt that is
+    actually shipped: a fixture that invented its own template would pass
+    every prompt assertion while the file a worker really receives was
+    empty of the rule under test.
+    """
+    source = os.path.join(REPO_ROOT, ".agent", "WORKER_INSTRUCTIONS.md")
+    with open(source, "r", encoding="utf-8") as handle:
+        return handle.read()
+
+
 def make_root(plan, state_text="state", history_text="history",
               blockers_text="blockers", mission_prompt_text=None,
-              worker_prompt_text=None, mission_text=None, indexes=True):
+              worker_prompt_text=None, mission_text=None, indexes=True,
+              instructions_text=None):
     root = make_tmp_dir("ineagent-")
     agent = os.path.join(root, ".agent")
     os.makedirs(agent)
@@ -135,6 +209,10 @@ def make_root(plan, state_text="state", history_text="history",
         handle.write(history_text)
     with open(os.path.join(agent, "BLOCKERS.md"), "w", encoding="utf-8") as handle:
         handle.write(blockers_text)
+    with open(os.path.join(agent, "WORKER_INSTRUCTIONS.md"), "w",
+              encoding="utf-8") as handle:
+        handle.write(shipped_instructions() if instructions_text is None
+                     else instructions_text)
     if mission_prompt_text is not None:
         with open(os.path.join(agent, "MISSION_PROMPT.md"), "w",
                   encoding="utf-8") as handle:
@@ -543,6 +621,97 @@ class MissionTests(unittest.TestCase):
         # The two documents the loop used to re-send in full every cycle.
         self.assertNotIn("Always read before writing.", prompt)
         self.assertNotIn("Ine is a language.", prompt)
+
+    def test_impl_prompt_is_built_from_the_editable_instructions_file(self):
+        # The whole point of the file: what the worker is told is prose you
+        # edit, so a change to that prose has to reach the prompt with no
+        # change to the loop at all.
+        root = make_root(
+            plan_containing([("EXECUTABLE", "do the thing")]),
+            instructions_text=(
+                "Speak only in haiku.\n\n{{MISSION}}\n\n{{RECEIPT}}\n"),
+        )
+        prompt = impl_prompt(root, read_plan(root).first_executable())
+        self.assertIn("Speak only in haiku.", prompt)
+        self.assertIn("do the thing", prompt)
+        self.assertIn(receipt_format.MARKER, prompt)
+
+    def test_impl_prompt_leaves_no_placeholder_behind(self):
+        root = make_root(plan_containing([("EXECUTABLE", "do the thing")]))
+        prompt = impl_prompt(root, read_plan(root).first_executable())
+        for token in REQUIRED_TOKENS + OPTIONAL_TOKENS:
+            self.assertNotIn(token, prompt)
+
+    def test_a_bare_brace_in_the_instructions_is_not_a_placeholder(self):
+        # Substitution is a literal replace, not str.format, so prose that
+        # happens to contain a brace — an example, a regex, a dict — cannot
+        # crash the run or swallow the mission.
+        root = make_root(
+            plan_containing([("EXECUTABLE", "do the thing")]),
+            instructions_text=(
+                "Match /a{2,3}/ and {oops} literally.\n\n{{MISSION}}\n\n"
+                "{{RECEIPT}}\n"),
+        )
+        prompt = impl_prompt(root, read_plan(root).first_executable())
+        self.assertIn("Match /a{2,3}/ and {oops} literally.", prompt)
+        self.assertIn("do the thing", prompt)
+
+    def test_missing_instructions_file_is_a_remedy_not_a_crash(self):
+        root = make_root(plan_containing([("EXECUTABLE", "do the thing")]))
+        os.remove(os.path.join(root, ".agent", "WORKER_INSTRUCTIONS.md"))
+        with self.assertRaises(ProjectError) as caught:
+            impl_prompt(root, read_plan(root).first_executable())
+        message = str(caught.exception)
+        self.assertIn("WORKER_INSTRUCTIONS.md", message)
+        self.assertIn("restore it", message)
+
+    def test_instructions_with_no_placeholder_are_refused(self):
+        # A template that lost its tokens would send a worker a prompt with
+        # no mission and nothing to report in, and only after the work was
+        # paid for. Caught at build time instead.
+        root = make_root(
+            plan_containing([("EXECUTABLE", "do the thing")]),
+            instructions_text="Just do the mission, good luck.\n")
+        with self.assertRaises(ProjectError) as caught:
+            impl_prompt(root, read_plan(root).first_executable())
+        message = str(caught.exception)
+        self.assertIn("no placeholders at all", message)
+        self.assertIn("WORKER_INSTRUCTIONS.md", message)
+
+    def test_instructions_missing_the_receipt_token_name_it(self):
+        root = make_root(
+            plan_containing([("EXECUTABLE", "do the thing")]),
+            instructions_text="Carry out {{MISSION}} and stop.\n")
+        with self.assertRaises(ProjectError) as caught:
+            impl_prompt(root, read_plan(root).first_executable())
+        message = str(caught.exception)
+        self.assertIn("{{RECEIPT}}", message)
+        self.assertNotIn("{{MISSION}} and", message)
+
+    def test_doctor_reports_the_instructions_file_it_would_use(self):
+        root = make_root(plan_containing([("EXECUTABLE", "x")]))
+        fake = os.path.join(root, "fake-opencode")
+        open(fake, "w").close()
+        buffer = io.StringIO()
+        with mock.patch.dict(os.environ, {"INE_AGENT_OPENCODE": fake},
+                             clear=False):
+            code, _ = cli._describe_worker(root, "opencode", "", out=buffer)
+        self.assertEqual(code, 0)
+        self.assertIn("WORKER_INSTRUCTIONS.md", buffer.getvalue())
+        self.assertIn("you edit this", buffer.getvalue())
+
+    def test_doctor_fails_when_the_instructions_file_is_unusable(self):
+        root = make_root(plan_containing([("EXECUTABLE", "x")]))
+        fake = os.path.join(root, "fake-opencode")
+        open(fake, "w").close()
+        os.remove(os.path.join(root, ".agent", "WORKER_INSTRUCTIONS.md"))
+        err = io.StringIO()
+        with mock.patch.dict(os.environ, {"INE_AGENT_OPENCODE": fake},
+                             clear=False), mock.patch.object(sys, "stderr", err):
+            code, _ = cli._describe_worker(root, "opencode", "",
+                                           out=io.StringIO())
+        self.assertEqual(code, 1)
+        self.assertIn("WORKER_INSTRUCTIONS.md", err.getvalue())
 
     def test_impl_prompt_omits_every_control_plane_document(self):
         # STATE, HISTORY, BLOCKERS and the plan body were embedded whole (or
@@ -2476,7 +2645,7 @@ class MeasureTests(unittest.TestCase):
 
     def test_aggregate_separates_barren_runs_from_productive_ones(self):
         root = self._root(self.REPORT)
-        runs, totals = measure.summarize(root)
+        runs, totals, _ = measure.summarize(root)
         self.assertEqual(totals["runs"], 4)
         self.assertEqual(totals["cycles"], 5)
         self.assertEqual(totals["completed"], 1)
@@ -2491,7 +2660,7 @@ class MeasureTests(unittest.TestCase):
     def test_totals_report_parked_missions_from_the_ledger(self):
         root = self._root(self.REPORT)
         record_failure(root, "an id", "unknown", "no idea", "stuck")
-        _, totals = measure.summarize(root)
+        _, totals, _ = measure.summarize(root)
         self.assertEqual(totals["parked_missions"], 1)
         self.assertIn("parked missions still in the ledger: 1",
                       "\n".join(measure.format_totals(totals)))
@@ -2509,13 +2678,570 @@ class MeasureTests(unittest.TestCase):
             self.assertEqual(measure.main(["--root", TMP]), 1)
 
 
+class BudgetPolicyTests(unittest.TestCase):
+    """The context/token budget: configurable, local, and never a truncation.
+
+    A budget is a safeguard the commander can see and change, not a mechanism
+    that quietly edits what a mission asked for. These pin both halves: the
+    misconfiguration is an error, and an over-budget prompt is sent whole and
+    reported.
+    """
+
+    def _root(self, config=None):
+        root = make_root(plan_containing([("EXECUTABLE", "do the thing")]))
+        if config is not None:
+            with open(os.path.join(root, ".agent", "workers.json"), "w",
+                      encoding="utf-8") as handle:
+                handle.write(config)
+        return root
+
+    def _facts(self, root, policy=None):
+        facts = {}
+        impl_prompt(root, read_plan(root).first_executable(), policy, facts)
+        return facts
+
+    def test_the_defaults_are_the_conservative_numbers(self):
+        policy = budget.load_policy(self._root())
+        self.assertEqual(policy["max_prompt_chars"], 12000)
+        self.assertEqual(policy["max_previous_receipts"], 3)
+        self.assertEqual(policy["max_previous_receipt_chars"], 2000)
+        self.assertEqual(policy["max_attempts"], 1)
+        self.assertEqual(policy.configured, {})
+
+    def test_a_configured_policy_overrides_and_records_what_was_set(self):
+        policy = budget.load_policy(self._root(
+            '{"policy": {"max_prompt_chars": 20000, "max_attempts": 2}}'))
+        self.assertEqual(policy["max_prompt_chars"], 20000)
+        self.assertEqual(policy["max_attempts"], 2)
+        self.assertEqual(sorted(policy.configured),
+                         ["max_attempts", "max_prompt_chars"])
+        # Untouched keys keep their defaults rather than becoming absent.
+        self.assertEqual(policy["max_previous_receipts"], 3)
+
+    def test_a_misspelled_key_is_an_error_not_a_silent_default(self):
+        with self.assertRaises(budget.PolicyError) as caught:
+            budget.load_policy(self._root(
+                '{"policy": {"max_promt_chars": 20000}}'))
+        self.assertIn("max_promt_chars", str(caught.exception))
+
+    def test_a_nonsense_value_is_an_error_naming_the_key(self):
+        for value in ('"lots"', "-1", "true", "1.5"):
+            with self.assertRaises(budget.PolicyError) as caught:
+                budget.load_policy(self._root(
+                    '{"policy": {"max_prompt_chars": %s}}' % value))
+            self.assertIn("max_prompt_chars", str(caught.exception))
+
+    def test_an_unreadable_policy_file_is_an_error(self):
+        with self.assertRaises(budget.PolicyError):
+            budget.load_policy(self._root("{not json"))
+        with self.assertRaises(budget.PolicyError):
+            budget.load_policy(self._root('["a list"]'))
+
+    def test_the_prompt_size_is_measured_without_costing_a_request(self):
+        facts = self._facts(self._root())
+        self.assertGreater(facts["prompt_chars"], 0)
+        self.assertEqual(facts["prompt_lines"],
+                         len(facts["prompt"].splitlines())
+                         if "prompt" in facts else facts["prompt_lines"])
+        self.assertEqual(facts["approx_tokens"],
+                         -(-facts["prompt_chars"] // 4))
+        self.assertFalse(facts["over_budget"])
+
+    def test_an_over_budget_prompt_is_reported_and_still_sent_whole(self):
+        # The mission author put the context there. A cap is a report and a
+        # warning, never a reason to drop a declared file.
+        policy = budget.Policy(dict(budget.DEFAULTS, max_prompt_chars=200))
+        root = self._root()
+        facts = self._facts(root, policy)
+        self.assertTrue(facts["over_budget"])
+        self.assertEqual(facts["over_budget_by"],
+                         facts["prompt_chars"] - 200)
+        prompt = impl_prompt(root, read_plan(root).first_executable(), policy)
+        self.assertIn("do the thing", prompt)
+        self.assertIn(receipt_format.MARKER, prompt)
+
+    def test_the_receipt_caps_come_from_the_policy(self):
+        policy = budget.Policy(dict(budget.DEFAULTS,
+                                    max_previous_receipts=1,
+                                    max_previous_receipt_chars=120))
+        root = self._root()
+        out = io.StringIO()
+        Supervisor(root=root, out=out, worker_factory=lambda n: StubWorker([]),
+                   policy=policy, dry_run=True).run()
+        self.assertIn("at most 1 prior receipt(s) within 120 chars",
+                      out.getvalue())
+
+    def test_max_attempts_comes_from_the_policy_unless_stated(self):
+        root = self._root('{"policy": {"max_attempts": 3}}')
+        out = io.StringIO()
+        Supervisor(root=root, out=out, worker_factory=lambda n: StubWorker([]),
+                   dry_run=True).run()
+        self.assertIn("3 attempt(s) per mission", out.getvalue())
+        # An explicit value — even an explicit 1 — is the commander's
+        # statement and is used as given.
+        out = io.StringIO()
+        Supervisor(root=root, out=out, worker_factory=lambda n: StubWorker([]),
+                   max_attempts=1, dry_run=True).run()
+        self.assertIn("1 attempt(s) per mission", out.getvalue())
+
+    def test_bare_and_quoted_file_paths_are_both_declared_files(self):
+        root = make_root(plan_containing([("EXECUTABLE", "do the thing")]))
+        write_mission_index(root, 1, (
+            "# Mission 1\n\nGoal: go.\n\n## Files\n\n"
+            "src/ine_agent/cli.py\n`src/ine_agent/state.py`\n"))
+        facts = self._facts(root)
+        self.assertEqual(facts["files_referenced"], 2)
+        prompt = impl_prompt(root, read_plan(root).first_executable())
+        self.assertIn("src/ine_agent/cli.py", prompt)
+        self.assertIn("src/ine_agent/state.py", prompt)
+
+
+class VerificationTests(unittest.TestCase):
+    """Deterministic verification: configured, local, off by default, no model.
+
+    The supervisor-level tests drive the checks through the 
+unner seam, so
+    the wiring is asserted without depending on what this machine will launch;
+    	est_a_configured_check_really_executes covers the real process, and
+    skips when no interpreter can be started the way the supervisor starts one.
+    """
+
+    class _Passes:
+        returncode = 0
+        stdout = ""
+
+    class _Fails:
+        returncode = 3
+        stdout = "3 tests failed"
+
+    def _root(self, verify_config=None):
+        root = make_root(plan_containing([("EXECUTABLE", "do the thing")]))
+        if verify_config is not None:
+            with open(os.path.join(root, ".agent", "workers.json"), "w",
+                      encoding="utf-8") as handle:
+                handle.write(verify_config)
+        return root
+
+    def _config(self, *commands):
+        return json.dumps({"verify": list(commands)})
+
+    def _run(self, root, worker=None, runner=None):
+        if worker is None:
+            worker = StubWorker([])
+        out = io.StringIO()
+        code = Supervisor(root, worker_factory=lambda name: worker, out=out,
+                          usage_reporter=ZeroUsage(),
+                          verify_runner=runner).run()
+        return code, out.getvalue(), worker
+
+    def _done(self, summary="wired it"):
+        return StubWorker([(0, receipt_text(summary=summary))])
+
+    def test_no_configuration_means_nothing_extra_runs(self):
+        root = self._root()
+        self.assertEqual(verify.load_checks(root), [])
+        supervisor = Supervisor(root=root, out=io.StringIO(),
+                                worker_factory=lambda n: StubWorker([]))
+        self.assertEqual(supervisor.verify_checks, [])
+
+    def test_a_configured_check_runs_after_a_mission_reports_done(self):
+        root = self._root(self._config("some-check"))
+        code, out, _ = self._run(root, self._done(),
+                                 runner=lambda argv, cwd=None: self._Passes())
+        self.assertEqual(code, STOP_OK)
+        self.assertIn("verify: ok", out)
+        self.assertIn("verify: ok", _report(root))
+
+    def test_a_failing_check_stops_the_run_from_being_a_success(self):
+        root = self._root(self._config("some-check"))
+        code, out, _ = self._run(root, self._done("claims done"),
+                                 runner=lambda argv, cwd=None: self._Fails())
+        self.assertEqual(code, STOP_ERROR)
+        self.assertIn("verify: FAILED (exit 3)", out)
+        self.assertIn("3 tests failed", out)     # the tail is kept
+        self.assertIn("did not pass", out)
+        self.assertIn("verify: FAILED", _report(root))
+
+    def test_a_failing_check_does_not_re_run_the_mission(self):
+        # Re-running would meet the same deterministic check. The finding is
+        # recorded; the loop does not spend a second request arguing with it.
+        root = self._root(self._config("some-check"))
+        worker = self._done("claims done")
+        self._run(root, worker, runner=lambda argv, cwd=None: self._Fails())
+        self.assertEqual(len(worker.calls), 1)
+
+    def test_every_check_runs_even_after_one_fails(self):
+        seen = []
+
+        def runner(argv, cwd=None):
+            seen.append(argv)
+            return self._Fails() if len(seen) == 1 else self._Passes()
+
+        root = self._root(self._config("first", "second"))
+        code, out, _ = self._run(root, self._done(), runner=runner)
+        self.assertEqual(code, STOP_ERROR)
+        self.assertEqual(seen, [["first"], ["second"]])
+        self.assertEqual(out.count("verify:"), 2)
+
+    def test_nothing_is_verified_when_the_mission_did_not_finish(self):
+        # ailed is already the loop's own word for "not done"; running the
+        # checks would only add a second, vaguer opinion.
+        seen = []
+        root = self._root(self._config("some-check"))
+        code, out, _ = self._run(
+            root, StubWorker([(0, receipt_text(status="failed"))]),
+            runner=lambda argv, cwd=None: seen.append(argv))
+        self.assertEqual(seen, [])
+        self.assertNotIn("verify:", out)
+
+    def test_a_check_that_cannot_start_is_reported_not_raised(self):
+        def missing(argv, cwd=None):
+            raise OSError(2, "The system cannot find the file specified")
+
+        root = self._root(self._config("no-such-check"))
+        code, out, _ = self._run(root, self._done(), runner=missing)
+        self.assertEqual(code, STOP_ERROR)
+        self.assertIn("verify: FAILED", out)
+
+    def test_a_string_entry_and_an_argv_entry_both_work(self):
+        checks = verify.load_checks(self._root(json.dumps({"verify": [
+            "pytest -q tests", ["python", "-m", "ruff"]]})))
+        self.assertEqual(checks, [["pytest", "-q", "tests"],
+                                  ["python", "-m", "ruff"]])
+
+    def test_a_malformed_verify_list_is_an_error_naming_the_entry(self):
+        for document, needle in (
+                ('{"verify": []}', "non-empty list"),
+                ('{"verify": 5}', "non-empty list"),
+                ('{"verify": [5]}', "verify[1]"),
+                ('{"verify": [[]]}', "verify[1]"),
+                ('{"verify": [""]}', "verify[1]")):
+            with self.assertRaises(verify.VerifyError) as caught:
+                verify.load_checks(self._root(document))
+            self.assertIn(needle, str(caught.exception))
+
+    def test_a_check_really_executes_and_its_exit_code_is_honoured(self):
+        # The one test that starts a real process, and the reason the seam
+        # exists: on some Windows installs sys.executable is an app-execution
+        # alias that only the launching shell can resolve. Skipped there, not
+        # failed — the wiring is covered above either way.
+        python = working_python()
+        if python is None:
+            self.skipTest("no interpreter this process can launch with a cwd")
+        root = self._root(self._config([python, "-c", "pass"]))
+        code, out, _ = self._run(root, self._done())
+        self.assertEqual(code, STOP_OK)
+        self.assertIn("verify: ok", out)
+
+    def test_a_check_is_launched_without_the_operators_stdin(self):
+        # A check that stops to ask a question must not inherit the console:
+        # it would stall until the timeout and only then produce the report
+        # explaining the stall. The spy passes everything else through,
+        # because `verify.subprocess` is the shared subprocess module.
+        probe = "ine-verify-stdin-probe"
+        seen = {}
+        real_run = subprocess.run
+
+        def spy(argv, **kwargs):
+            if argv and argv[0] == probe:
+                seen.update(kwargs)
+                return subprocess.CompletedProcess(argv, 0, stdout="ok")
+            return real_run(argv, **kwargs)
+
+        root = self._root(self._config([probe]))
+        with mock.patch.object(verify.subprocess, "run", spy):
+            code, out, _ = self._run(root, self._done())
+        self.assertEqual(code, STOP_OK)
+        self.assertEqual(seen.get("stdin"), subprocess.DEVNULL)
+
+    def test_a_hanging_check_times_out_rather_than_running_forever(self):
+        # Raised through the seam instead of by really sleeping: a killed
+        # process keeps its working directory locked on Windows, which would
+        # leak the fixture root this test creates.
+        def hang(argv, cwd=None):
+            raise subprocess.TimeoutExpired(argv, 1)
+
+        results = verify.run_checks(
+            make_tmp_dir("ineagent-"), [["sleep-forever"]],
+            timeout=1, runner=hang)
+        self.assertTrue(results[0]["timed_out"])
+        self.assertFalse(results[0]["ok"])
+        self.assertIn("TIMED OUT", verify.format_result(results[0]))
+
+    def test_a_checks_output_is_truncated_to_a_tail(self):
+        # A chatty check must not be able to fill the run report. The bound is
+        # the subject, not the printing.
+        class Chatty:
+            returncode = 0
+            stdout = "x" * 5000
+
+        results = verify.run_checks(
+            make_tmp_dir("ineagent-"), [["anything"]],
+            runner=lambda argv, cwd=None: Chatty())
+        self.assertTrue(results[0]["ok"])
+        self.assertLessEqual(len(results[0]["tail"]), verify.TAIL_CHARS + 3)
+        self.assertTrue(results[0]["tail"].startswith("..."))
+
+    def test_the_dry_run_reports_the_checks_without_running_them(self):
+        root = self._root(self._config("python -m pytest -q"))
+        out = io.StringIO()
+        Supervisor(root=root, out=out, dry_run=True,
+                   worker_factory=lambda n: StubWorker([])).run()
+        self.assertIn("verify     : 1 deterministic check(s)", out.getvalue())
+        self.assertIn("python -m pytest -q", out.getvalue())
+
+    def test_a_bad_config_is_reported_by_the_cli_not_crashed_out_of(self):
+        # A traceback is the wrong answer to "your workers.json is wrong":
+        # the commander reads stderr, and the remedy is in the message.
+        for document, needle in (('{"verify": []}', "non-empty list"),
+                                 ('{"verify": [5]}', "verify[1]"),
+                                 ('{"policy": {"max_attempts": -1}}',
+                                  "max_attempts"),
+                                 ('{"policy": {"max_attemts": 2}}',
+                                  "unknown key")):
+            root = self._root(document)
+            stderr = io.StringIO()
+            with contextlib.redirect_stderr(stderr):
+                code = cli.main(["run", "--root", root, "--dry-run"])
+            self.assertEqual(code, 1)
+            self.assertIn("error:", stderr.getvalue())
+            self.assertIn(needle, stderr.getvalue())
+
+    def test_verification_cannot_call_a_worker(self):
+        # The invariant that matters, and it is structural rather than
+        # editorial: the module cannot reach a worker, because it imports
+        # neither the worker factory nor the supervisor it lives inside.
+        source = io.open(os.path.join(REPO_ROOT, "src", "ine_agent", "verify.py"),
+                         encoding="utf-8").read()
+        for forbidden in ("ine_agent.worker", "ine_agent.supervisor",
+                          "from .worker", "from .supervisor",
+                          "build_worker", "impl_prompt"):
+            self.assertNotIn(forbidden, source)
+
+class PerMissionCostTests(unittest.TestCase):
+    """What one mission cost: prompt size in, provider usage out, per mission.
+
+    Both numbers are written per mission rather than per run, because a run
+    total cannot answer the question that matters — was THIS mission cheap?
+    """
+
+    def _root(self):
+        return make_root(plan_containing([("EXECUTABLE", "do the thing")]))
+
+    def test_each_mission_records_its_own_prompt_size(self):
+        root = self._root()
+        out = io.StringIO()
+        worker = StubWorker([(0, receipt_text(summary="done"))])
+        Supervisor(root, worker_factory=lambda n: worker, out=out,
+                   usage_reporter=ZeroUsage()).run()
+        report = _report(root)
+        self.assertRegex(report, r"- \[mission 1\] context: \d+ chars/\d+ "
+                                 r"lines \(~\d+ tokens\), \d+ declared "
+                                 r"file\(s\), \d+ previous receipt\(s\), "
+                                 r"budget \d+ chars")
+
+    def test_missing_provider_usage_says_so_rather_than_reporting_zero(self):
+        # Zero would read as "this mission was free", which is a claim about
+        # the provider this loop cannot make on its behalf.
+        root = self._root()
+        out = io.StringIO()
+        worker = StubWorker([(0, receipt_text(summary="done"))])
+        Supervisor(root, worker_factory=lambda n: worker, out=out,
+                   usage_reporter=ZeroUsage()).run()
+        self.assertIn("- [mission 1] usage: status=done", _report(root))
+        self.assertIn("usage_unavailable", _report(root))
+        self.assertIn("nothing is estimated", _report(root))
+
+    def test_observed_usage_is_attributed_to_the_mission_that_caused_it(self):
+        root = self._root()
+        spent = dict(usage.ZERO, requests=3, tokens_input=300,
+                     tokens_output=30, cost=0.5,
+                     by_model={"test-model": 3.0}, day_requests=3)
+        # The supervisor takes a snapshot before the run, one before this
+        # mission, and one after it; the delta between the last two is this
+        # mission's own cost.
+        usage_reporter = ZeroUsage([dict(usage.ZERO), dict(usage.ZERO), spent])
+        out = io.StringIO()
+        worker = StubWorker([(0, receipt_text(summary="done"))])
+        Supervisor(root, worker_factory=lambda n: worker, out=out,
+                   usage_reporter=usage_reporter).run()
+        report = _report(root)
+        self.assertIn("model=test-model", report)
+        self.assertIn("+3 requests", report)
+        self.assertIn("+300 in / +30 out tokens", report)
+        self.assertNotIn("usage_unavailable", report)
+
+    def test_the_measurement_is_never_sent_to_the_worker(self):
+        root = self._root()
+        out = io.StringIO()
+        worker = StubWorker([(0, receipt_text(summary="done"))])
+        Supervisor(root, worker_factory=lambda n: worker, out=out,
+                   usage_reporter=ZeroUsage()).run()
+        prompt = worker.calls[0]["prompt"]
+        for leak in ("context:", "usage_unavailable", "budget 12000",
+                     "chars/~"):
+            self.assertNotIn(leak, prompt)
+
+
+class MeasureMissionCostTests(unittest.TestCase):
+    """`measure` reads the per-mission lines back, and the CLI reaches it."""
+
+    REPORT = (
+        "# .agent/RUN_REPORTS.md\n"
+        "\n"
+        "### run 2026-09-26 10:00:00 (pid 1)\n"
+        "- command: ine-agent run\n"
+        "- mission [cycle 1]: the first mission\n"
+        "- [mission 1] context: 3,414 chars/61 lines (~854 tokens), 0 "
+        "declared file(s), 0 previous receipt(s), budget 12000 chars\n"
+        "- [mission 1] usage: status=done worker=opencode model=m elapsed=12s "
+        "— +2 requests, +1,200 in / +300 out tokens\n"
+        "- [cycle 1] DONE\n"
+        "- mission [cycle 2]: the second mission\n"
+        "- [mission 2] context: 13,000 chars/200 lines (~3250 tokens), 1 "
+        "declared file(s), 3 previous receipt(s), budget 12000 chars — OVER "
+        "BUDGET by 1000 chars; sent in full rather than truncated, because "
+        "the mission asked for it\n"
+        "- [mission 2] usage: status=needs_commander worker=opencode "
+        "model=m elapsed=4s — usage_unavailable (the provider reported no "
+        "usage for this mission; nothing is estimated)\n"
+        "- [cycle 2] HUMAN_DECISION_REQUIRED — recorded and deferred\n"
+        "- exit: 2\n"
+    )
+
+    def _root(self):
+        root = make_root(plan_containing([]))
+        with open(run_report_path(root), "w", encoding="utf-8") as handle:
+            handle.write(self.REPORT)
+        return root
+
+    def test_each_mission_becomes_its_own_row(self):
+        _, _, missions = measure.summarize(self._root())
+        self.assertEqual([m["number"] for m in missions], [1, 2])
+        first, second = missions
+        self.assertEqual(first["chars"], 3414)
+        self.assertEqual(first["tokens_estimate"], 854)
+        self.assertEqual(first["requests"], 2)
+        self.assertEqual(first["tokens_in"], 1200)
+        self.assertEqual(first["status"], "done")
+        self.assertEqual(second["over_by"], 1000)
+        self.assertEqual(second["receipts"], 3)
+        self.assertFalse(second["usage_known"])
+        self.assertEqual(second["status"], "needs_commander")
+
+    def test_the_totals_count_prompts_over_budget_and_unknown_usage(self):
+        _, totals, _ = measure.summarize(self._root())
+        self.assertEqual(totals["missions_measured"], 2)
+        self.assertEqual(totals["prompt_chars_total"], 3414 + 13000)
+        self.assertEqual(totals["prompt_chars_max"], 13000)
+        self.assertEqual(totals["over_budget"], 1)
+        self.assertEqual(totals["usage_unknown"], 1)
+        text = "\n".join(measure.format_totals(totals))
+        self.assertIn("prompt: 16,414 chars total, 13,000 largest, "
+                      "1 over budget", text)
+        self.assertIn("missions with no provider usage recorded: 1 of 2", text)
+
+    def test_the_rows_name_the_mission_status_and_usage(self):
+        _, _, missions = measure.summarize(self._root())
+        rows = "\n".join(measure.format_missions(missions))
+        self.assertIn("mission 1", rows)
+        self.assertIn("done", rows)
+        self.assertIn("2 req", rows)
+        self.assertIn("usage_unavailable", rows)
+        self.assertIn("OVER by 1,000", rows)
+
+    def test_the_cli_measure_subcommand_prints_the_same_report(self):
+        root = self._root()
+        out = io.StringIO()
+        with mock.patch("sys.stdout", out):
+            code = cli.main(["measure", "--root", root])
+        self.assertEqual(code, 0)
+        text = out.getvalue()
+        self.assertIn("mission 1", text)
+        self.assertIn("missions measured: 2", text)
+        self.assertIn("1 over budget", text)
+
+    def test_measure_refuses_a_directory_that_is_not_a_project(self):
+        outside = make_tmp_dir("ineagent-")
+        out = io.StringIO()
+        with mock.patch("sys.stdout", out):
+            self.assertEqual(measure.main(["--root", outside]), 1)
+        self.assertIn("no .agent directory", out.getvalue())
+
+    def test_the_cli_refuses_a_root_that_does_not_exist(self):
+        missing = os.path.join(make_tmp_dir("ineagent-"), "nope")
+        self.assertEqual(cli.main(["measure", "--root", missing]), 1)
+
+    def test_a_report_without_mission_lines_still_reads(self):
+        # Older reports have no per-mission cost: measure must read them
+        # exactly as it did before, not fail and not invent zeros.
+        root = make_root(plan_containing([]))
+        with open(run_report_path(root), "w", encoding="utf-8") as handle:
+            handle.write("# .agent/RUN_REPORTS.md\n\n### run x (pid 1)\n"
+                         "- exit: 0\n")
+        runs, totals, missions = measure.summarize(root)
+        self.assertEqual(len(runs), 1)
+        self.assertEqual(missions, [])
+        self.assertEqual(totals["missions_measured"], 0)
+        self.assertNotIn("missions measured",
+                         "\n".join(measure.format_totals(totals)))
+
+
 class CliTests(unittest.TestCase):
+    def test_a_real_run_through_the_cli_builds_the_worker_it_printed(self):
+        # The gap that let a TypeError reach the commander: every other test
+        # injects `lambda name: worker`, so the wiring between the CLI and the
+        # worker factory was never executed -- and `--dry-run` cannot catch it,
+        # because a dry run never builds a worker. This runs the whole real
+        # path (CLI -> factory -> profile -> subprocess -> receipt -> records)
+        # against a local command that prints a receipt, so it costs nothing
+        # and still exercises everything a live run would.
+        python = working_python()
+        if python is None:
+            self.skipTest("no interpreter this process can launch with a cwd")
+        root = make_root(plan_containing([("EXECUTABLE", "do the thing")]))
+        with open(os.path.join(root, ".agent", "workers.json"), "w",
+                  encoding="utf-8") as handle:
+            json.dump({"profiles": {"fake": {
+                "command": [python, "-c",
+                            "import sys; sys.stdout.write(sys.argv[-1])"],
+                "prompt_transport": "argument",
+                "timeout_seconds": 120,
+                "description": "a local stand-in for a coding agent"}}}, handle)
+
+        # The fake echoes the prompt back, and the prompt ends in the receipt
+        # contract -- so the echoed text carries a syntactically valid (if
+        # empty) receipt block. What is under test is the wiring, not the
+        # receipt's contents.
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = cli.main(["run", "--root", root, "--worker", "fake",
+                             "--max-missions", "1", "--quiet"])
+        printed = out.getvalue()
+        self.assertNotIn("TypeError", printed)
+        self.assertIn("[cycle 1] mission:", printed)
+        # It reached the worker: the run report has a cycle, and the mission
+        # is left in a decided state rather than still EXECUTABLE.
+        report = _report(root)
+        self.assertIn("[cycle 1]", report)
+        self.assertIn("`DONE`", read_plan(root).items[0].text)
+        self.assertIn(code, (STOP_OK, STOP_ERROR))
+
+    def test_the_supervisor_factory_is_the_only_place_a_worker_is_built(self):
+        # One owner for the contract. The CLI used to pass `build_worker` in
+        # raw, which is a second copy of a one-argument contract that needs
+        # three arguments -- invisible in a dry run, fatal on the first cycle.
+        source = io.open(os.path.join(REPO_ROOT, "src", "ine_agent", "cli.py"),
+                         encoding="utf-8").read()
+        self.assertNotIn("worker_factory=", source)
+        factory = Supervisor(root=make_root(plan_containing([])),
+                             out=io.StringIO()).worker_factory
+        built = factory("opencode")           # one argument, as called
+        self.assertEqual(built.profile.name, "opencode")
+        self.assertTrue(built.profile.command)
+
     def test_entry_point_help_exits_zero(self):
-        proc = subprocess.run(
-            [sys.executable, os.path.join(REPO_ROOT, "src", "ine_agent", "cli.py"),
-             "--help"],
-            capture_output=True, text=True,
-        )
+        proc = run_cli_process(["--help"])
         self.assertEqual(proc.returncode, 0)
         self.assertIn("ine-agent", proc.stdout)
         self.assertIn("run", proc.stdout)
@@ -2527,22 +3253,14 @@ class CliTests(unittest.TestCase):
         self.assertIn('ine-agent = "ine_agent.cli:main"', pyproject)
 
     def test_run_subcommand_help_shows_stream_flags(self):
-        proc = subprocess.run(
-            [sys.executable, os.path.join(REPO_ROOT, "src", "ine_agent", "cli.py"),
-             "run", "--help"],
-            capture_output=True, text=True,
-        )
+        proc = run_cli_process(["run", "--help"])
         self.assertEqual(proc.returncode, 0)
         self.assertIn("--verbose", proc.stdout)
         self.assertIn("--quiet", proc.stdout)
 
     def test_cli_no_work_repo_stops_cleanly_without_agents(self):
         root = make_root(plan_containing([("BLOCKED", "nothing doable")]))
-        proc = subprocess.run(
-            [sys.executable, os.path.join(REPO_ROOT, "src", "ine_agent", "cli.py"),
-             "run", "--root", root, "--worker", "opencode"],
-            capture_output=True, text=True,
-        )
+        proc = run_cli_process(["run", "--root", root, "--worker", "opencode"])
         self.assertEqual(proc.returncode, STOP_OK)
         self.assertIn("No executable work remains.", proc.stdout)
 
@@ -2570,20 +3288,12 @@ class CliTests(unittest.TestCase):
             self.assertIsNone(_usage_warn_requests(mock.Mock(usage_warn_requests=None)))
 
     def test_run_subcommand_help_shows_usage_warn_flag(self):
-        proc = subprocess.run(
-            [sys.executable, os.path.join(REPO_ROOT, "src", "ine_agent", "cli.py"),
-             "run", "--help"],
-            capture_output=True, text=True,
-        )
+        proc = run_cli_process(["run", "--help"])
         self.assertEqual(proc.returncode, 0)
         self.assertIn("--usage-warn-requests", proc.stdout)
 
     def test_run_subcommand_help_shows_the_phase_3_flags(self):
-        proc = subprocess.run(
-            [sys.executable, os.path.join(REPO_ROOT, "src", "ine_agent", "cli.py"),
-             "run", "--help"],
-            capture_output=True, text=True,
-        )
+        proc = run_cli_process(["run", "--help"])
         self.assertEqual(proc.returncode, 0)
         self.assertIn("--max-failures", proc.stdout)
         self.assertIn("--stall-limit", proc.stdout)
@@ -2709,6 +3419,535 @@ class WorkerCmdShellTests(unittest.TestCase):
         result = worker.run(root, "probe")
         self.assertEqual(result.exit_code, 0)
         self.assertIn("caf\u00e9 \u0410 \u2510", result.output)
+
+
+class WorkerPromptHandoverTests(unittest.TestCase):
+    """A child that will not take the prompt has still told us something.
+
+    Found by a live run, not by reading: a probe that ignored stdin and
+    exited promptly made `proc.stdin.close()` raise EPIPE, and the handler
+    reported `could not start claude` - discarding the exit code and the
+    receipt the child had already printed, and relaying them to the console
+    while keeping neither for the classifier. The run was recorded as an
+    unknown failure when the worker had in fact answered.
+    """
+
+    def _stubborn_worker(self, root, body):
+        path = os.path.join(root, "stubborn_worker.py")
+        with open(path, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(body)
+        worker = CliWorker()
+        worker.env_var = None
+        worker.cmd_name = "stubborn_worker"
+        worker.default_args = (path,)
+        worker._exe = lambda: sys.executable
+        worker.stdin_prompt = True
+        return worker
+
+    #: Bigger than any plausible pipe buffer (4096 on Windows), so the
+    #: parent's write genuinely blocks instead of disappearing into the
+    #: buffer. A short prompt cannot reproduce this, which is why the first
+    #: version of this test passed against the bug it was written for.
+    BIG_PROMPT = "p" * 65536
+
+    @staticmethod
+    def _collect():
+        seen = []
+        return seen.append
+
+    def test_a_child_that_declines_the_prompt_still_reports_its_output(self):
+        root = make_root(plan_containing([("EXECUTABLE", "probe")]))
+        worker = self._stubborn_worker(root, (
+            "import sys\n"
+            "sys.stdin.read()\n"  # reads, then ignores: the handover is fine
+            "print('INE_RECEIPT_JSON')\n"
+            "print('{\"status\": \"done\", \"summary\": \"spoke\","
+            " \"changed_files\": [\"a.txt\"], \"verification\": [],"
+            " \"area\": \"x\"}')\n"))
+        result = worker.run(root, self.BIG_PROMPT, on_line=self._collect())
+        self.assertEqual(result.exit_code, 0)
+        self.assertIn("INE_RECEIPT_JSON", result.output)
+        self.assertNotIn("could not start", result.output)
+
+    def test_a_child_that_never_touches_stdin_is_not_a_failed_launch(self):
+        # The regression that actually fired, on the path the CLI always
+        # takes. The prompt is larger than the pipe buffer, so the parent's
+        # write blocks; the child stays alive long enough to still be running
+        # when it blocks, then exits without reading - and the blocked write
+        # fails with EPIPE. Pre-fix this returned "could not start claude",
+        # having thrown away the receipt the child had already printed.
+        # `_capture` never showed it: subprocess.run's communicate() already
+        # swallows EPIPE, so only the streaming path was ever affected.
+        root = make_root(plan_containing([("EXECUTABLE", "probe")]))
+        worker = self._stubborn_worker(root, (
+            "import time\n"
+            "print('INE_RECEIPT_JSON')\n"
+            "print('{\"status\": \"done\", \"summary\": \"never read\","
+            " \"changed_files\": [\"a.txt\"], \"verification\": [],"
+            " \"area\": \"x\"}')\n"
+            "time.sleep(0.5)\n"))
+        result = worker.run(root, self.BIG_PROMPT, on_line=self._collect())
+        self.assertEqual(result.exit_code, 0)
+        self.assertIn("never read", result.output)
+        self.assertNotIn("could not start", result.output)
+
+    def test_streaming_reaches_the_caller_even_when_the_prompt_is_declined(self):
+        # The other half of the damage: the lines went to the console while
+        # the result kept none of them, so the operator saw a receipt and the
+        # classifier saw a launch failure.
+        root = make_root(plan_containing([("EXECUTABLE", "probe")]))
+        worker = self._stubborn_worker(root, (
+            "import time\n"
+            "print('streamed line')\n"
+            "time.sleep(0.5)\n"))
+        seen = []
+        result = worker.run(root, self.BIG_PROMPT, on_line=seen.append)
+        self.assertIn("streamed line", "".join(seen))
+        self.assertIn("streamed line", result.output)
+
+    def test_a_genuinely_missing_executable_is_still_reported_as_such(self):
+        # The narrow case the message was written for must keep working:
+        # narrowing the broken-pipe path must not swallow a real launch error.
+        root = make_root(plan_containing([("EXECUTABLE", "probe")]))
+        worker = CliWorker()
+        worker.env_var = None
+        worker.cmd_name = "definitely_not_installed_worker_xyz"
+        worker.default_args = ()
+        worker._exe = lambda: "definitely_not_installed_worker_xyz"
+        worker.stdin_prompt = True
+        result = worker.run(root, "probe")
+        self.assertEqual(result.exit_code, 1)
+        self.assertIn("could not start", result.output)
+
+
+class SupervisorFailureEvidenceTests(unittest.TestCase):
+    """A failed run must be able to say *why* without being re-run.
+
+    Observed live: a Claude run died on an unknown model id, and the run
+    report recorded `exit 1, output 93 chars` -- not one word of what the
+    worker actually said. The reason had gone to the console, which is gone
+    by the time anyone thinks to ask, so the failure could only be
+    investigated by spending another mission attempt to reproduce it.
+    """
+
+    def _run(self, root, worker):
+        out = io.StringIO()
+        return Supervisor(
+            root, worker_factory=lambda name: worker, out=out,
+            usage_reporter=ZeroUsage(), heartbeat_seconds=0).run()
+
+    def _report(self, root):
+        with io.open(os.path.join(root, ".agent", "RUN_REPORTS.md"),
+                     encoding="utf-8") as handle:
+            return handle.read()
+
+    def test_a_failing_workers_own_words_reach_the_run_report(self):
+        root = make_root(plan_containing([("EXECUTABLE", "failing mission")]))
+        said = ('"some-model" is not described by this version\'s model '
+                "catalog")
+        self._run(root, worker=StubWorker([(1, said)] * 10))
+        report = self._report(root)
+        self.assertIn("worker output:", report)
+        self.assertIn("model catalog", report)
+
+    def test_the_excerpt_is_bounded_so_a_dump_cannot_swamp_the_report(self):
+        root = make_root(plan_containing([("EXECUTABLE", "failing mission")]))
+        self._run(root, worker=StubWorker(
+            [(1, "\n".join("line {}".format(n) for n in range(500)))] * 10))
+        report = self._report(root)
+        self.assertIn("line 19", report)
+        self.assertNotIn("line 20", report)
+
+    def test_a_successful_run_does_not_repeat_itself_into_the_report(self):
+        # A passing worker has a receipt; the raw output is noise there, and
+        # duplicating it would put a second, unparsed copy of the receipt in
+        # the record.
+        root = make_root(plan_containing([("EXECUTABLE", "good mission")]))
+        self._run(root, worker=StubWorker(
+            [(0, receipt_text(status="done", files=["a.txt"]))] * 10))
+        report = self._report(root)
+        self.assertNotIn("worker output:", report)
+        self.assertEqual(report.count("INE_RECEIPT_JSON"), 0)
+
+
+class SupervisorInterruptTests(unittest.TestCase):
+    """Ctrl+C is an outcome, not a crash.
+
+    A human stopping a long run is normal. Observed live: the operator hit
+    Ctrl+C, Python dumped a `KeyboardInterrupt` traceback out of `proc.wait`,
+    the run report stopped mid-sentence with no `exit:` line, and the worker's
+    process tree was left running. Two sessions later the report could not be
+    told apart from a crash or a run still in progress -- which is how a
+    half-written `src/ine/formatter.py` sat in the tree unrecorded.
+    """
+
+    class _Interrupting:
+        """A worker that behaves like one interrupted mid-flight."""
+
+        def __init__(self):
+            self.killed = False
+
+        def run(self, root, prompt, on_line=None):
+            raise KeyboardInterrupt
+
+    def test_an_interrupted_run_reports_itself_instead_of_tracing_back(self):
+        root = make_root(plan_containing([("EXECUTABLE", "interrupted")]))
+        out = io.StringIO()
+        supervisor = Supervisor(
+            root,
+            worker_factory=lambda name: self._Interrupting(), out=out,
+            usage_reporter=ZeroUsage(), heartbeat_seconds=0)
+        code = supervisor.run()
+        report = io.open(
+            os.path.join(root, ".agent", "RUN_REPORTS.md"),
+            encoding="utf-8").read()
+        self.assertIn("interrupted by the operator", report)
+        self.assertIn("- exit:", report)
+        self.assertEqual(code, 1)
+        self.assertIn("Interrupted", out.getvalue())
+
+    def test_an_interrupted_run_leaves_no_mission_outcome_behind(self):
+        """The interrupted mission must stay `EXECUTABLE`.
+
+        Recording a guess would be worse than recording nothing: the next run
+        has to be able to trust the plan.
+        """
+        root = make_root(plan_containing([("EXECUTABLE", "interrupted")]))
+        plan = io.open(
+            os.path.join(root, ".agent", "PLAN.md"), encoding="utf-8").read()
+        supervisor = Supervisor(
+            root,
+            worker_factory=lambda name: self._Interrupting(),
+            out=io.StringIO(), usage_reporter=ZeroUsage(),
+            heartbeat_seconds=0)
+        supervisor.run()
+        after = io.open(
+            os.path.join(root, ".agent", "PLAN.md"), encoding="utf-8").read()
+        self.assertIn("`EXECUTABLE`", after)
+        self.assertNotIn("`DONE`", after)
+        self.assertIn("`EXECUTABLE`", plan)
+
+
+class SupervisorOutputVisibilityTests(unittest.TestCase):
+    """A run you cannot see is a run you cannot tell from a hung one.
+
+    Found by a probe rather than by reasoning: a fake worker that printed a
+    marker, slept, and printed another produced *nine seconds of nothing at
+    all* when its output was piped - including the markers the worker itself
+    had flushed - and then everything at once on exit. Python block-buffers
+    stdout when it is not a terminal, and this package had no `flush` in it.
+    """
+
+    class _FlushingStream(io.StringIO):
+        def __init__(self):
+            io.StringIO.__init__(self)
+            self.flushes = 0
+
+        def flush(self):
+            self.flushes += 1
+
+    def test_every_supervisor_line_is_flushed_as_it_is_written(self):
+        out = self._FlushingStream()
+        supervisor = Supervisor(REPO_ROOT, out=out)
+        before = out.flushes
+        supervisor._print("a line the operator must see now")
+        self.assertGreater(out.flushes, before)
+        self.assertIn("must see now", out.getvalue())
+
+    def test_stdout_is_reconfigured_to_line_buffering(self):
+        # The single change that covers every other print site in the
+        # package, including the ones nobody remembers exist.
+        class _Fake:
+            def __init__(self):
+                self.kwargs = None
+
+            def reconfigure(self, **kwargs):
+                self.kwargs = kwargs
+
+        fake = _Fake()
+        with mock.patch.object(sys, "stdout", fake):
+            cli._safe_stdout()
+        self.assertEqual(fake.kwargs.get("line_buffering"), True)
+        self.assertEqual(fake.kwargs.get("errors"), "backslashreplace")
+
+    def test_a_stream_that_cannot_be_reconfigured_does_not_stop_the_run(self):
+        class _Hostile:
+            def reconfigure(self, **kwargs):
+                raise ValueError("not reconfigurable")
+
+        with mock.patch.object(sys, "stdout", _Hostile()):
+            cli._safe_stdout()  # must not raise
+
+    def test_the_heartbeat_reports_elapsed_time_while_a_worker_is_quiet(self):
+        out = io.StringIO()
+        with supervisor_module._Heartbeat(out, 0.01, "mission 84"):
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline:
+                if "[heartbeat] mission 84 still running" in out.getvalue():
+                    break
+                time.sleep(0.01)
+        self.assertIn("[heartbeat] mission 84 still running", out.getvalue())
+        self.assertRegex(out.getvalue(), r"still running, \d+s elapsed")
+
+    def test_the_heartbeat_stops_when_the_worker_returns(self):
+        out = io.StringIO()
+        with supervisor_module._Heartbeat(out, 0.01, "mission 84"):
+            time.sleep(0.05)
+        quiet = out.getvalue()
+        self.assertTrue(quiet)
+        time.sleep(0.05)
+        # Nothing may appear after the context exits: a heartbeat that keeps
+        # talking is indistinguishable from a loop that never stopped.
+        self.assertEqual(out.getvalue(), quiet)
+
+    def test_the_heartbeat_is_off_when_asked(self):
+        out = io.StringIO()
+        with supervisor_module._Heartbeat(out, 0, "mission 84"):
+            time.sleep(0.05)
+        self.assertEqual(out.getvalue(), "")
+
+    def test_a_streaming_worker_is_never_told_it_has_been_silent(self):
+        # `opencode run` streams; a heartbeat interleaved into a talking
+        # worker is noise that also teaches the reader to ignore the line.
+        out = io.StringIO()
+        last = [time.monotonic()]
+        with supervisor_module._Heartbeat(
+                out, 0.05, "mission 84",
+                activity=lambda: time.monotonic() - last[0]):
+            deadline = time.monotonic() + 0.4
+            while time.monotonic() < deadline:
+                time.sleep(0.005)  # a worker talking five times faster
+                last[0] = time.monotonic()  # than the heartbeat interval
+        self.assertEqual(out.getvalue(), "")
+
+    def test_a_worker_that_speaks_then_stops_gets_the_heartbeat_back(self):
+        out = io.StringIO()
+        last = [time.monotonic() - 3600]  # silent for an hour
+        with supervisor_module._Heartbeat(
+                out, 0.01, "mission 84",
+                activity=lambda: time.monotonic() - last[0]):
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline:
+                if "still running" in out.getvalue():
+                    break
+                time.sleep(0.01)
+        self.assertIn("still running", out.getvalue())
+
+    def test_worker_output_counts_as_activity_even_under_quiet(self):
+        # --quiet hides the lines; it must not turn a talking worker into a
+        # silent one that needs reassuring.
+        root = make_root(plan_containing([("EXECUTABLE", "loud mission")]))
+        supervisor = Supervisor(
+            root, worker_factory=lambda name: StubWorker([]), out=io.StringIO(),
+            usage_reporter=ZeroUsage(), quiet=True)
+        before = supervisor._last_worker_line
+        supervisor._handle_line("chatter")
+        self.assertGreater(supervisor._last_worker_line, before)
+
+    def test_a_run_passes_its_heartbeat_interval_to_the_supervisor(self):
+        root = make_root(plan_containing([("EXECUTABLE", "quiet mission")]))
+        out = io.StringIO()
+        common = dict(
+            worker_factory=lambda name: StubWorker([]), out=out,
+            usage_reporter=ZeroUsage())
+        self.assertEqual(
+            Supervisor(root, heartbeat_seconds=7, **common).heartbeat_seconds,
+            7)
+        # The default has to be a number, not None: a supervisor that cannot
+        # say "still running" is the bug this whole class exists for.
+        self.assertEqual(
+            Supervisor(root, **common).heartbeat_seconds, 30)
+
+
+class WorkerStdinIsolationTests(unittest.TestCase):
+    """A worker is launched non-interactively: it never inherits stdin.
+
+    An external CLI that stops to ask a question mid-run used to wedge the
+    whole supervisor: Claude Code, after an API failure, prints
+    "Execution errorTerminate batch job (Y/N)?" and waits for a keypress
+    that no supervisor will ever send. The argument-transport launch passed
+    stdin=None, handing the child the operator's console, so the run only
+    ended when a human hit Ctrl+C. Both launch paths must instead give the
+    child an immediately-EOF stdin, so it decides for itself.
+    """
+
+    ENV = "INE_AGENT_PROBE_STDIN"
+
+    ASKING = (
+        "import sys\n"
+        "print('Execution errorTerminate batch job (Y/N)?')\n"
+        "sys.stdout.flush()\n"
+        "print('eof=' + str(sys.stdin.readline() == ''))\n"
+    )
+
+    def _script(self, root):
+        path = os.path.join(root, "asks_then_reads.py")
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(self.ASKING)
+        return path
+
+    def _worker(self, script, timeout=60):
+        worker_ = CliWorker()
+        worker_.name = "probe"
+        worker_.cmd_name = "probe"
+        worker_.env_var = self.ENV
+        worker_.default_args = ()
+        worker_.timeout = timeout
+        override = '"{}" "{}"'.format(sys.executable, script)
+        return worker_, mock.patch.dict(os.environ, {self.ENV: override})
+
+    def test_a_questioning_worker_sees_eof_and_exits_instead_of_blocking(self):
+        root = make_root(plan_containing([("EXECUTABLE", "probe")]))
+        worker_, env = self._worker(self._script(root))
+        with env:
+            result = worker_.run(root, "PROMPT")
+        self.assertFalse(result.timed_out)
+        self.assertEqual(result.exit_code, 0)
+        self.assertIn("eof=True", result.output)
+
+    def test_the_streaming_launch_is_also_isolated(self):
+        root = make_root(plan_containing([("EXECUTABLE", "probe")]))
+        worker_, env = self._worker(self._script(root))
+        lines = []
+        with env:
+            result = worker_.run(root, "PROMPT", on_line=lines.append)
+        self.assertFalse(result.timed_out)
+        self.assertEqual(result.exit_code, 0)
+        self.assertIn("eof=True", result.output)
+        # Streaming still relays the child's question live rather than
+        # swallowing it: isolation must not cost observability.
+        self.assertIn("Terminate batch job (Y/N)?", "".join(lines))
+
+    def _seen_kwargs(self, target, real, call):
+        seen = {}
+
+        def spy(*args, **kwargs):
+            seen.update(kwargs)
+            return real(*args, **kwargs)
+
+        with mock.patch.object(worker.subprocess, target, spy):
+            call()
+        return seen
+
+    def test_capture_passes_devnull_and_never_the_operators_stdin(self):
+        seen = self._seen_kwargs(
+            "run", subprocess.run,
+            lambda: CliWorker()._capture(
+                [sys.executable, "-c", "pass"], os.getcwd()))
+        self.assertEqual(seen.get("stdin"), subprocess.DEVNULL)
+        self.assertNotIn("input", seen)
+
+    def test_stream_passes_devnull_and_never_the_operators_stdin(self):
+        seen = self._seen_kwargs(
+            "Popen", subprocess.Popen,
+            lambda: CliWorker()._stream(
+                [sys.executable, "-c", "pass"], os.getcwd(), None))
+        self.assertEqual(seen.get("stdin"), subprocess.DEVNULL)
+
+    def test_a_stdin_transport_worker_still_receives_the_prompt(self):
+        """Isolation applies only when there is no payload to send."""
+        seen = self._seen_kwargs(
+            "run", subprocess.run,
+            lambda: CliWorker()._capture(
+                [sys.executable, "-c", "pass"], os.getcwd(), "PROMPT"))
+        self.assertEqual(seen.get("input"), "PROMPT")
+        self.assertNotIn("stdin", seen)
+
+
+class WorkerConsoleIsolationTests(unittest.TestCase):
+    """A worker must not inherit a console it can stop and ask a question on.
+
+    `stdin=DEVNULL` closes the *read* channel and was the fix for the
+    "Terminate batch job (Y/N)?" hang -- but it does not close the *write*
+    channel. The npm shims on this machine are `.cmd` files, so the direct
+    child is `cmd.exe`, and the terminate prompt goes to the console handle
+    (`CONIN$`) rather than to the handle that was redirected. A live run
+    proved it: the prompt reappeared, blocked, and the run was killed with a
+    raw `KeyboardInterrupt` traceback.
+
+    **These tests pin the wiring, not the operating system's behaviour.** A
+    behavioural test for this is not writable here: the console handle turns
+    out to be unavailable to a child in this environment either way, so such a
+    test would pass with and without the flags and prove nothing -- which is
+    worse than no test. The flags are justified by the mechanism and the
+    observed hang; the assertions below exist so nobody drops them by accident.
+    """
+
+    @unittest.skipUnless(os.name == "nt", "Windows console isolation")
+    def test_creation_flags_isolate_the_worker_from_the_console(self):
+        flags = CliWorker._creation_flags()
+        self.assertTrue(flags & subprocess.CREATE_NO_WINDOW)
+        self.assertTrue(flags & subprocess.CREATE_NEW_PROCESS_GROUP)
+
+    def test_creation_flags_are_a_no_op_off_windows(self):
+        if os.name == "nt":
+            self.skipTest("POSIX has no console to isolate")
+        self.assertEqual(CliWorker._creation_flags(), 0)
+
+    def _seen_kwargs(self, target, real, call):
+        seen = {}
+
+        def spy(*args, **kwargs):
+            seen.update(kwargs)
+            return real(*args, **kwargs)
+
+        with mock.patch.object(worker.subprocess, target, spy):
+            call()
+        return seen
+
+    def test_both_launch_paths_ask_for_console_isolation(self):
+        seen = self._seen_kwargs(
+            "run", subprocess.run,
+            lambda: CliWorker()._capture(
+                [sys.executable, "-c", "pass"], os.getcwd()))
+        self.assertEqual(seen.get("creationflags"),
+                         CliWorker._creation_flags())
+        seen = self._seen_kwargs(
+            "Popen", subprocess.Popen,
+            lambda: CliWorker()._stream(
+                [sys.executable, "-c", "pass"], os.getcwd(), None))
+        self.assertEqual(seen.get("creationflags"),
+                         CliWorker._creation_flags())
+
+    def test_a_terminated_worker_takes_its_grandchildren_with_it(self):
+        """`proc.kill()` alone leaves `node.exe` alive and still spending.
+
+        The direct child is `cmd.exe`; the process holding the model session
+        is a grandchild. On Windows, killing only the direct child reports a
+        stopped worker while the real one keeps running, so termination walks
+        the tree.
+        """
+        killed = {}
+
+        class _Proc:
+            pid = 4321
+
+            def poll(self):
+                return None
+
+            def kill(self):
+                killed["direct"] = True
+
+            def wait(self, timeout=None):
+                return 0
+
+        seen = {}
+
+        def fake_run(argv, **kwargs):
+            seen["argv"] = argv
+
+            class _Done:
+                returncode = 0
+
+            return _Done()
+
+        with mock.patch.object(worker.subprocess, "run", fake_run):
+            CliWorker._terminate(_Proc())
+        self.assertTrue(killed.get("direct"))
+        if os.name == "nt":
+            self.assertIn("/T", seen["argv"])
+            self.assertIn("4321", seen["argv"])
+
 
 
 class WorkerOverrideCommandTests(unittest.TestCase):
@@ -3134,6 +4373,26 @@ class ControlPlaneHealthTests(unittest.TestCase):
         with open(os.path.join(REPO_ROOT, ".agent", "STATE.md"),
                   encoding="utf-8") as f:
             return f.read()
+
+    def test_every_run_report_block_carries_its_own_header(self):
+        # `measure` reads these blocks by splitting on the `### run <stamp>`
+        # header. A block written without one is silently attributed to the
+        # run above it, so a stray tail of "- exit:" / "- summary:" lines
+        # corrupts the cost report instead of failing. A dry-run that leaves
+        # such a tail behind is exactly what this catches.
+        path = os.path.join(REPO_ROOT, ".agent", "RUN_REPORTS.md")
+        with open(path, encoding="utf-8") as handle:
+            text = handle.read()
+        self.assertTrue(text.strip(), "RUN_REPORTS.md is empty")
+        for number, block in enumerate(text.split("### run ")[1:], start=1):
+            self.assertRegex(
+                block.splitlines()[0], r"^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}",
+                "run report block {} has no timestamped header, so `measure` "
+                "reads it as part of the run before it: {!r}".format(
+                    number, block.splitlines()[0][:60]))
+        # The prose above the first header is the file's own documentation,
+        # and `measure` ignores it, so it is not an error.
+        self.assertIn("Durable per-run log", text)
 
     def test_state_md_stays_bounded(self):
         text = self._state_text()
@@ -3603,11 +4862,13 @@ class QueueExhaustionTests(unittest.TestCase):
     def test_one_attempt_per_mission_is_the_default(self):
         # A mission is not retried unless the commander asks for attempts: a
         # second request is a decision, not something the loop takes by
-        # itself.
+        # itself. Unset on the command line means "the policy decides", and the
+        # policy says 1.
         parser = cli.build_parser()
         args = parser.parse_args(["run"])
-        self.assertEqual(args.max_attempts, 1)
+        self.assertIsNone(args.max_attempts)   # unstated, not a second
         self.assertIsNone(args.max_missions)
+        self.assertEqual(budget.DEFAULTS["max_attempts"], 1)
 
     def test_max_missions_stops_after_the_given_count(self):
         root = make_root(plan_containing([
@@ -4290,6 +5551,44 @@ class DeterministicRecordingTests(unittest.TestCase):
             open(os.path.join(root, ".agent", "STATE.md"),
                  encoding="utf-8").read(), before)
 
+    def test_recording_twice_does_not_grow_the_state_session_number(self):
+        """The header's number is replaced, never appended to.
+
+        The substitution used to keep the matched digits in its replacement
+        string, so each recorded mission concatenated its session onto the
+        old one: 52 became 5352 on the first live mission that recorded an
+        outcome, and 535352 on the next. Nothing about the number looks wrong
+        to the eye - it took the control-plane health test, which compares
+        this header against the latest HISTORY heading, to notice.
+
+        Driven through the rewriter rather than through
+        `record_mission_outcome`, because a second recording of the same
+        mission is a no-op once the plan says `DONE`, and the bug is in the
+        rewrite, not in the recording decision.
+        """
+        root = make_root(
+            plan_containing([("EXECUTABLE", "x")]),
+            state_text=("# .agent/STATE.md\n\nCurrent ground truth as of "
+                        "Session 52. Position, not narrative.\n\n"
+                        "## Current focus\n\nold focus line\n\n"
+                        "## Health\n\nold health line\n"),
+        )
+        task = self._task(root)
+        state = ""
+        for session in (53, 54, 55):
+            self.assertTrue(state_module._rewrite_state_head(
+                root, session, task.number, task, self._receipt()))
+            with open(os.path.join(root, ".agent", "STATE.md"),
+                      encoding="utf-8") as handle:
+                state = handle.read()
+            self.assertIn(
+                "Current ground truth as of Session {}. ".format(session),
+                state)
+            self.assertRegex(
+                state, r"as of Session \d+\. Position, not narrative\.")
+        # One number, and nothing left behind it.
+        self.assertNotIn("5554", state)
+
     def test_the_session_number_follows_the_history(self):
         root = make_root(
             plan_containing([("EXECUTABLE", "x")]),
@@ -4332,6 +5631,19 @@ class DeterministicRecordingTests(unittest.TestCase):
         self.assertIn("ine-agent mission 1", open(
             os.path.join(root, ".agent", "HISTORY.md"),
             encoding="utf-8").read())
+
+    def test_a_receipt_completion_costs_exactly_one_invocation(self):
+        # The plan is re-read after every cycle, and a mission a worker
+        # finished by receipt alone can still look selectable. One mission has
+        # to cost one process, or the receipt is not a completion.
+        root = make_root(plan_containing([("EXECUTABLE", "just do it")]))
+        worker = StubWorker([(0, receipt_text(
+            status="done", summary="done, and the plan is untouched"))])
+        out = io.StringIO()
+        code = Supervisor(root, worker_factory=lambda name: worker,
+                          out=out, usage_reporter=ZeroUsage()).run()
+        self.assertEqual(code, STOP_OK)
+        self.assertEqual(len(worker.calls), 1)
 
     def test_a_failed_cycle_spends_no_second_call_when_the_receipt_says_why(self):
         root = make_root(plan_containing([("EXECUTABLE", "hard one")]))
@@ -4386,17 +5698,48 @@ class ProfileTests(unittest.TestCase):
         root = self._root()
         opencode = profiles.resolve(root, "opencode")
         self.assertEqual(opencode.command, [
-            "opencode", "run", "--pure", "--agent", "ine-worker",
-            "--dir", root])
+            "opencode", "run", "--pure", "--dir", root])
         self.assertEqual(opencode.argv("P"), [
-            "opencode", "run", "--pure", "--agent", "ine-worker", "--dir",
-            root, "P"])
+            "opencode", "run", "--pure", "--dir", root, "P"])
         self.assertEqual(opencode.prompt_transport, "argument")
         claude = profiles.resolve(root, "claude")
-        self.assertEqual(claude.command, ["claude", "-p"])
-        # The prompt travels on stdin, so it is not an argument.
-        self.assertEqual(claude.argv("P"), ["claude", "-p"])
+        # The prompt travels on stdin, so it is not an argument - which is
+        # what lets the permission flags follow -p without colliding with
+        # it.
         self.assertEqual(claude.prompt_transport, "stdin")
+        self.assertEqual(claude.argv("P"), claude.command)
+        self.assertEqual(claude.command[:2], ["claude", "-p"])
+
+    def test_the_claude_worker_can_edit_and_test_but_cannot_reach_out(self):
+        """The approved posture, as flags on the command line.
+
+        In -p mode the worker cannot ask anyone for permission, so an
+        ungranted tool is simply refused and the mission reports itself stuck.
+        That is not a hypothetical: the first live Claude mission ran 214s,
+        settled the design for item 84, and then found every Edit, Write and
+        Bash call blocked. PLAN item 122's posture has to be re-stated here,
+        because the agent file that used to enforce it is gone (Session 52).
+        """
+        command = profiles.resolve(REPO_ROOT, "claude").command
+        allowed = command[command.index("--allowedTools") + 1].split(",")
+        denied = command[command.index("--disallowedTools") + 1].split(",")
+        for tool in ("Read", "Edit", "Write", "Glob", "Grep", "Bash"):
+            self.assertIn(tool, allowed)
+        for tool in ("WebFetch", "WebSearch", "Task", "TodoWrite", "Skill"):
+            self.assertIn(tool, denied)
+        self.assertEqual(set(allowed) & set(denied), set())
+        self.assertEqual(
+            command[command.index("--permission-mode") + 1], "acceptEdits")
+
+    def test_the_claude_worker_is_never_told_to_bypass_permissions(self):
+        # cceptEdits grants the work this loop exists to do. The flag that
+        # grants everything else is not a bounded posture and must never
+        # appear in a built-in profile.
+        for name in profiles.BUILTINS:
+            command = profiles.resolve(REPO_ROOT, name).command
+            for flag in command:
+                self.assertNotIn("dangerously", flag)
+                self.assertNotIn("bypassPermissions", flag)
 
     def test_root_and_model_are_substituted(self):
         root = self._root({"profiles": {"omni": {
@@ -4579,7 +5922,7 @@ class DoctorTests(unittest.TestCase):
         # command's own shape, and the prompt is not part of it. Paths with
         # a space are quoted so the printed line is copy-pasteable.
         self.assertIn(profiles.display_command(
-            [fake, "run", "--pure", "--agent", "ine-worker", "--dir", root]),
+            [fake, "run", "--pure", "--dir", root]),
             text)
         self.assertIn("the final argument", text)
         self.assertEqual(profile.name, "opencode")
@@ -4682,8 +6025,7 @@ class DryRunReportTests(unittest.TestCase):
         self.assertEqual(code, STOP_OK)
         self.assertIn("profile    : opencode", out)
         self.assertIn(profiles.display_command(
-            [fake, "run", "--pure", "--agent", "ine-worker", "--dir", root,
-             "<prompt>"]), out)
+            [fake, "run", "--pure", "--dir", root, "<prompt>"]), out)
         self.assertIn("budget     :", out)
         self.assertIn("attempt(s) per mission", out)
 
@@ -4709,96 +6051,72 @@ class DryRunReportTests(unittest.TestCase):
         self.assertIn("no-such-profile", out)
 
 
-class WorkerAgentDefinitionTests(unittest.TestCase):
-    """The agent definition is the worker's budget, and it is load-bearing.
+class ProviderIndependenceTests(unittest.TestCase):
+    """INE drives external CLIs; it does not integrate into one.
 
-    OpenCode silently ignores a malformed agent file, so "the worker has no
-    step budget and no denials" would look exactly like success from the
-    loop's side. These tests read the file that will actually be loaded and
-    assert the parts the loop depends on.
+    The opencode profile used to pass --agent ine-worker, which only
+    resolved because .opencode/agents/ine-worker.md sat in the project -
+    a provider-side agent definition, carrying a 60-step budget and a
+    permission deny-list. The commander ruled that a provider project file is
+    out of bounds (Session 52), so the file is gone and the prohibitions live
+    in INE's own prompt instead.
+
+    Two things are worth being blunt about, and these tests exist to keep them
+    honest rather than to look thorough:
+
+    - the prohibitions are now *advisory to the model*, where the agent file
+      was enforced by the tool, and
+    - the 60-step budget is not reproduced, so the wall-clock timeout is the
+      only hard bound left on a run.
     """
 
-    PATH = os.path.join(REPO_ROOT, ".opencode", "agents", "ine-worker.md")
-    DENIED = ("webfetch", "websearch", "task", "question", "skill",
-              "external_directory", "doom_loop", "todowrite")
-    ALLOWED = ("read", "glob", "grep", "list", "edit", "bash")
+    AGENT_FILE = os.path.join(REPO_ROOT, ".opencode", "agents",
+                              "ine-worker.md")
 
-    def _front_matter(self):
-        with open(self.PATH, encoding="utf-8") as handle:
-            text = handle.read()
-        self.assertTrue(text.startswith("---\n"), "front matter must open")
-        end = text.index("\n---\n", 3)
-        return text[3:end], text[end + 5:]
+    def _prompt(self):
+        root = make_root(plan_containing([("EXECUTABLE", "do the thing")]))
+        return impl_prompt(root, read_plan(root).first_executable())
 
-    def _yaml(self, block, indent=0):
-        """Parse the small YAML subset the file uses, with the stdlib.
+    def test_no_provider_project_file_is_shipped_for_the_worker(self):
+        self.assertFalse(os.path.exists(self.AGENT_FILE),
+                         "a provider agent file is an integration, not a ")
 
-        A front-matter block that needs a real YAML parser is a sign it has
-        grown beyond what this file should contain.
-        """
-        values = {}
-        for line in block.splitlines():
-            if not line.strip() or line.lstrip().startswith("#"):
-                continue
-            if indent == 0 and not line.startswith(" "):
-                key, _, value = line.partition(":")
-                values[key.strip()] = value.strip()
-        return values
+    def test_no_builtin_profile_selects_a_provider_side_agent(self):
+        for name in profiles.BUILTINS:
+            command = profiles.resolve(REPO_ROOT, name).command
+            for flag in ("--agent", "--mode", "--plugin"):
+                self.assertNotIn(
+                    flag, command,
+                    "built-in %r passes %s, so it depends on provider-side "
+                    "configuration" % (name, flag))
 
-    def test_the_agent_file_is_where_opencode_looks_for_it(self):
-        self.assertTrue(os.path.isfile(self.PATH))
-        self.assertEqual(os.path.basename(self.PATH), "ine-worker.md")
+    def test_the_prompt_carries_the_prohibitions_the_agent_file_enforced(self):
+        prompt = self._prompt()
+        # Same intent as the old deny-list, phrased for a model rather than a
+        # tool: no network, nothing outside the repository, and no stopping to
+        # ask a human - the last one is the failure this session actually hit.
+        self.assertIn("No network", prompt)
+        self.assertIn("outside the project root", prompt)
+        self.assertIn("Never", prompt)
+        self.assertIn("stop to ask a question", prompt)
+        self.assertIn("needs_commander", prompt)
 
-    def test_the_front_matter_declares_a_bounded_primary_agent(self):
-        front, _ = self._front_matter()
-        values = self._yaml(front)
-        self.assertEqual(values.get("mode"), "primary")
-        self.assertIn("description", values)
-        self.assertTrue(values.get("description"),
-                        "description is required by the OpenCode schema")
-        steps = values.get("steps", "")
-        self.assertTrue(steps.isdigit(), "steps must be a finite number")
-        self.assertGreater(int(steps), 0)
-        # A bound nobody bounded is not a bound.
-        self.assertLessEqual(int(steps), 200)
-        self.assertNotIn("model", values,
-                         "the worker profile owns model selection")
-        self.assertNotIn("maxSteps", values, "maxSteps is deprecated")
+    def test_each_prohibition_is_stated_once(self):
+        prompt = self._prompt()
+        self.assertEqual(prompt.count("No network"), 1)
+        self.assertEqual(prompt.count("stop to ask a question"), 1)
 
-    def test_the_denied_tools_are_named(self):
-        front, _ = self._front_matter()
-        for tool in self.DENIED:
-            self.assertRegex(front, r"(?m)^\s+%s:\s*deny\s*$" % tool)
+    def test_a_wall_clock_bound_still_exists_for_every_builtin(self):
+        # Losing the step budget is only acceptable because something else
+        # still stops a runaway worker.
+        for name in profiles.BUILTINS:
+            profile = profiles.resolve(REPO_ROOT, name)
+            self.assertGreater(profile.timeout_seconds, 0)
 
-    def test_the_allowed_tools_are_named(self):
-        front, _ = self._front_matter()
-        for tool in self.ALLOWED:
-            self.assertRegex(front, r"(?m)^\s+%s:\s*allow\s*$" % tool)
-
-    def test_nothing_is_left_to_an_implicit_default(self):
-        # Anything not listed is allowed by default, so a tool the loop cares
-        # about that is missing from the file is a hole, not a neutral.
-        front, _ = self._front_matter()
-        listed = set(re.findall(r"(?m)^\s+([a-z_]+):\s*(?:allow|deny)\s*$",
-                                front))
-        expected = set(self.DENIED) | set(self.ALLOWED)
-        self.assertEqual(listed, expected)
-
-    def test_the_body_is_short_and_says_what_the_prompt_says(self):
-        _, body = self._front_matter()
-        self.assertLessEqual(len(body.strip().splitlines()), 40)
-        # Line wrapping is not what is being asserted, so compare on
-        # whitespace-normalized text.
-        flat = " ".join(body.split())
-        for phrase in ("index is the whole scope",
-                       "Do not re-plan",
-                       "receipt"):
-            self.assertIn(phrase, flat)
-
-    def test_the_builtin_profile_selects_this_agent(self):
+    def test_the_opencode_profile_runs_in_non_interactive_mode(self):
         command = profiles.resolve(REPO_ROOT, "opencode").command
-        index = command.index("--agent")
-        self.assertEqual(command[index + 1], "ine-worker")
+        self.assertEqual(command[:3], ["opencode", "run", "--pure"])
+        self.assertEqual(command[-2:], ["--dir", REPO_ROOT])
 
 
 class CompactionTests(unittest.TestCase):
@@ -4938,19 +6256,22 @@ class CompactionTests(unittest.TestCase):
         compaction.write_snippet(root, 1, self._receipt(area="parser"))
         self._index(root, 2, "# Mission 2\n\nArea: parser\nGoal: go on.\n")
         prompt = impl_prompt(root, read_plan(root).items[1])
-        self.assertIn("PRIOR WORK IN THIS AREA", prompt)
+        self.assertIn("RELATED WORK ALREADY DONE", prompt)
         self.assertIn("Mission 1", prompt)
         self.assertIn("wired the parser", prompt)
         self.assertIn("a record, not a task", prompt)
         # Before the mission, and clearly subordinate to it.
-        self.assertLess(prompt.index("PRIOR WORK IN THIS AREA"),
+        self.assertLess(prompt.index("RELATED WORK ALREADY DONE"),
                         prompt.index("MISSION (PLAN item 2)"))
 
-    def test_the_prompt_says_so_when_there_is_nothing_related(self):
+    def test_an_unrelated_mission_is_sent_no_prior_work_at_all(self):
+        # Zero receipts means zero, not a sentence saying there are none: the
+        # common mission pays for nothing here.
         root = self._root()
         self._index(root, 1, "# Mission 1\n\nGoal: go.\n")
         prompt = impl_prompt(root, read_plan(root).first_executable())
-        self.assertIn("no related earlier mission in this area yet", prompt)
+        self.assertNotIn("RELATED WORK ALREADY DONE", prompt)
+        self.assertIn("MISSION (PLAN item 1)", prompt)
 
     def test_a_recorded_receipt_leaves_a_snippet_behind(self):
         root = self._root()
